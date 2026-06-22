@@ -68,7 +68,13 @@ const num  = v => parseFloat(v)||0;
 const uid  = () => Math.random().toString(36).slice(2,9);
 const newItem = (name='') => ({id:uid(), name, amount:0, recurring:false, note:'', filePath:null, fileName:'', fileData:null});
 const mkItems  = names => names.map(n=>newItem(n));
-const safeName = s => ((s||'').toString().trim().replace(/[\/\\:*?"<>|\n\r\t]/g,'-').replace(/\.+$/,'').slice(0,90)) || 'Unbenannt';
+const safeName = s => {
+  const map = {'ä':'ae','ö':'oe','ü':'ue','Ä':'Ae','Ö':'Oe','Ü':'Ue','ß':'ss'};
+  let t = (s||'').toString().trim().replace(/[äöüÄÖÜß]/g, m=>map[m]);
+  t = t.normalize('NFD').replace(/[̀-ͯ]/g,'');        // restliche Akzente entfernen
+  t = t.replace(/[^A-Za-z0-9 ._-]/g,'-').replace(/\s+/g,' ').trim().replace(/\.+$/,'').slice(0,90);
+  return t || 'Unbenannt';
+};
 const stripBlobs = obj => JSON.parse(JSON.stringify(obj, (k,v)=> k==='fileData'? null : v));
 
 /* ══ Data factories ══ */
