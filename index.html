@@ -133,6 +133,7 @@ const P = {
   clip:  'M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l8.49-8.49a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48',
   trash: 'M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6',
   out:   'M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4 M16 17l5-5-5-5 M21 12H9',
+  bed:   'M3 18v-5a3 3 0 013-3h12a3 3 0 013 3v5 M3 18h18 M3 13V8 M7 10V8h5v2',
 };
 
 /* ══ Icon component ══ */
@@ -357,6 +358,7 @@ function App({session}) {
   const [ready,setReady]= useState(false);
   const [saved,setSaved]= useState(true);
   const [toast,setToast]= useState('');
+  const [bookings,setBookings]= useState([]);
   const savedRef  = useRef(true);
   const lastSigRef = useRef('');
 
@@ -398,6 +400,14 @@ function App({session}) {
 
   useEffect(()=>{ savedRef.current=saved; },[saved]);
   useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(''),3600); return ()=>clearTimeout(t); },[toast]);
+
+  /* Buchungen (Belegungskalender) laden */
+  const loadBookings = async () => {
+    const {data:rows,error}=await sb.from('bookings').select('*').order('checkin',{ascending:true});
+    if(!error && rows) setBookings(rows);
+  };
+  useEffect(()=>{ if(ready) loadBookings(); },[ready]);
+  useEffect(()=>{ if(ready && tab==='kal') loadBookings(); },[tab]);
 
   const getMD = (y,m) => data[y]?.[m] || emptyMonth();
   const upd = fn => setData(prev=>{const yd=prev[yr]||{};const md=yd[mo]||emptyMonth();return{...prev,[yr]:{...yd,[mo]:fn(md)}};});
@@ -498,6 +508,29 @@ function App({session}) {
   const taxTotal = taxESt+taxGewSt;
   const taxMonthly = taxTotal/12;
 
+  /* Belegungskalender — abgeleitet */
+  const fmtD = s => new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'});
+  const monthBookings = bookings.filter(b=>{
+    const ci=new Date(b.checkin), co=new Date(b.checkout);
+    return ci < new Date(yr,mo+1,1) && co > new Date(yr,mo,1);
+  });
+  const daysInMonth = new Date(yr,mo+1,0).getDate();
+  const startWeekday = (new Date(yr,mo,1).getDay()+6)%7;
+  const calCells = [...Array(startWeekday).fill(null), ...Array.from({length:daysInMonth},(_,i)=>i+1)];
+  const dayStatus = day => {
+    const ds = new Date(yr,mo,day);
+    const chans=[]; let occupied=false;
+    monthBookings.forEach(b=>{
+      const ci=new Date(b.checkin), co=new Date(b.checkout);
+      const ciD=new Date(ci.getFullYear(),ci.getMonth(),ci.getDate());
+      const coD=new Date(co.getFullYear(),co.getMonth(),co.getDate());
+      if(ds>=ciD && ds<coD){ occupied=true; chans.push(b.channel==='Booking'?'Booking':'Airbnb'); }
+    });
+    const td=new Date();
+    const isToday = td.getFullYear()===yr && td.getMonth()===mo && td.getDate()===day;
+    return {occupied, channels:[...new Set(chans)], isToday};
+  };
+
   /* Rückgängig (⌘Z / Strg+Z) */
   const historyRef = useRef([]);
   const lastSnap   = useRef(null);
@@ -564,6 +597,7 @@ function App({session}) {
     {id:'immo',   label:'Immobilien',   icon:P.house},
     {id:'unter',  label:names.unternehmen, icon:P.brief},
     {id:'privat', label:'Privat',       icon:P.prson},
+    {id:'kal',    label:'Belegung',     icon:P.bed},
     {id:'yr',     label:'Jahresübersicht', icon:P.cal},
     {id:'steuer', label:'Steuer',       icon:P.doc},
   ];
@@ -996,6 +1030,80 @@ function App({session}) {
                   <span style={{color:C.txt,lineHeight:1.5}}>{v}</span>
                 </div>
               ))}
+            </div>
+          </>}
+
+          {/* ══ BELEGUNG ══ */}
+          {tab==='kal' && <>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:24,flexWrap:'wrap',gap:12}}>
+              <div>
+                <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Belegung</div>
+                <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr} · Ferienwohnung</div>
+              </div>
+              <button onClick={loadBookings} style={BVm}>↻ Aktualisieren</button>
+            </div>
+
+            {/* Kalendergitter */}
+            <div style={{...SC,marginBottom:14}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:6}}>
+                {['Mo','Di','Mi','Do','Fr','Sa','So'].map(d=>(
+                  <div key={d} style={{fontSize:11,fontWeight:600,color:C.mut,textAlign:'center',padding:'4px 0'}}>{d}</div>
+                ))}
+                {calCells.map((cell,i)=> cell==null
+                  ? <div key={'b'+i} />
+                  : (()=>{
+                      const st = dayStatus(cell);
+                      return (
+                        <div key={i} style={{
+                          aspectRatio:'1 / 1',borderRadius:10,padding:'6px 7px',
+                          background: st.occupied ? C.priL : C.surf2,
+                          border:'1px solid '+(st.isToday?C.pri:'transparent'),
+                          display:'flex',flexDirection:'column',justifyContent:'space-between',
+                        }}>
+                          <span style={{fontSize:12,fontWeight:st.occupied?700:500,color:st.occupied?C.pri:C.sub}}>{cell}</span>
+                          {st.occupied && (
+                            <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+                              {st.channels.map((ch,j)=>(
+                                <span key={j} title={ch} style={{width:6,height:6,borderRadius:'50%',background:ch==='Booking'?'#3B82F6':C.red,display:'inline-block'}} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()
+                )}
+              </div>
+              <div style={{display:'flex',gap:16,marginTop:14,fontSize:11,color:C.sub,flexWrap:'wrap'}}>
+                <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:8,height:8,borderRadius:'50%',background:C.red,display:'inline-block'}}/>Airbnb</span>
+                <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:8,height:8,borderRadius:'50%',background:'#3B82F6',display:'inline-block'}}/>Booking</span>
+                <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:C.priL,border:'1px solid '+C.bdr,display:'inline-block'}}/>belegt</span>
+              </div>
+            </div>
+
+            {/* Buchungsliste */}
+            <div style={SC}>
+              <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:12}}>Buchungen · {MONTHS[mo]} {yr}</div>
+              {monthBookings.length===0 ? (
+                <div style={{padding:'26px 0',textAlign:'center'}}>
+                  <div style={{color:C.sub,fontSize:14,marginBottom:6}}>Noch keine Buchungen für diesen Monat</div>
+                  <div style={{color:C.mut,fontSize:12,lineHeight:1.5}}>Sobald die automatische Synchronisierung eingerichtet ist,<br/>erscheinen deine Airbnb- und Booking-Aufenthalte hier automatisch.</div>
+                </div>
+              ) : monthBookings.map(b=>{
+                const nights=Math.max(1,Math.round((new Date(b.checkout)-new Date(b.checkin))/86400000));
+                return (
+                  <div key={b.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid '+C.sep}}>
+                    <span style={{width:9,height:9,borderRadius:'50%',background:b.channel==='Booking'?'#3B82F6':C.red,flexShrink:0,display:'inline-block'}} />
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.guest_name||b.channel||'Buchung'}</div>
+                      <div style={{fontSize:12,color:C.sub}}>{fmtD(b.checkin)} → {fmtD(b.checkout)} · {nights} {nights===1?'Nacht':'Nächte'}</div>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:b.guests?C.pri:C.mut}}>{b.guests?b.guests+' Gäste':'—'}</div>
+                      <div style={{fontSize:11,color:C.mut}}>{b.channel||''}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </>}
 
