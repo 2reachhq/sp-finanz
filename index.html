@@ -370,6 +370,7 @@ function App({session}) {
   const [saved,setSaved]= useState(true);
   const [toast,setToast]= useState('');
   const [bookings,setBookings]= useState([]);
+  const [events,setEvents]= useState([]);
   const [confirmState,setConfirmState]= useState(null);
   const askConfirm = (message, onConfirm, title) => setConfirmState({message, onConfirm, title: title||'Wirklich löschen?'});
   const savedRef  = useRef(true);
@@ -421,6 +422,14 @@ function App({session}) {
   };
   useEffect(()=>{ if(ready) loadBookings(); },[ready]);
   useEffect(()=>{ if(ready && tab==='kal') loadBookings(); },[tab]);
+
+  /* Termine / Events (Mönchengladbach) laden */
+  const loadEvents = async () => {
+    const {data:rows,error}=await sb.from('events').select('*').order('date',{ascending:true});
+    if(!error && rows) setEvents(rows);
+  };
+  useEffect(()=>{ if(ready) loadEvents(); },[ready]);
+  useEffect(()=>{ if(ready && tab==='kal') loadEvents(); },[tab]);
 
   /* Einmalig: leere Standard-Vorlagenzeilen (Immobilien) aus allen Monaten entfernen */
   useEffect(()=>{
@@ -616,6 +625,18 @@ function App({session}) {
     const isToday = td.getFullYear()===yr && td.getMonth()===mo && td.getDate()===day;
     return {occupied, channels:[...new Set(chans)], isToday};
   };
+  const EVCAT = {
+    fussball:{label:'Fußball', emoji:'⚽', col:'#30D158'},
+    konzert: {label:'Konzert', emoji:'🎤', col:'#A855F7'},
+    feiertag:{label:'Feiertag',emoji:'🎉', col:'#3B82F6'},
+    event:   {label:'Event',   emoji:'📍', col:C.amb},
+  };
+  const evMeta = c => EVCAT[c] || EVCAT.event;
+  const parseD = s => { const p=String(s).slice(0,10).split('-').map(Number); return new Date(p[0],(p[1]||1)-1,p[2]||1); };
+  const monthEvents = events
+    .filter(e=>{ const d=parseD(e.date); return d.getFullYear()===yr && d.getMonth()===mo; })
+    .sort((a,b)=>parseD(a.date)-parseD(b.date));
+  const eventsForDay = day => monthEvents.filter(e=>parseD(e.date).getDate()===day);
 
   /* Rückgängig (⌘Z / Strg+Z) */
   const historyRef = useRef([]);
@@ -1140,7 +1161,7 @@ function App({session}) {
                 <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Belegung</div>
                 <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr} · Ferienwohnung</div>
               </div>
-              <button onClick={loadBookings} style={BVm}>↻ Aktualisieren</button>
+              <button onClick={()=>{loadBookings();loadEvents();}} style={BVm}>↻ Aktualisieren</button>
             </div>
 
             {/* Kalendergitter */}
@@ -1153,21 +1174,29 @@ function App({session}) {
                   ? <div key={'b'+i} />
                   : (()=>{
                       const st = dayStatus(cell);
+                      const evs = eventsForDay(cell);
+                      const hasEv = evs.length>0;
                       return (
-                        <div key={i} style={{
-                          aspectRatio:'1 / 1',borderRadius:10,padding:'6px 7px',
-                          background: st.occupied ? C.priL : C.surf2,
-                          border:'1px solid '+(st.isToday?C.pri:'transparent'),
-                          display:'flex',flexDirection:'column',justifyContent:'space-between',
-                        }}>
-                          <span style={{fontSize:12,fontWeight:st.occupied?700:500,color:st.occupied?C.pri:C.sub}}>{cell}</span>
-                          {st.occupied && (
-                            <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
-                              {st.channels.map((ch,j)=>(
-                                <span key={j} title={ch} style={{width:6,height:6,borderRadius:'50%',background:ch==='Booking'?'#3B82F6':C.red,display:'inline-block'}} />
-                              ))}
-                            </div>
-                          )}
+                        <div key={i}
+                          title={hasEv?evs.map(e=>evMeta(e.category).emoji+' '+e.title).join('\n'):undefined}
+                          style={{
+                            aspectRatio:'1 / 1',borderRadius:10,padding:'6px 7px',overflow:'hidden',
+                            background: st.occupied ? C.priL : (hasEv ? C.ambL : C.surf2),
+                            border:'1px solid '+(st.isToday?C.pri:(hasEv?'rgba(255,180,0,0.35)':'transparent')),
+                            display:'flex',flexDirection:'column',justifyContent:'space-between',
+                          }}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:2}}>
+                            <span style={{fontSize:12,fontWeight:st.occupied?700:500,color:st.occupied?C.pri:(hasEv?C.amb:C.sub)}}>{cell}</span>
+                            {hasEv && <span style={{fontSize:11,lineHeight:1}}>{evMeta(evs[0].category).emoji}</span>}
+                          </div>
+                          <div style={{display:'flex',gap:3,flexWrap:'wrap',alignItems:'center'}}>
+                            {st.channels.map((ch,j)=>(
+                              <span key={'c'+j} title={ch} style={{width:6,height:6,borderRadius:'50%',background:ch==='Booking'?'#3B82F6':C.red,display:'inline-block'}} />
+                            ))}
+                            {evs.slice(0,3).map((e,j)=>(
+                              <span key={'e'+j} style={{width:6,height:6,borderRadius:'50%',background:evMeta(e.category).col,display:'inline-block'}} />
+                            ))}
+                          </div>
                         </div>
                       );
                     })()
@@ -1177,7 +1206,31 @@ function App({session}) {
                 <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:8,height:8,borderRadius:'50%',background:C.red,display:'inline-block'}}/>Airbnb</span>
                 <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:8,height:8,borderRadius:'50%',background:'#3B82F6',display:'inline-block'}}/>Booking</span>
                 <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:C.priL,border:'1px solid '+C.bdr,display:'inline-block'}}/>belegt</span>
+                <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:C.ambL,border:'1px solid rgba(255,180,0,0.35)',display:'inline-block'}}/>Termin/Event</span>
               </div>
+            </div>
+
+            {/* Termine in Mönchengladbach */}
+            <div style={{...SC,marginBottom:14}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Termine in Mönchengladbach · {MONTHS[mo]} {yr}</div>
+                <span style={{fontSize:11,color:C.mut}}>Nachfrage-Treiber</span>
+              </div>
+              {monthEvents.length===0 ? (
+                <div style={{padding:'18px 0',textAlign:'center',color:C.mut,fontSize:13}}>Keine bekannten Termine in diesem Monat.</div>
+              ) : monthEvents.map(e=>{
+                const m=evMeta(e.category);
+                return (
+                  <div key={e.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid '+C.sep}}>
+                    <span style={{fontSize:16,width:24,textAlign:'center',flexShrink:0}}>{m.emoji}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.title}</div>
+                      <div style={{fontSize:12,color:C.sub}}>{fmtD(e.date)}{e.source?' · '+e.source:''}</div>
+                    </div>
+                    <span style={{fontSize:11,fontWeight:600,color:m.col,background:m.col+'22',borderRadius:6,padding:'3px 8px',flexShrink:0}}>{m.label}</span>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Buchungsliste */}
