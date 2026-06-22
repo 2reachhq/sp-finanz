@@ -79,7 +79,7 @@ const stripBlobs = obj => JSON.parse(JSON.stringify(obj, (k,v)=> k==='fileData'?
 
 /* ══ Data factories ══ */
 const emptyPropInc = () => ({mieteinnahmen:0, airbnb:0, booking:0, sonstig:0});
-const emptyProp    = () => ({income:emptyPropInc(), expenses:mkItems(PROP_EXP_DEF)});
+const emptyProp    = () => ({income:emptyPropInc(), expenses:[]});
 const emptyMonth   = () => ({
   props: {p1:emptyProp(), p2:emptyProp(), p3:emptyProp()},
   unternehmen: {clients:[], items:mkItems(UNTER_EXP_DEF)},
@@ -134,6 +134,7 @@ const P = {
   trash: 'M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6',
   out:   'M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4 M16 17l5-5-5-5 M21 12H9',
   bed:   'M3 18v-5a3 3 0 013-3h12a3 3 0 013 3v5 M3 18h18 M3 13V8 M7 10V8h5v2',
+  repeat:'M17 1l4 4-4 4 M3 11V9a4 4 0 014-4h14 M7 23l-4-4 4-4 M21 13v2a4 4 0 01-4 4H3',
 };
 
 /* ══ Icon component ══ */
@@ -203,9 +204,9 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
           title={item.recurring?'Wird jeden Monat übernommen — klicken zum Ausschalten':'Nur dieser Monat — klicken, um jeden Monat zu übernehmen'}
           style={{
             width:24,height:26,border:'none',borderRadius:6,cursor:'pointer',flexShrink:0,padding:0,
-            background:item.recurring?C.ambL:'transparent',opacity:item.recurring?1:0.32,
-            fontSize:11,lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit',
-          }}>🔁</button>
+            background:item.recurring?C.ambL:'transparent',
+            display:'flex',alignItems:'center',justifyContent:'center',
+          }}><Ic p={P.repeat} sz={13} col={item.recurring?C.amb:C.mut}/></button>
 
         {/* Name */}
         <input
@@ -420,6 +421,31 @@ function App({session}) {
   };
   useEffect(()=>{ if(ready) loadBookings(); },[ready]);
   useEffect(()=>{ if(ready && tab==='kal') loadBookings(); },[tab]);
+
+  /* Einmalig: leere Standard-Vorlagenzeilen (Immobilien) aus allen Monaten entfernen */
+  useEffect(()=>{
+    if(!ready || names.cleanedDefaults) return;
+    const DEF = new Set(PROP_EXP_DEF);
+    setData(prev=>{
+      const nd = JSON.parse(JSON.stringify(prev));
+      Object.keys(nd).forEach(y=>{
+        Object.keys(nd[y]||{}).forEach(m=>{
+          const md = nd[y][m];
+          if(!md || !md.props) return;
+          PROPS.forEach(pid=>{
+            const p = md.props[pid];
+            if(!p || !Array.isArray(p.expenses)) return;
+            p.expenses = p.expenses.filter(it=>
+              !( DEF.has(it.name) && !num(it.amount) && !it.recurring
+                 && !(it.note && it.note.trim()) && !it.filePath && !it.fileData )
+            );
+          });
+        });
+      });
+      return nd;
+    });
+    setNames(n=>({...n, cleanedDefaults:true}));
+  },[ready]);
 
   const getMD = (y,m) => data[y]?.[m] || emptyMonth();
   const upd = fn => setData(prev=>{const yd=prev[yr]||{};const md=yd[mo]||emptyMonth();return{...prev,[yr]:{...yd,[mo]:fn(md)}};});
@@ -859,8 +885,8 @@ function App({session}) {
                     <button onClick={()=>toggleRecurIncome(sp,fld)}
                       title={rec?'Wird jeden Monat übernommen — klicken zum Ausschalten':'Nur dieser Monat — klicken, um jeden Monat zu übernehmen'}
                       style={{width:24,height:24,border:'none',borderRadius:6,cursor:'pointer',flexShrink:0,padding:0,
-                        background:rec?C.ambL:'transparent',opacity:rec?1:0.32,fontSize:11,lineHeight:1,
-                        display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit'}}>🔁</button>
+                        background:rec?C.ambL:'transparent',
+                        display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.repeat} sz={12} col={rec?C.amb:C.mut}/></button>
                     <input type="number" min={0} value={pd.income?.[fld]||''} placeholder="0"
                       onChange={e=>setPropInc(sp,fld,e.target.value)}
                       style={{...SI,width:96,...NUM}} />
