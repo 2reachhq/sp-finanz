@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SP Finanz</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { background: #000; overflow: hidden; }
+    * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+    input[type=number] { -moz-appearance: textfield; }
+    input::placeholder, textarea::placeholder { color: rgba(235,235,245,0.22) !important; }
+    textarea { resize: vertical; }
+    button { transition: opacity .14s ease, background-color .14s ease, color .14s ease, transform .08s ease; }
+    button:hover:not(:disabled) { opacity: .82; }
+    button:active:not(:disabled) { transform: scale(.97); }
+    button:disabled { cursor: default; }
+    a { text-decoration: none; }
+    select option { background: #1C1C1E; color: #fff; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #3A3A3C; border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+/* ══ Supabase ══ */
+const SB_URL = 'https://rlorfhpgxmyplmsgmkzw.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsb3JmaHBneG15cGxtc2dta3p3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNDgyOTgsImV4cCI6MjA5NzcyNDI5OH0.v40LI6zeyIgAzhnpqXxKAoqas8MDdXtEZz9nTNPC5jA';
+const sb = window.supabase.createClient(SB_URL, SB_KEY);
+
+/* ══ Constants ══ */
+const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const PROPS  = ['p1','p2','p3'];
+const PROP_EXP_DEF  = ['Hypothek / Kredit','Nebenkosten','Strom & Wasser','Versicherung','Reinigung & Pflege','Reparaturen & Wartung','Löhne / Personal','Steuer & Abgaben','Sonstiges'];
+const UNTER_EXP_DEF = ['Autoleasing','Autoversicherung','Rechtsschutz','Steuerberater / Buchhaltung','Software / Lizenzen','Telefon & Internet','Marketing / Werbung'];
+const UNTER_PRESETS = ['Freelancer','Bürokosten','Reisekosten','Fortbildung','Bankgebühren','Sonstiges'];
+const PRIV_DEF      = ['Lebensmittel','Restaurant & Essen','Hobbys & Freizeit','Mobilität'];
+const PRIV_PRESETS  = ['Kleidung','Urlaub','Sport & Fitness','Streaming & Abos','Versicherungen','Sonstiges'];
+
+/* ══ Apple dark palette ══ */
+const C = {
+  bg:'#000000', surf:'#1C1C1E', surf2:'#2C2C2E', surf3:'#3A3A3C',
+  bdr:'rgba(255,255,255,0.07)', bdrM:'rgba(255,255,255,0.12)',
+  pri:'#0A84FF',  priL:'rgba(10,132,255,0.12)',
+  grn:'#30D158',  grnL:'rgba(48,209,88,0.09)',
+  red:'#FF453A',  redL:'rgba(255,69,58,0.09)',
+  amb:'#FF9F0A',  ambL:'rgba(255,159,10,0.10)',
+  txt:'#FFFFFF', sub:'rgba(235,235,245,0.60)', mut:'rgba(235,235,245,0.22)',
+  sep:'rgba(255,255,255,0.06)',
+};
+
+/* ══ Helpers ══ */
+const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif";
+const NUM  = {fontVariantNumeric:'tabular-nums', letterSpacing:'-0.02em'};
+const fmt  = v => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(v||0);
+const num  = v => parseFloat(v)||0;
+const uid  = () => Math.random().toString(36).slice(2,9);
+const newItem = (name='') => ({id:uid(), name, amount:0, recurring:false, note:'', filePath:null, fileName:'', fileData:null});
+const mkItems  = names => names.map(n=>newItem(n));
+const safeName = s => ((s||'').toString().trim().replace(/[\/\\:*?"<>|\n\r\t]/g,'-').replace(/\.+$/,'').slice(0,90)) || 'Unbenannt';
+const stripBlobs = obj => JSON.parse(JSON.stringify(obj, (k,v)=> k==='fileData'? null : v));
+
+/* ══ Data factories ══ */
+const emptyPropInc = () => ({mieteinnahmen:0, sonstig:0});
+const emptyProp    = () => ({income:emptyPropInc(), expenses:mkItems(PROP_EXP_DEF)});
+const emptyMonth   = () => ({
+  props: {p1:emptyProp(), p2:emptyProp(), p3:emptyProp()},
+  unternehmen: {clients:[], items:mkItems(UNTER_EXP_DEF)},
+  privat: {items:mkItems(PRIV_DEF)},
+});
+
+/* ══ Calculations ══ */
+const calcProp = prop => {
+  const inc = prop?.income || emptyPropInc();
+  const netto = num(inc.mieteinnahmen)+num(inc.sonstig);
+  const exp   = (prop?.expenses||[]).reduce((s,i)=>s+num(i.amount),0);
+  return {netto,exp,gewinn:netto-exp};
+};
+const calcTotals = md => {
+  if(!md) return {immoInc:0,immoExp:0,unterInc:0,unterExp:0,privatExp:0,totalInc:0,totalExp:0,net:0};
+  let immoInc=0, immoExp=0;
+  PROPS.forEach(p=>{const r=calcProp(md.props?.[p]);immoInc+=r.netto;immoExp+=r.exp;});
+  const unterInc  = (md.unternehmen?.clients||[]).reduce((s,c)=>s+num(c.amount),0);
+  const unterExp  = (md.unternehmen?.items||[]).reduce((s,i)=>s+num(i.amount),0);
+  const privatExp = (md.privat?.items||[]).reduce((s,i)=>s+num(i.amount),0);
+  const totalInc=immoInc+unterInc, totalExp=immoExp+unterExp+privatExp;
+  return {immoInc,immoExp,unterInc,unterExp,privatExp,totalInc,totalExp,net:totalInc-totalExp};
+};
+const estESt = g => {
+  if(g<=11784)  return 0;
+  if(g<=17005)  return Math.round((g-11784)*0.22);
+  if(g<=66760)  return Math.round(1148+(g-17005)*0.30);
+  if(g<=277825) return Math.round(16074+(g-66760)*0.42);
+  return Math.round(104741+(g-277825)*0.45);
+};
+
+/* ══ Style atoms ══ */
+const SI  = {background:C.surf3,border:'none',borderRadius:8,color:C.txt,padding:'6px 10px',fontSize:13,textAlign:'right',outline:'none',fontFamily:'inherit'};
+const SS  = {background:C.surf2,border:'none',borderRadius:8,color:C.txt,padding:'7px 10px',fontSize:13,outline:'none',cursor:'pointer',fontFamily:'inherit',width:'100%'};
+const SHd = {background:C.surf2,border:'1px solid '+C.bdr,borderRadius:8,color:C.txt,padding:'6px 10px',fontSize:12,outline:'none',cursor:'pointer',fontFamily:'inherit'};
+const SC  = {background:C.surf,borderRadius:16,padding:20};
+const BVm = {background:C.priL,border:'none',color:C.pri,borderRadius:8,padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'};
+const BPrs= {background:C.priL,border:'none',color:C.pri,borderRadius:7,padding:'4px 9px',fontSize:11,fontWeight:500,cursor:'pointer',fontFamily:'inherit'};
+
+/* ══ SVG Icon paths ══ */
+const P = {
+  grid:  'M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z',
+  house: 'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z M9 22V12h6v10',
+  brief: 'M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2m-8-3a2 2 0 00-2 2h4a2 2 0 00-2-2z',
+  prson: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 11a4 4 0 100-8 4 4 0 000 8z',
+  cal:   'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z',
+  doc:   'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
+  up:    'M18 15l-6-6-6 6',
+  down:  'M6 9l6 6 6-6',
+  note:  'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5 M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z',
+  clip:  'M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l8.49-8.49a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48',
+  trash: 'M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6',
+  out:   'M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4 M16 17l5-5-5-5 M21 12H9',
+};
+
+/* ══ Icon component ══ */
+function Ic({p,sz=15,col='currentColor'}) {
+  return (
+    <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={col}
+      strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,display:'block'}}>
+      <path d={p} />
+    </svg>
+  );
+}
+
+/* ══ KPI card ══ */
+function KPI({label,val,color,sub}) {
+  return (
+    <div style={{...SC,flex:1,minWidth:145}}>
+      <div style={{fontSize:12,color:C.sub,marginBottom:8,fontWeight:500}}>{label}</div>
+      <div style={{fontSize:24,fontWeight:700,color,...NUM,lineHeight:1}}>{val}</div>
+      {sub ? <div style={{fontSize:11,color:C.mut,marginTop:7,lineHeight:1.4}}>{sub}</div> : null}
+    </div>
+  );
+}
+
+/* ══ Item row ══ */
+function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, folderPath, onUploadFile, onOpenFile, onDeleteFile}) {
+  const [noteOpen, setNoteOpen] = useState(!!item.note);
+  const fileRef = useRef();
+  const hasNote = !!(item.note && item.note.trim());
+  const hasFile = !!(item.filePath || item.fileData);
+
+  const handleFile = e => {
+    const f = e.target.files[0];
+    if(!f) return;
+    if(f.size > 10*1024*1024) { alert('Max. 10 MB pro Datei.'); return; }
+    if(onUploadFile && folderPath) onUploadFile(f, folderPath, filePath => onUpdate(item.id,'__file__',{filePath, fileName:f.name, fileData:null}));
+    e.target.value='';
+  };
+
+  const iconBtn = (active,icon,title,onClick) => (
+    <button onClick={onClick} title={title} style={{
+      background:active?C.priL:'none',border:'none',borderRadius:6,
+      color:active?C.pri:C.mut,padding:'4px',cursor:'pointer',
+      display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,
+    }}><Ic p={icon} sz={13}/></button>
+  );
+
+  return (
+    <div style={{borderBottom:'1px solid '+C.sep}}>
+      <div style={{display:'flex',gap:5,alignItems:'center',padding:'8px 0',minHeight:42}}>
+
+        {/* Move up/down */}
+        <div style={{display:'flex',flexDirection:'column',gap:1,flexShrink:0}}>
+          <button onClick={onMoveUp} disabled={isFirst} title="Nach oben" style={{
+            background:'none',border:'none',color:isFirst?C.sep:C.mut,
+            cursor:isFirst?'default':'pointer',padding:'2px 3px',borderRadius:3,
+            display:'flex',alignItems:'center',
+          }}><Ic p={P.up} sz={10}/></button>
+          <button onClick={onMoveDown} disabled={isLast} title="Nach unten" style={{
+            background:'none',border:'none',color:isLast?C.sep:C.mut,
+            cursor:isLast?'default':'pointer',padding:'2px 3px',borderRadius:3,
+            display:'flex',alignItems:'center',
+          }}><Ic p={P.down} sz={10}/></button>
+        </div>
+
+        {/* Recurring badge */}
+        <span style={{width:16,fontSize:10,color:C.amb,flexShrink:0,textAlign:'center',lineHeight:1}}>
+          {item.recurring?'🔁':''}
+        </span>
+
+        {/* Name */}
+        <input
+          value={item.name} placeholder="Bezeichnung…"
+          onChange={e=>onUpdate(item.id,'name',e.target.value)}
+          style={{...SI,flex:1,width:'auto',textAlign:'left',fontSize:14}}
+        />
+
+        {/* Amount */}
+        <input
+          type="number" min={0}
+          value={item.amount||''} placeholder="0"
+          onChange={e=>onUpdate(item.id,'amount',e.target.value)}
+          style={{...SI,width:80,...NUM}}
+        />
+        <span style={{fontSize:12,color:C.mut,width:14,flexShrink:0}}>€</span>
+
+        {/* Note toggle */}
+        {iconBtn(noteOpen||hasNote, P.note, 'Notiz', ()=>setNoteOpen(o=>!o))}
+
+        {/* File attach */}
+        {iconBtn(hasFile, P.clip, hasFile?item.fileName:'Datei anhängen', ()=>fileRef.current.click())}
+        <input type="file" ref={fileRef} onChange={handleFile} style={{display:'none'}}
+          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt" />
+
+        {/* Delete */}
+        <button onClick={()=>onDelete(item.id)} title="Löschen" style={{
+          background:'rgba(255,69,58,0.10)',border:'none',color:C.red,borderRadius:6,
+          width:24,height:24,cursor:'pointer',fontSize:14,fontFamily:'inherit',
+          flexShrink:0,lineHeight:'24px',textAlign:'center',display:'flex',alignItems:'center',justifyContent:'center',
+        }}><Ic p={P.trash} sz={12} col={C.red}/></button>
+      </div>
+
+      {/* Note field */}
+      {noteOpen && (
+        <div style={{paddingBottom:8,paddingLeft:30}}>
+          <textarea
+            value={item.note||''}
+            onChange={e=>onUpdate(item.id,'note',e.target.value)}
+            placeholder="Notiz hinzufügen…"
+            rows={2}
+            style={{
+              width:'100%',background:C.surf2,border:'none',borderRadius:8,
+              color:C.sub,padding:'8px 10px',fontSize:12,
+              outline:'none',fontFamily:'inherit',
+            }}
+          />
+        </div>
+      )}
+
+      {/* File attachment display */}
+      {hasFile && (
+        <div style={{paddingBottom:8,paddingLeft:30,display:'flex',alignItems:'center',gap:8}}>
+          <Ic p={P.clip} sz={12} col={C.pri}/>
+          {item.filePath ? (
+            <button onClick={()=>onOpenFile && onOpenFile(item.filePath, item.fileName)}
+              style={{background:'none',border:'none',color:C.pri,fontSize:12,fontWeight:500,cursor:'pointer',fontFamily:'inherit',padding:0}}>{item.fileName}</button>
+          ) : (
+            <a href={item.fileData} download={item.fileName}
+              style={{color:C.pri,fontSize:12,fontWeight:500}}>{item.fileName}</a>
+          )}
+          <button onClick={()=>{ if(item.filePath && onDeleteFile) onDeleteFile(item.filePath); onUpdate(item.id,'__file__',{filePath:null,fileData:null,fileName:''}); }}
+            style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:13,lineHeight:1}}>×</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══ Add form ══ */
+function AddForm({onAdd, placeholder='Bezeichnung'}) {
+  const [open,setOpen]=useState(false);
+  const [name,setName]=useState('');
+  const [amount,setAmount]=useState('');
+  const [recur,setRecur]=useState(false);
+  const reset=()=>{setOpen(false);setName('');setAmount('');setRecur(false);};
+  const commit=()=>{if(name||amount){onAdd(name,amount,recur);reset();}};
+  if(!open) return (
+    <button onClick={()=>setOpen(true)} style={{
+      background:'none',border:'1px dashed '+C.surf3,color:C.mut,
+      borderRadius:8,padding:'7px 14px',fontSize:13,cursor:'pointer',
+      fontFamily:'inherit',width:'100%',marginTop:6,
+    }}>+ Zeile hinzufügen</button>
+  );
+  return (
+    <div style={{marginTop:8,padding:'12px 14px',background:C.surf2,borderRadius:12}}>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginBottom:10}}>
+        <input autoFocus value={name} onChange={e=>setName(e.target.value)}
+          placeholder={placeholder+'…'} onKeyDown={e=>e.key==='Enter'&&commit()}
+          style={{...SI,flex:1,minWidth:100,textAlign:'left',fontSize:14}} />
+        <input type="number" min={0} value={amount} onChange={e=>setAmount(e.target.value)}
+          placeholder="0" onKeyDown={e=>e.key==='Enter'&&commit()}
+          style={{...SI,width:78,...NUM}} />
+        <span style={{fontSize:12,color:C.mut}}>€</span>
+        <button onClick={commit} style={{
+          background:C.pri,color:'#fff',border:'none',borderRadius:8,
+          padding:'6px 14px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
+        }}>Hinzufügen</button>
+        <button onClick={reset} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:18,lineHeight:1}}>×</button>
+      </div>
+      <button onClick={()=>setRecur(r=>!r)} style={{
+        background:recur?C.ambL:C.surf3,border:'none',
+        color:recur?C.amb:C.sub,borderRadius:7,
+        padding:'5px 11px',fontSize:11,fontWeight:500,cursor:'pointer',fontFamily:'inherit',
+      }}>{recur?'🔁 Für alle Monate dieses Jahres':'📅 Nur dieser Monat'}</button>
+    </div>
+  );
+}
+
+/* ══ Splash / Login ══ */
+function Splash({text}) {
+  return <div style={{position:'fixed',inset:0,background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',color:C.sub,fontFamily:FONT,fontSize:14}}>{text}</div>;
+}
+
+function Login() {
+  const [email,setEmail]=useState('');
+  const [pw,setPw]=useState('');
+  const [err,setErr]=useState('');
+  const [busy,setBusy]=useState(false);
+  const submit=async e=>{
+    e.preventDefault();
+    setBusy(true); setErr('');
+    const {error}=await sb.auth.signInWithPassword({email:email.trim(),password:pw});
+    if(error){ setErr('Login fehlgeschlagen. Bitte E-Mail und Passwort prüfen.'); setBusy(false); }
+  };
+  const inp = {width:'100%',background:C.surf3,border:'none',borderRadius:10,color:C.txt,padding:'10px 12px',fontSize:14,outline:'none',fontFamily:'inherit'};
+  return (
+    <div style={{position:'fixed',inset:0,background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT,padding:20}}>
+      <form onSubmit={submit} style={{width:'100%',maxWidth:340,background:C.surf,borderRadius:18,padding:28,border:'1px solid '+C.bdr}}>
+        <div style={{fontSize:22,fontWeight:700,color:C.txt,letterSpacing:'-0.03em',marginBottom:4}}>SP Finanz</div>
+        <div style={{fontSize:13,color:C.sub,marginBottom:22}}>Bitte einloggen</div>
+        <label style={{fontSize:12,color:C.sub,display:'block',marginBottom:6}}>E-Mail</label>
+        <input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoFocus required style={{...inp,marginBottom:14}} />
+        <label style={{fontSize:12,color:C.sub,display:'block',marginBottom:6}}>Passwort</label>
+        <input type="password" value={pw} onChange={e=>setPw(e.target.value)} required style={{...inp,marginBottom:err?10:18}} />
+        {err && <div style={{fontSize:12,color:C.red,marginBottom:14}}>{err}</div>}
+        <button type="submit" disabled={busy} style={{width:'100%',background:C.pri,color:'#fff',border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,cursor:busy?'default':'pointer',fontFamily:'inherit',opacity:busy?0.6:1}}>
+          {busy?'Wird eingeloggt…':'Einloggen'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ══════════════════════ APP ══════════════════════ */
+function App({session}) {
+  const now = new Date();
+  const [yr,   setYr]   = useState(now.getFullYear());
+  const [mo,   setMo]   = useState(now.getMonth());
+  const [tab,  setTab]  = useState('dash');
+  const [sp,   setSp]   = useState('p1');
+  const [data, setData] = useState({});
+  const [names,setNames]= useState({p1:'Immobilie 1',p2:'Immobilie 2',p3:'Immobilie 3',unternehmen:'Unternehmen'});
+  const [ready,setReady]= useState(false);
+  const [saved,setSaved]= useState(true);
+  const [toast,setToast]= useState('');
+  const savedRef  = useRef(true);
+  const lastSigRef = useRef('');
+
+  /* Laden aus Supabase (einmalig) */
+  useEffect(()=>{
+    let active=true;
+    (async()=>{
+      const {data:row,error}=await sb.from('app_state').select('data,names').eq('id',1).single();
+      if(!active) return;
+      if(error){ setToast('Laden fehlgeschlagen: '+error.message); setReady(true); return; }
+      let d = (row && row.data) || {};
+      let n = (row && row.names) || {};
+      // Einmalige Übernahme alter lokaler Daten, falls online noch leer
+      if(Object.keys(d).length===0){
+        try{ const raw=localStorage.getItem('fin-v5'); if(raw){ const p=JSON.parse(raw); if(p && p.data && Object.keys(p.data).length){ d=stripBlobs(p.data); if(p.names) n=p.names; } } }catch{}
+      }
+      const finalNames = (n && Object.keys(n).length) ? n : names;
+      setData(d);
+      setNames(finalNames);
+      lastSigRef.current = JSON.stringify(d)+JSON.stringify(finalNames);
+      setReady(true);
+    })();
+    return ()=>{active=false;};
+  },[]);
+
+  /* Speichern nach Supabase (debounced) */
+  useEffect(()=>{
+    if(!ready)return;
+    setSaved(false);
+    const t=setTimeout(async()=>{
+      const sig=JSON.stringify(data)+JSON.stringify(names);
+      const {error}=await sb.from('app_state').update({data,names,updated_at:new Date().toISOString()}).eq('id',1);
+      if(error){ setToast('Speichern fehlgeschlagen: '+error.message); }
+      else { lastSigRef.current=sig; }
+      setSaved(true);
+    },700);
+    return()=>clearTimeout(t);
+  },[data,names,ready]);
+
+  useEffect(()=>{ savedRef.current=saved; },[saved]);
+  useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(''),3600); return ()=>clearTimeout(t); },[toast]);
+
+  const getMD = (y,m) => data[y]?.[m] || emptyMonth();
+  const upd = fn => setData(prev=>{const yd=prev[yr]||{};const md=yd[mo]||emptyMonth();return{...prev,[yr]:{...yd,[mo]:fn(md)}};});
+  const updAll = fn => setData(prev=>{
+    const nd=JSON.parse(JSON.stringify(prev));
+    if(!nd[yr])nd[yr]={};
+    for(let m=0;m<12;m++){if(!nd[yr][m])nd[yr][m]=emptyMonth();nd[yr][m]=fn(nd[yr][m]);}
+    return nd;
+  });
+
+  /* ── Dateien: Upload / Öffnen / Löschen (Supabase Storage) ── */
+  const uploadFile = async (file, folderPath, setItemFile) => {
+    setToast('⬆️ Lädt hoch…');
+    const monthFolder = String(mo+1).padStart(2,'0')+' '+MONTHS[mo];
+    const path = [...folderPath, String(yr), monthFolder, file.name].map(safeName).join('/');
+    const {error}=await sb.storage.from('belege').upload(path, file, {upsert:true, contentType:file.type||'application/octet-stream'});
+    if(error){ setToast('Upload fehlgeschlagen: '+error.message); return; }
+    setItemFile(path);
+    setToast('✅ Hochgeladen: '+folderPath.join(' / '));
+  };
+  const openFile = async (path) => {
+    const {data:d,error}=await sb.storage.from('belege').createSignedUrl(path,3600);
+    if(error||!d){ setToast('Öffnen fehlgeschlagen: '+((error&&error.message)||'')); return; }
+    window.open(d.signedUrl,'_blank','noopener');
+  };
+  const deleteFile = async (path) => { try{ await sb.storage.from('belege').remove([path]); }catch(e){} };
+
+  /* Property income */
+  const setPropInc=(pid,fld,val)=>upd(md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,income:{...p.income,[fld]:num(val)}}}};});
+
+  /* Property expenses */
+  const updPropExp=(pid,id,fld,val)=>upd(md=>{
+    const p=md.props?.[pid]||emptyProp();
+    const expenses=(p.expenses||[]).map(i=>{
+      if(i.id!==id)return i;
+      if(fld==='__file__')return{...i,...val};
+      return{...i,[fld]:fld==='amount'?num(val):val};
+    });
+    return{...md,props:{...md.props,[pid]:{...p,expenses}}};
+  });
+  const delPropExp=(pid,id)=>upd(md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,expenses:(p.expenses||[]).filter(i=>i.id!==id)}}};});
+  const addPropExp=(pid,name,amount,recur)=>{
+    const item={...newItem(name),amount:num(amount),recurring:recur};
+    const fn=md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,expenses:[...(p.expenses||[]),{...item,id:uid()}]}}};};
+    recur?updAll(fn):upd(fn);
+  };
+  const movePropExp=(pid,id,dir)=>upd(md=>{
+    const p=md.props?.[pid]||emptyProp();
+    const arr=[...(p.expenses||[])];const idx=arr.findIndex(i=>i.id===id);const ni=idx+dir;
+    if(ni<0||ni>=arr.length)return md;
+    [arr[idx],arr[ni]]=[arr[ni],arr[idx]];
+    return{...md,props:{...md.props,[pid]:{...p,expenses:arr}}};
+  });
+  const copyPrevPropExp=pid=>{
+    const pm=mo===0?11:mo-1;const py=mo===0?yr-1:yr;
+    const prev=(getMD(py,pm).props?.[pid]?.expenses||[]).map(i=>({...i,id:uid()}));
+    upd(md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,expenses:prev}}};});
+  };
+
+  /* Section items */
+  const updSec=(sec,sub,id,fld,val)=>upd(md=>{
+    const s=md[sec]||{};
+    return{...md,[sec]:{...s,[sub]:(s[sub]||[]).map(i=>{
+      if(i.id!==id)return i;
+      if(fld==='__file__')return{...i,...val};
+      return{...i,[fld]:fld==='amount'?num(val):val};
+    })}};
+  });
+  const delSec=(sec,sub,id)=>upd(md=>{const s=md[sec]||{};return{...md,[sec]:{...s,[sub]:(s[sub]||[]).filter(i=>i.id!==id)}};});
+  const addSec=(sec,sub,name,amount,recur)=>{
+    const item={...newItem(name),amount:num(amount),recurring:recur};
+    const fn=md=>{const s=md[sec]||{};return{...md,[sec]:{...s,[sub]:[...(s[sub]||[]),{...item,id:uid()}]}};};
+    recur?updAll(fn):upd(fn);
+  };
+  const moveSec=(sec,sub,id,dir)=>upd(md=>{
+    const s=md[sec]||{};
+    const arr=[...(s[sub]||[])];const idx=arr.findIndex(i=>i.id===id);const ni=idx+dir;
+    if(ni<0||ni>=arr.length)return md;
+    [arr[idx],arr[ni]]=[arr[ni],arr[idx]];
+    return{...md,[sec]:{...s,[sub]:arr}};
+  });
+  const copyPrevSec=(sec,sub)=>{
+    const pm=mo===0?11:mo-1;const py=mo===0?yr-1:yr;
+    const prev=(getMD(py,pm)[sec]?.[sub]||[]).map(i=>({...i,id:uid()}));
+    upd(md=>{const s=md[sec]||{};return{...md,[sec]:{...s,[sub]:prev}};});
+  };
+
+  /* Derived */
+  const md    = getMD(yr,mo);
+  const tot   = calcTotals(md);
+  const pd    = md.props?.[sp]||emptyProp();
+  const pc    = calcProp(pd);
+  const yrSum = Array.from({length:12},(_,i)=>({m:i,...calcTotals(getMD(yr,i))}));
+  const yrTot = yrSum.reduce((a,s)=>({totalInc:a.totalInc+s.totalInc,totalExp:a.totalExp+s.totalExp,net:a.net+s.net,unterInc:a.unterInc+s.unterInc,unterExp:a.unterExp+s.unterExp}),{totalInc:0,totalExp:0,net:0,unterInc:0,unterExp:0});
+  const taxESt   = estESt(Math.max(0,yrTot.net));
+  const taxUGwn  = yrTot.unterInc-yrTot.unterExp;
+  const taxGewSt = Math.max(0,taxUGwn-24500)*0.035*4.35;
+  const taxTotal = taxESt+taxGewSt;
+  const taxMonthly = taxTotal/12;
+
+  /* Rückgängig (⌘Z / Strg+Z) */
+  const historyRef = useRef([]);
+  const lastSnap   = useRef(null);
+  const undoingRef = useRef(false);
+  const [canUndo,setCanUndo] = useState(false);
+  useEffect(()=>{
+    if(!ready) return;
+    const cur = {data, names};
+    if(undoingRef.current){
+      undoingRef.current = false;
+      lastSnap.current = cur;
+      setCanUndo(historyRef.current.length>0);
+      return;
+    }
+    if(lastSnap.current){
+      historyRef.current.push(lastSnap.current);
+      if(historyRef.current.length>60) historyRef.current.shift();
+    }
+    lastSnap.current = cur;
+    setCanUndo(historyRef.current.length>0);
+  },[data,names,ready]);
+  const undo = () => {
+    if(!historyRef.current.length) return;
+    const prev = historyRef.current.pop();
+    undoingRef.current = true;
+    setData(prev.data);
+    setNames(prev.names);
+    setToast('↩︎ Rückgängig');
+  };
+  useEffect(()=>{
+    const onKey = e => {
+      if((e.metaKey||e.ctrlKey) && !e.shiftKey && (e.key==='z'||e.key==='Z')){
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return ()=>window.removeEventListener('keydown', onKey);
+  },[]);
+
+  /* Live-Sync: Änderungen anderer Geräte übernehmen */
+  useEffect(()=>{
+    const ch = sb.channel('app_state_rt')
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_state'},(payload)=>{
+        const row=payload.new; if(!row) return;
+        const sig=JSON.stringify(row.data)+JSON.stringify(row.names);
+        if(sig===lastSigRef.current) return;   // eigene Änderung (Echo)
+        if(!savedRef.current) return;          // lokale Eingabe läuft – nicht überschreiben
+        undoingRef.current=true;
+        lastSigRef.current=sig;
+        if(row.data) setData(row.data);
+        if(row.names) setNames(row.names);
+        setToast('🔄 Von einem anderen Gerät aktualisiert');
+      })
+      .subscribe();
+    return ()=>{ sb.removeChannel(ch); };
+  },[]);
+
+  if(!ready) return <Splash text="Daten werden geladen…" />;
+
+  /* Sidebar nav */
+  const NAV = [
+    {id:'dash',   label:'Übersicht',    icon:P.grid},
+    {id:'immo',   label:'Immobilien',   icon:P.house},
+    {id:'unter',  label:names.unternehmen, icon:P.brief},
+    {id:'privat', label:'Privat',       icon:P.prson},
+    {id:'yr',     label:'Jahresübersicht', icon:P.cal},
+    {id:'steuer', label:'Steuer',       icon:P.doc},
+  ];
+
+  /* Reusable items renderer */
+  const renderItems = (items, updFn, delFn, moveFn, folderPath) =>
+    items.map((item,idx) => (
+      <ItemRow key={item.id} item={item}
+        onUpdate={updFn}
+        onDelete={delFn}
+        onMoveUp={()=>moveFn(item.id,-1)}
+        onMoveDown={()=>moveFn(item.id,1)}
+        isFirst={idx===0}
+        isLast={idx===items.length-1}
+        folderPath={folderPath}
+        onUploadFile={uploadFile}
+        onOpenFile={openFile}
+        onDeleteFile={deleteFile}
+      />
+    ));
+
+  const ResultBanner = ({label, sublabel, value}) => {
+    const positive = value >= 0;
+    return (
+      <div style={{
+        background:positive?C.grnL:C.redL,
+        border:'1px solid '+(positive?'rgba(48,209,88,0.22)':'rgba(255,69,58,0.22)'),
+        borderRadius:16,padding:'16px 22px',
+        display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14,
+      }}>
+        <div>
+          <div style={{fontWeight:600,fontSize:15,marginBottom:4}}>{label}</div>
+          <div style={{fontSize:12,color:C.sub}}>{sublabel}</div>
+        </div>
+        <div style={{fontSize:28,fontWeight:700,color:positive?C.grn:C.red,...NUM}}>
+          {positive?'+':''}{fmt(value)}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',fontFamily:FONT,color:C.txt,fontSize:14,overflow:'hidden'}}>
+
+      {/* ═══ TOP BAR ═══ */}
+      <header style={{
+        flexShrink:0,background:C.surf,borderBottom:'1px solid '+C.bdr,
+        display:'flex',alignItems:'center',gap:18,padding:'0 20px',height:56,
+      }}>
+        {/* Logo — plain wordmark */}
+        <div style={{fontSize:19,fontWeight:700,color:C.txt,letterSpacing:'-0.03em',flexShrink:0}}>SP Finanz</div>
+
+        {/* Nav items */}
+        <nav style={{display:'flex',alignItems:'center',gap:2,flex:1,overflowX:'auto'}}>
+          {NAV.map(({id,label,icon})=>{
+            const active = tab===id;
+            return (
+              <button key={id} onClick={()=>setTab(id)} style={{
+                display:'flex',alignItems:'center',gap:7,
+                padding:'7px 12px',borderRadius:9,border:'none',
+                background:active?'rgba(10,132,255,0.14)':'transparent',
+                color:active?C.pri:C.sub,
+                fontFamily:'inherit',fontSize:13,fontWeight:active?600:500,
+                cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+              }}>
+                <span style={{opacity:active?1:0.7}}><Ic p={icon} sz={15}/></span>
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Rückgängig + Date pickers + save status + logout */}
+        <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+          {canUndo && (
+            <button onClick={undo} title="Rückgängig (⌘Z)" style={{
+              display:'flex',alignItems:'center',justifyContent:'center',
+              background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,
+              borderRadius:8,padding:'6px 11px',cursor:'pointer',fontFamily:'inherit',
+              fontSize:14,lineHeight:1,
+            }}>↩︎</button>
+          )}
+          <select value={mo} onChange={e=>setMo(+e.target.value)} style={SHd}>
+            {MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}
+          </select>
+          <select value={yr} onChange={e=>setYr(+e.target.value)} style={SHd}>
+            {[yr-1,yr,yr+1].map(y=><option key={y} value={y}>{y}</option>)}
+          </select>
+          <span title={saved?'Gespeichert':'Speichern…'} style={{
+            fontSize:12,color:saved?C.mut:C.amb,fontWeight:500,
+            display:'flex',alignItems:'center',gap:5,marginLeft:4,
+          }}>
+            <span style={{width:6,height:6,borderRadius:'50%',background:saved?C.mut:C.amb,flexShrink:0,display:'inline-block'}} />
+            {saved?'Gespeichert':'Speichern…'}
+          </span>
+          <button onClick={()=>sb.auth.signOut()}
+            title={(session&&session.user&&session.user.email?session.user.email+' — ':'')+'Abmelden'}
+            style={{
+              display:'flex',alignItems:'center',gap:6,
+              background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,
+              borderRadius:8,padding:'6px 11px',cursor:'pointer',fontFamily:'inherit',
+              fontSize:12,fontWeight:500,marginLeft:4,
+            }}>
+            <Ic p={P.out} sz={14}/>
+            <span>Abmelden</span>
+          </button>
+        </div>
+      </header>
+
+      {/* ═══ CONTENT ═══ */}
+      <div style={{flex:1,overflowY:'auto',background:C.bg}}>
+        <div style={{padding:'28px 28px',maxWidth:1020,margin:'0 auto'}}>
+
+          {/* ══ ÜBERSICHT ══ */}
+          {tab==='dash' && <>
+            <div style={{marginBottom:24}}>
+              <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>{MONTHS[mo]}</div>
+              <div style={{fontSize:13,color:C.sub}}>{yr}</div>
+            </div>
+            <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:20}}>
+              <KPI label="Gesamteinnahmen" val={fmt(tot.totalInc)} color={C.grn}
+                sub={'Immobilien '+fmt(tot.immoInc)+' · '+names.unternehmen+' '+fmt(tot.unterInc)} />
+              <KPI label="Gesamtausgaben" val={fmt(tot.totalExp)} color={C.red}
+                sub={'Immobilien '+fmt(tot.immoExp)+' · Privat '+fmt(tot.privatExp)} />
+              <KPI label="Nettogewinn" val={(tot.net>=0?'+':'')+fmt(tot.net)}
+                color={tot.net>=0?C.grn:C.red} sub={tot.net>=0?'Im Plus':'Im Minus'} />
+            </div>
+            <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+              <div style={{...SC,flex:2,minWidth:280}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:14}}>Immobilien</div>
+                {PROPS.map(p=>{
+                  const r=calcProp(md.props?.[p]);
+                  return (
+                    <div key={p} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:'1px solid '+C.sep}}>
+                      <span style={{fontWeight:600}}>{names[p]}</span>
+                      <div style={{display:'flex',gap:16,alignItems:'center'}}>
+                        <span style={{fontSize:12,color:C.sub}}>Ein <b style={{color:C.grn,...NUM}}>{fmt(r.netto)}</b></span>
+                        <span style={{fontSize:12,color:C.sub}}>Aus <b style={{color:C.red,...NUM}}>{fmt(r.exp)}</b></span>
+                        <b style={{color:r.gewinn>=0?C.grn:C.red,...NUM,minWidth:68,textAlign:'right'}}>{r.gewinn>=0?'+':''}{fmt(r.gewinn)}</b>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{display:'flex',justifyContent:'space-between',marginTop:12,fontWeight:700}}>
+                  <span style={{color:C.sub,fontSize:13}}>Gesamt</span>
+                  <span style={{color:(tot.immoInc-tot.immoExp)>=0?C.grn:C.red,...NUM}}>{(tot.immoInc-tot.immoExp)>=0?'+':''}{fmt(tot.immoInc-tot.immoExp)}</span>
+                </div>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:12,flex:1,minWidth:190}}>
+                <div style={SC}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:12}}>{names.unternehmen}</div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:7}}>
+                    <span style={{color:C.sub}}>Einnahmen</span><span style={{color:C.grn,...NUM}}>{fmt(tot.unterInc)}</span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
+                    <span style={{color:C.sub}}>Ausgaben</span><span style={{color:C.red,...NUM}}>{fmt(tot.unterExp)}</span>
+                  </div>
+                  <div style={{borderTop:'1px solid '+C.sep,marginTop:10,paddingTop:10,display:'flex',justifyContent:'space-between',fontWeight:700}}>
+                    <span style={{color:C.sub,fontSize:13}}>Ergebnis</span>
+                    <span style={{color:(tot.unterInc-tot.unterExp)>=0?C.grn:C.red,...NUM}}>{(tot.unterInc-tot.unterExp)>=0?'+':''}{fmt(tot.unterInc-tot.unterExp)}</span>
+                  </div>
+                </div>
+                <div style={SC}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:10}}>Privat</div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontWeight:700}}>
+                    <span style={{color:C.sub,fontSize:13}}>Ausgaben</span><span style={{color:C.red,...NUM}}>{fmt(tot.privatExp)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>}
+
+          {/* ══ IMMOBILIEN ══ */}
+          {tab==='immo' && <>
+            <div style={{display:'flex',gap:8,marginBottom:24,flexWrap:'wrap'}}>
+              {PROPS.map(p=>(
+                <button key={p} onClick={()=>setSp(p)} style={{
+                  background:sp===p?'rgba(10,132,255,0.14)':C.surf,
+                  border:'1px solid '+(sp===p?'rgba(10,132,255,0.35)':'transparent'),
+                  color:sp===p?C.pri:C.sub,borderRadius:10,padding:'8px 22px',
+                  fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
+                }}>{names[p]}</button>
+              ))}
+            </div>
+            <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+              <div style={{...SC,flex:1,minWidth:240}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
+                  <input value={names[sp]} onChange={e=>setNames(n=>({...n,[sp]:e.target.value}))}
+                    style={{background:'transparent',border:'none',padding:0,fontWeight:700,fontSize:17,color:C.txt,outline:'none',fontFamily:'inherit',flex:1,letterSpacing:'-0.02em'}} />
+                </div>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:12}}>Einnahmen</div>
+                {[['Mieteinnahmen','mieteinnahmen'],['Sonstige','sonstig']].map(([label,fld])=>(
+                  <div key={fld} style={{display:'flex',alignItems:'center',padding:'9px 0',borderBottom:'1px solid '+C.sep}}>
+                    <span style={{flex:1,fontSize:14,color:C.sub}}>{label}</span>
+                    <input type="number" min={0} value={pd.income?.[fld]||''} placeholder="0"
+                      onChange={e=>setPropInc(sp,fld,e.target.value)}
+                      style={{...SI,width:100,...NUM}} />
+                    <span style={{fontSize:12,color:C.mut,width:14}}>€</span>
+                  </div>
+                ))}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                  <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
+                  <span style={{fontSize:22,fontWeight:700,color:C.grn,...NUM}}>{fmt(pc.netto)}</span>
+                </div>
+              </div>
+              <div style={{...SC,flex:2,minWidth:280}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Ausgaben</div>
+                  <button onClick={()=>copyPrevPropExp(sp)} style={BVm}>← Vormonat</button>
+                </div>
+                {renderItems(
+                  pd.expenses||[],
+                  (id,fld,val)=>updPropExp(sp,id,fld,val),
+                  id=>delPropExp(sp,id),
+                  (id,dir)=>movePropExp(sp,id,dir),
+                  ['Immobilien', names[sp]]
+                )}
+                <AddForm onAdd={(n,a,r)=>addPropExp(sp,n,a,r)} />
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                  <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
+                  <span style={{fontSize:22,fontWeight:700,color:C.red,...NUM}}>{fmt(pc.exp)}</span>
+                </div>
+              </div>
+            </div>
+            <ResultBanner label={names[sp]} sublabel={fmt(pc.netto)+' Einnahmen · '+fmt(pc.exp)+' Ausgaben'} value={pc.gewinn} />
+          </>}
+
+          {/* ══ UNTERNEHMEN ══ */}
+          {tab==='unter' && <>
+            <div style={{marginBottom:24}}>
+              <input value={names.unternehmen} onChange={e=>setNames(n=>({...n,unternehmen:e.target.value}))}
+                style={{background:'transparent',border:'none',padding:0,fontWeight:700,fontSize:26,color:C.txt,outline:'none',fontFamily:'inherit',letterSpacing:'-0.03em',display:'block',marginBottom:3}} />
+              <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
+            </div>
+            <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+              <div style={{...SC,flex:1,minWidth:260}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:4}}>Kunden / Einnahmen</div>
+                <div style={{fontSize:12,color:C.mut,marginBottom:14}}>Monatliche Kundenzahlungen</div>
+                {renderItems(
+                  md.unternehmen?.clients||[],
+                  (id,fld,val)=>updSec('unternehmen','clients',id,fld,val),
+                  id=>delSec('unternehmen','clients',id),
+                  (id,dir)=>moveSec('unternehmen','clients',id,dir),
+                  ['Unternehmen','Kunden']
+                )}
+                <AddForm placeholder="Kundenname" onAdd={(n,a,r)=>addSec('unternehmen','clients',n,a,r)} />
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                  <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
+                  <span style={{fontSize:20,fontWeight:700,color:C.grn,...NUM}}>{fmt(tot.unterInc)}</span>
+                </div>
+              </div>
+              <div style={{...SC,flex:2,minWidth:300}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Ausgaben</div>
+                  <button onClick={()=>copyPrevSec('unternehmen','items')} style={BVm}>← Vormonat</button>
+                </div>
+                <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:12,marginTop:8}}>
+                  {UNTER_PRESETS.map(name=>(
+                    <button key={name} onClick={()=>addSec('unternehmen','items',name,0,false)} style={BPrs}>+ {name}</button>
+                  ))}
+                </div>
+                {renderItems(
+                  md.unternehmen?.items||[],
+                  (id,fld,val)=>updSec('unternehmen','items',id,fld,val),
+                  id=>delSec('unternehmen','items',id),
+                  (id,dir)=>moveSec('unternehmen','items',id,dir),
+                  ['Unternehmen','Ausgaben']
+                )}
+                <AddForm onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                  <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
+                  <span style={{fontSize:20,fontWeight:700,color:C.red,...NUM}}>{fmt(tot.unterExp)}</span>
+                </div>
+              </div>
+            </div>
+            <ResultBanner label={names.unternehmen} sublabel={fmt(tot.unterInc)+' Einnahmen · '+fmt(tot.unterExp)+' Ausgaben'} value={tot.unterInc-tot.unterExp} />
+          </>}
+
+          {/* ══ PRIVAT ══ */}
+          {tab==='privat' && <>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:24}}>
+              <div>
+                <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Privat</div>
+                <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
+              </div>
+              <button onClick={()=>copyPrevSec('privat','items')} style={{...BVm,marginTop:4}}>← Vormonat</button>
+            </div>
+            <div style={SC}>
+              <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:4}}>Ausgaben</div>
+              <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:12,marginTop:8}}>
+                {PRIV_PRESETS.map(name=>(
+                  <button key={name} onClick={()=>addSec('privat','items',name,0,false)} style={BPrs}>+ {name}</button>
+                ))}
+              </div>
+              {renderItems(
+                md.privat?.items||[],
+                (id,fld,val)=>updSec('privat','items',id,fld,val),
+                id=>delSec('privat','items',id),
+                (id,dir)=>moveSec('privat','items',id,dir),
+                ['Privat']
+              )}
+              <AddForm onAdd={(n,a,r)=>addSec('privat','items',n,a,r)} />
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:16}}>
+                <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
+                <span style={{fontSize:22,fontWeight:700,color:C.red,...NUM}}>{fmt(tot.privatExp)}</span>
+              </div>
+            </div>
+          </>}
+
+          {/* ══ JAHRESÜBERSICHT ══ */}
+          {tab==='yr' && <>
+            <div style={{marginBottom:24}}>
+              <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Jahresübersicht</div>
+              <div style={{fontSize:13,color:C.sub}}>{yr}</div>
+            </div>
+            <div style={{...SC,marginBottom:14,overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                <thead><tr>
+                  {['Monat','Immo Ein.','Immo Aus.','Unternehmen','Privat','Einnahmen','Ausgaben','Ergebnis'].map(h=>(
+                    <th key={h} style={{padding:'8px 10px',fontSize:11,fontWeight:500,color:C.sub,borderBottom:'1px solid '+C.sep,textAlign:h==='Monat'?'left':'right',letterSpacing:'0.02em'}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {yrSum.map(s=>{
+                    const ur=s.unterInc-s.unterExp;const ok=s.totalInc>0||s.totalExp>0;
+                    return (
+                      <tr key={s.m} onClick={()=>{setMo(s.m);setTab('dash');}}
+                        style={{cursor:'pointer',background:s.m===mo?'rgba(10,132,255,0.09)':'transparent'}}>
+                        <td style={{padding:'10px',fontWeight:s.m===mo?600:400,color:s.m===mo?C.txt:C.sub}}>{MONTHS[s.m]}</td>
+                        <td style={{padding:'10px',textAlign:'right',color:s.immoInc>0?C.grn:C.mut,...NUM}}>{s.immoInc>0?fmt(s.immoInc):'—'}</td>
+                        <td style={{padding:'10px',textAlign:'right',color:s.immoExp>0?C.red:C.mut,...NUM}}>{s.immoExp>0?fmt(s.immoExp):'—'}</td>
+                        <td style={{padding:'10px',textAlign:'right',color:(s.unterInc>0||s.unterExp>0)?(ur>=0?C.grn:C.red):C.mut,...NUM}}>
+                          {(s.unterInc>0||s.unterExp>0)?(ur>=0?'+':'')+fmt(ur):'—'}
+                        </td>
+                        <td style={{padding:'10px',textAlign:'right',color:s.privatExp>0?C.red:C.mut,...NUM}}>{s.privatExp>0?fmt(s.privatExp):'—'}</td>
+                        <td style={{padding:'10px',textAlign:'right',color:s.totalInc>0?C.grn:C.mut,...NUM}}>{s.totalInc>0?fmt(s.totalInc):'—'}</td>
+                        <td style={{padding:'10px',textAlign:'right',color:s.totalExp>0?C.red:C.mut,...NUM}}>{s.totalExp>0?fmt(s.totalExp):'—'}</td>
+                        <td style={{padding:'10px',textAlign:'right',fontWeight:600,color:ok?(s.net>=0?C.grn:C.red):C.mut,...NUM}}>
+                          {ok?(s.net>=0?'+':'')+fmt(s.net):'—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{borderTop:'1px solid '+C.bdrM}}>
+                    <td style={{padding:'12px',fontWeight:600,color:C.sub}}>Jahresgesamt</td>
+                    <td colSpan={4}></td>
+                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.grn,...NUM}}>{fmt(yrTot.totalInc)}</td>
+                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.red,...NUM}}>{fmt(yrTot.totalExp)}</td>
+                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:yrTot.net>=0?C.grn:C.red,...NUM}}>{yrTot.net>=0?'+':''}{fmt(yrTot.net)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+              {[
+                {label:'Jahreseinnahmen',val:fmt(yrTot.totalInc),col:C.grn,bg:C.grnL,bdr:'rgba(48,209,88,0.18)'},
+                {label:'Jahresausgaben', val:fmt(yrTot.totalExp),col:C.red,bg:C.redL,bdr:'rgba(255,69,58,0.18)'},
+                {label:'Jahresergebnis', val:(yrTot.net>=0?'+':'')+fmt(yrTot.net),col:yrTot.net>=0?C.grn:C.red,bg:yrTot.net>=0?C.grnL:C.redL,bdr:yrTot.net>=0?'rgba(48,209,88,0.18)':'rgba(255,69,58,0.18)'},
+              ].map(({label,val,col,bg,bdr})=>(
+                <div key={label} style={{flex:1,minWidth:155,background:bg,border:'1px solid '+bdr,borderRadius:16,padding:'18px 22px'}}>
+                  <div style={{fontSize:12,color:col,opacity:.8,marginBottom:8,fontWeight:500}}>{label}</div>
+                  <div style={{fontSize:26,fontWeight:700,color:col,...NUM}}>{val}</div>
+                </div>
+              ))}
+            </div>
+          </>}
+
+          {/* ══ STEUER ══ */}
+          {tab==='steuer' && <>
+            <div style={{marginBottom:24}}>
+              <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Steuer-Übersicht</div>
+              <div style={{fontSize:13,color:C.sub}}>{yr} · Mönchengladbach, NRW · Schätzungen ohne Gewähr</div>
+            </div>
+            <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:20}}>
+              <KPI label="Jahreseinnahmen"  val={fmt(yrTot.totalInc)} color={C.grn} />
+              <KPI label="Jahresausgaben"   val={fmt(yrTot.totalExp)} color={C.red} />
+              <KPI label="Jahresgewinn"      val={(yrTot.net>=0?'+':'')+fmt(yrTot.net)} color={yrTot.net>=0?C.grn:C.red} />
+            </div>
+            <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:20}}>
+              <div style={{...SC,flex:1,minWidth:200}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:10}}>Einkommensteuer</div>
+                <div style={{fontSize:12,color:C.mut,marginBottom:10}}>Basis: Jahresgewinn {fmt(Math.max(0,yrTot.net))}</div>
+                <div style={{fontSize:26,fontWeight:700,color:C.txt,...NUM,marginBottom:8}}>{fmt(taxESt)}</div>
+                {taxESt>0 ? <div style={{fontSize:12,color:C.sub,marginBottom:10}}>Effektivsteuersatz {((taxESt/Math.max(1,yrTot.net))*100).toFixed(1)} %</div> : null}
+                <div style={{background:'rgba(255,159,10,0.08)',borderRadius:8,padding:'7px 10px',fontSize:11,color:C.amb}}>
+                  Vorauszahlungen: Mrz · Jun · Sep · Dez
+                </div>
+              </div>
+              <div style={{...SC,flex:1,minWidth:200}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:10}}>Gewerbesteuer</div>
+                <div style={{fontSize:12,color:C.mut,marginBottom:10}}>Hebesatz Mönchengladbach 435 %</div>
+                <div style={{fontSize:26,fontWeight:700,color:C.txt,...NUM,marginBottom:10}}>{fmt(taxGewSt)}</div>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:C.sub,marginBottom:6}}>
+                  <span>Freibetrag</span><span style={NUM}>24.500 €</span>
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:C.sub}}>
+                  <span>{names.unternehmen}-Gewinn</span><span style={NUM}>{fmt(taxUGwn)}</span>
+                </div>
+              </div>
+            </div>
+            <div style={{background:C.ambL,border:'1px solid rgba(255,159,10,0.18)',borderRadius:16,padding:'20px 24px',marginBottom:20}}>
+              <div style={{fontSize:12,fontWeight:600,color:C.amb,marginBottom:14}}>Empfohlene Steuerrücklage</div>
+              <div style={{display:'flex',gap:32,flexWrap:'wrap',alignItems:'flex-end'}}>
+                <div>
+                  <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Geschätzte Jahressteuer</div>
+                  <div style={{fontSize:30,fontWeight:700,color:C.amb,...NUM}}>{fmt(taxTotal)}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Monatlich zurücklegen</div>
+                  <div style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmt(taxMonthly)}</div>
+                </div>
+                <div style={{fontSize:12,color:C.mut}}>ESt {fmt(taxESt)} + GewSt {fmt(taxGewSt)}</div>
+              </div>
+            </div>
+            <div style={SC}>
+              <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:14}}>NRW — Wichtige Termine & Infos</div>
+              {[
+                ['Finanzamt','Finanzamt Mönchengladbach · Finanzamt Krefeld'],
+                ['ESt-Erklärung','Bis 31. Juli des Folgejahres (mit Steuerberater: 28. Feb.)'],
+                ['ESt-Vorauszahlung','10. März · 10. Juni · 10. September · 10. Dezember'],
+                ['Gewerbesteuer','Freibetrag 24.500 € · Hebesatz MG 435 % · Anrechnung auf ESt möglich'],
+                ['Kirchensteuer','9 % der ESt in NRW (falls kirchensteuerpflichtig)'],
+                ['Airbnb / Kurzzeit','Airbnb führt USt seit 2024 direkt ab — in der EÜR dennoch angeben'],
+                ['Minijob','Pauschalabgaben ca. 31 % des Bruttolohns · über die Minijobzentrale abführen'],
+              ].map(([k,v])=>(
+                <div key={k} style={{display:'flex',gap:14,padding:'10px 0',borderBottom:'1px solid '+C.sep,fontSize:13}}>
+                  <span style={{color:C.sub,minWidth:140,flexShrink:0,fontWeight:500}}>{k}</span>
+                  <span style={{color:C.txt,lineHeight:1.5}}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </>}
+
+        </div>
+      </div>
+
+      {toast && (
+        <div style={{position:'fixed',bottom:20,right:20,maxWidth:340,zIndex:50,
+          background:C.surf2,border:'1px solid '+C.bdrM,color:C.txt,
+          padding:'11px 16px',borderRadius:10,fontSize:13,lineHeight:1.4,
+          boxShadow:'0 8px 28px rgba(0,0,0,0.45)'}}>{toast}</div>
+      )}
+    </div>
+  );
+}
+
+/* ══ Root: Login-Gate ══ */
+function Root() {
+  const [session,setSession]=useState(undefined);
+  useEffect(()=>{
+    sb.auth.getSession().then(({data})=>setSession(data.session||null));
+    const {data:sub}=sb.auth.onAuthStateChange((_e,s)=>setSession(s));
+    return ()=>{ try{sub.subscription.unsubscribe();}catch(e){} };
+  },[]);
+  if(session===undefined) return <Splash text="Wird geladen…" />;
+  if(!session) return <Login />;
+  return <App session={session} />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>
