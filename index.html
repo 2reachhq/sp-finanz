@@ -159,7 +159,7 @@ function KPI({label,val,color,sub}) {
 }
 
 /* ══ Item row ══ */
-function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, askConfirm}) {
+function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, askConfirm, onEditDetails}) {
   const [noteOpen, setNoteOpen] = useState(!!item.note);
   const fileRef = useRef();
   const hasNote = !!(item.note && item.note.trim());
@@ -224,13 +224,17 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
         />
         <span style={{fontSize:12,color:C.mut,width:14,flexShrink:0}}>€</span>
 
-        {/* Note toggle */}
-        {iconBtn(noteOpen||hasNote, P.note, 'Notiz', ()=>setNoteOpen(o=>!o))}
-
-        {/* File attach */}
-        {iconBtn(hasFile, P.clip, hasFile?item.fileName:'Datei anhängen', ()=>fileRef.current.click())}
-        <input type="file" ref={fileRef} onChange={handleFile} style={{display:'none'}}
-          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt" />
+        {onEditDetails ? (
+          /* Kunden: „Bearbeiten / Details"-Knopf statt Notiz + Datei */
+          iconBtn(false, P.note, 'Bearbeiten / Details', ()=>onEditDetails(item.id))
+        ) : (<>
+          {/* Note toggle */}
+          {iconBtn(noteOpen||hasNote, P.note, 'Notiz', ()=>setNoteOpen(o=>!o))}
+          {/* File attach */}
+          {iconBtn(hasFile, P.clip, hasFile?item.fileName:'Datei anhängen', ()=>fileRef.current.click())}
+          <input type="file" ref={fileRef} onChange={handleFile} style={{display:'none'}}
+            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt" />
+        </>)}
 
         {/* Delete */}
         <button onClick={()=>{
@@ -244,7 +248,7 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
       </div>
 
       {/* Note field */}
-      {noteOpen && (
+      {!onEditDetails && noteOpen && (
         <div style={{paddingBottom:8,paddingLeft:30}}>
           <textarea
             value={item.note||''}
@@ -261,7 +265,7 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
       )}
 
       {/* File attachment display */}
-      {hasFile && (
+      {!onEditDetails && hasFile && (
         <div style={{paddingBottom:8,paddingLeft:30,display:'flex',alignItems:'center',gap:8}}>
           <Ic p={P.clip} sz={12} col={C.pri}/>
           {item.filePath ? (
@@ -322,6 +326,66 @@ function AddForm({onAdd, placeholder='Bezeichnung'}) {
   );
 }
 
+/* ══ Kunden-Detail (Splitscreen) ══ */
+function ClientDetail({client, onUpdate, onClose, onUploadFile, onOpenFile, onDeleteFile, askConfirm}) {
+  const fileRef = useRef();
+  const set = (fld,val)=>onUpdate(client.id, fld, val);
+  const inp = {...SI, width:'100%', textAlign:'left', fontSize:14, marginTop:4};
+  const lbl = {fontSize:11,color:C.sub,fontWeight:600,display:'block'};
+  const sec = {fontSize:12,fontWeight:700,color:C.txt,margin:'18px 0 8px'};
+  const handleContract = e => {
+    const f=e.target.files[0]; if(!f) return;
+    if(f.size>10*1024*1024){ alert('Max. 10 MB pro Datei.'); return; }
+    onUploadFile(f, ['Unternehmen','Vertraege', client.name||'Kunde'], path => onUpdate(client.id,'__merge__',{contractPath:path, contractFileName:f.name}));
+    e.target.value='';
+  };
+  return (
+    <div style={{...SC, width:380, maxWidth:'100%', flexShrink:0}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+        <div style={{fontSize:17,fontWeight:700,letterSpacing:'-0.02em',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{client.name||'Kunde'}</div>
+        <button onClick={onClose} title="Schließen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:22,lineHeight:1,padding:'0 2px'}}>×</button>
+      </div>
+      <div style={{fontSize:12,color:C.mut,marginBottom:4}}>Kundendetails</div>
+
+      <div style={sec}>Kontakt</div>
+      <label style={lbl}>Ansprechpartner</label>
+      <input value={client.contactName||''} onChange={e=>set('contactName',e.target.value)} placeholder="Name" style={inp}/>
+      <label style={{...lbl,marginTop:10}}>E-Mail</label>
+      <input type="email" value={client.contactEmail||''} onChange={e=>set('contactEmail',e.target.value)} placeholder="email@beispiel.de" style={inp}/>
+      <label style={{...lbl,marginTop:10}}>Telefon</label>
+      <input value={client.contactPhone||''} onChange={e=>set('contactPhone',e.target.value)} placeholder="+49 …" style={inp}/>
+
+      <div style={sec}>Vertrag</div>
+      <div style={{display:'flex',gap:10}}>
+        <div style={{flex:1}}>
+          <label style={lbl}>von</label>
+          <input type="date" value={client.contractStart||''} onChange={e=>set('contractStart',e.target.value)} style={inp}/>
+        </div>
+        <div style={{flex:1}}>
+          <label style={lbl}>bis</label>
+          <input type="date" value={client.contractEnd||''} onChange={e=>set('contractEnd',e.target.value)} style={inp}/>
+        </div>
+      </div>
+      <div style={{marginTop:12}}>
+        {client.contractPath ? (
+          <div style={{display:'flex',alignItems:'center',gap:8,background:C.surf2,borderRadius:8,padding:'8px 10px'}}>
+            <Ic p={P.clip} sz={13} col={C.pri}/>
+            <button onClick={()=>onOpenFile(client.contractPath, client.contractFileName)} style={{background:'none',border:'none',color:C.pri,fontSize:13,fontWeight:500,cursor:'pointer',fontFamily:'inherit',padding:0,flex:1,textAlign:'left',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{client.contractFileName}</button>
+            <button onClick={()=>askConfirm('Vertrag „'+client.contractFileName+'" entfernen? Er wird auch aus dem Online-Speicher gelöscht.', ()=>{ if(client.contractPath) onDeleteFile(client.contractPath); onUpdate(client.id,'__merge__',{contractPath:null,contractFileName:''}); })} style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:15,lineHeight:1}}>×</button>
+          </div>
+        ) : (
+          <button onClick={()=>fileRef.current.click()} style={{background:C.surf2,border:'1px dashed '+C.surf3,color:C.sub,borderRadius:8,padding:'9px 12px',fontSize:13,cursor:'pointer',fontFamily:'inherit',width:'100%'}}>+ Vertrag hochladen</button>
+        )}
+        <input type="file" ref={fileRef} onChange={handleContract} style={{display:'none'}} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt"/>
+      </div>
+
+      <div style={sec}>Notizen</div>
+      <textarea value={client.note||''} onChange={e=>set('note',e.target.value)} placeholder="Notizen zum Kunden…" rows={4}
+        style={{width:'100%',background:C.surf2,border:'none',borderRadius:8,color:C.txt,padding:'8px 10px',fontSize:13,outline:'none',fontFamily:'inherit',resize:'vertical'}}/>
+    </div>
+  );
+}
+
 /* ══ Splash / Login ══ */
 function Splash({text}) {
   return <div style={{position:'fixed',inset:0,background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',color:C.sub,fontFamily:FONT,fontSize:14}}>{text}</div>;
@@ -373,6 +437,8 @@ function App({session}) {
   const [events,setEvents]= useState([]);
   const [scanMeta,setScanMeta]= useState(null);
   const [confirmState,setConfirmState]= useState(null);
+  const [unterTab,setUnterTab]= useState('einnahmen');
+  const [editClient,setEditClient]= useState(null);
   const askConfirm = (message, onConfirm, title) => setConfirmState({message, onConfirm, title: title||'Wirklich löschen?'});
   const savedRef  = useRef(true);
   const lastSigRef = useRef('');
@@ -540,7 +606,7 @@ function App({session}) {
       const p=m.props?.[pid]||emptyProp();
       const expenses=(p.expenses||[]).map(i=>{
         if(i.id!==id)return i;
-        if(fld==='__file__')return{...i,...val};
+        if(fld==='__file__'||fld==='__merge__')return{...i,...val};
         return{...i,[fld]:fld==='amount'?num(val):val};
       });
       return{...m,props:{...m.props,[pid]:{...p,expenses}}};
@@ -585,7 +651,7 @@ function App({session}) {
       const s=m[sec]||{};
       return{...m,[sec]:{...s,[sub]:(s[sub]||[]).map(i=>{
         if(i.id!==id)return i;
-        if(fld==='__file__')return{...i,...val};
+        if(fld==='__file__'||fld==='__merge__')return{...i,...val};
         return{...i,[fld]:fld==='amount'?num(val):val};
       })}};
     };
@@ -624,6 +690,7 @@ function App({session}) {
   /* Derived */
   const md    = getMD(yr,mo);
   const tot   = calcTotals(md);
+  const editClientObj = editClient ? ((md.unternehmen?.clients)||[]).find(c=>c.id===editClient) : null;
   const pd    = md.props?.[sp]||emptyProp();
   const pc    = calcProp(pd);
   const yrSum = Array.from({length:12},(_,i)=>({m:i,...calcTotals(getMD(yr,i))}));
@@ -742,7 +809,7 @@ function App({session}) {
   ];
 
   /* Reusable items renderer */
-  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn) =>
+  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn) =>
     items.map((item,idx) => (
       <ItemRow key={item.id} item={item}
         onUpdate={updFn}
@@ -757,6 +824,7 @@ function App({session}) {
         onDeleteFile={deleteFile}
         onToggleRecurring={()=>recurFn && recurFn(item)}
         askConfirm={askConfirm}
+        onEditDetails={editFn}
       />
     ));
 
@@ -982,25 +1050,53 @@ function App({session}) {
                 style={{background:'transparent',border:'none',padding:0,fontWeight:700,fontSize:26,color:C.txt,outline:'none',fontFamily:'inherit',letterSpacing:'-0.03em',display:'block',marginBottom:3}} />
               <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
             </div>
-            <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-              <div style={{...SC,flex:1,minWidth:260}}>
-                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:4}}>Kunden / Einnahmen</div>
-                <div style={{fontSize:12,color:C.mut,marginBottom:14}}>Monatliche Kundenzahlungen</div>
-                {renderItems(
-                  md.unternehmen?.clients||[],
-                  (id,fld,val)=>updSec('unternehmen','clients',id,fld,val),
-                  id=>delSec('unternehmen','clients',id),
-                  (id,dir)=>moveSec('unternehmen','clients',id,dir),
-                  ['Unternehmen','Kunden'],
-                  item=>setRecurSec('unternehmen','clients',item)
-                )}
-                <AddForm placeholder="Kundenname" onAdd={(n,a,r)=>addSec('unternehmen','clients',n,a,r)} />
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
-                  <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
-                  <span style={{fontSize:20,fontWeight:700,color:C.grn,...NUM}}>{fmt(tot.unterInc)}</span>
+            {/* Reiter: Einnahmen / Ausgaben */}
+            <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
+              {[['einnahmen','Einnahmen / Kunden'],['ausgaben','Ausgaben']].map(([id,label])=>(
+                <button key={id} onClick={()=>setUnterTab(id)} style={{
+                  background:unterTab===id?'rgba(62,207,142,0.16)':C.surf,
+                  border:'1px solid '+(unterTab===id?'rgba(62,207,142,0.45)':'transparent'),
+                  color:unterTab===id?C.pri:C.sub,borderRadius:10,padding:'8px 20px',
+                  fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
+                }}>{label}</button>
+              ))}
+            </div>
+
+            {unterTab==='einnahmen' && (
+              <div style={{display:'flex',gap:12,alignItems:'flex-start',flexWrap:'wrap'}}>
+                <div style={{...SC,flex:1,minWidth:280}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Kunden / Einnahmen</div>
+                    <button onClick={()=>copyPrevSec('unternehmen','clients')} style={BVm}>← Vormonat</button>
+                  </div>
+                  <div style={{fontSize:12,color:C.mut,marginBottom:14}}>Monatliche Kundenzahlungen · ✏️ für Vertrag, Kontakt & Notizen</div>
+                  {renderItems(
+                    md.unternehmen?.clients||[],
+                    (id,fld,val)=>updSec('unternehmen','clients',id,fld,val),
+                    id=>delSec('unternehmen','clients',id),
+                    (id,dir)=>moveSec('unternehmen','clients',id,dir),
+                    ['Unternehmen','Kunden'],
+                    item=>setRecurSec('unternehmen','clients',item),
+                    id=>setEditClient(id)
+                  )}
+                  <AddForm placeholder="Kundenname" onAdd={(n,a,r)=>addSec('unternehmen','clients',n,a,r)} />
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                    <span style={{fontSize:12,color:C.sub}}>Gesamt Einnahmen</span>
+                    <span style={{fontSize:22,fontWeight:700,color:C.grn,...NUM}}>{fmt(tot.unterInc)}</span>
+                  </div>
                 </div>
+                {editClientObj && (
+                  <ClientDetail client={editClientObj}
+                    onUpdate={(id,fld,val)=>updSec('unternehmen','clients',id,fld,val)}
+                    onClose={()=>setEditClient(null)}
+                    onUploadFile={uploadFile} onOpenFile={openFile} onDeleteFile={deleteFile}
+                    askConfirm={askConfirm} />
+                )}
               </div>
-              <div style={{...SC,flex:2,minWidth:300}}>
+            )}
+
+            {unterTab==='ausgaben' && (
+              <div style={SC}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
                   <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Ausgaben</div>
                   <button onClick={()=>copyPrevSec('unternehmen','items')} style={BVm}>← Vormonat</button>
@@ -1020,11 +1116,12 @@ function App({session}) {
                 )}
                 <AddForm onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
-                  <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
-                  <span style={{fontSize:20,fontWeight:700,color:C.red,...NUM}}>{fmt(tot.unterExp)}</span>
+                  <span style={{fontSize:12,color:C.sub}}>Gesamt Ausgaben</span>
+                  <span style={{fontSize:22,fontWeight:700,color:C.red,...NUM}}>{fmt(tot.unterExp)}</span>
                 </div>
               </div>
-            </div>
+            )}
+
             <ResultBanner label={names.unternehmen} sublabel={fmt(tot.unterInc)+' Einnahmen · '+fmt(tot.unterExp)+' Ausgaben'} value={tot.unterInc-tot.unterExp} />
           </>}
 
