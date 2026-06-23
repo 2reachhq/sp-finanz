@@ -8,10 +8,13 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
-    body { background: #121212; overflow: hidden; }
+    body { background: #0A0A0A; overflow: hidden; }
     * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
@@ -50,9 +53,10 @@ const PRIV_PRESETS  = ['Kleidung','Urlaub','Sport & Fitness','Streaming & Abos',
 
 /* ══ Apple dark palette ══ */
 const C = {
-  bg:'#121212', surf:'#1A1A1A', surf2:'#242424', surf3:'#2E2E2E',
+  bg:'#0A0A0A', surf:'#1A1A1A', surf2:'#242424', surf3:'#2E2E2E',
   bdr:'rgba(255,255,255,0.08)', bdrM:'rgba(255,255,255,0.14)',
   pri:'#3ECF8E',  priL:'rgba(62,207,142,0.14)',  priTxt:'#06190F',
+  act:'#E8A39E',  actL:'rgba(232,163,158,0.14)', actTxt:'#2A100D',
   grn:'#3ECF8E',  grnL:'rgba(62,207,142,0.10)',
   red:'#FF5A5F',  redL:'rgba(255,90,95,0.10)',
   amb:'#FFB400',  ambL:'rgba(255,180,0,0.10)',
@@ -61,7 +65,7 @@ const C = {
 };
 
 /* ══ Helpers ══ */
-const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif";
+const FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', system-ui, sans-serif";
 const NUM  = {fontVariantNumeric:'tabular-nums', letterSpacing:'-0.02em'};
 const fmt  = v => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(v||0);
 const num  = v => parseFloat(v)||0;
@@ -140,7 +144,7 @@ const estESt = g => {
 const SI  = {background:C.surf3,border:'none',borderRadius:8,color:C.txt,padding:'6px 10px',fontSize:13,textAlign:'right',outline:'none',fontFamily:'inherit'};
 const SS  = {background:C.surf2,border:'none',borderRadius:8,color:C.txt,padding:'7px 10px',fontSize:13,outline:'none',cursor:'pointer',fontFamily:'inherit',width:'100%'};
 const SHd = {background:C.surf2,border:'1px solid '+C.bdr,borderRadius:8,color:C.txt,padding:'6px 10px',fontSize:12,outline:'none',cursor:'pointer',fontFamily:'inherit'};
-const SC  = {background:C.surf,borderRadius:18,padding:20,border:'1px solid '+C.bdr};
+const SC  = {background:C.surf,borderRadius:20,padding:24,border:'1px solid '+C.bdr};
 const BVm = {background:C.priL,border:'none',color:C.pri,borderRadius:8,padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'};
 const BPrs= {background:C.priL,border:'none',color:C.pri,borderRadius:7,padding:'4px 9px',fontSize:11,fontWeight:500,cursor:'pointer',fontFamily:'inherit'};
 
@@ -177,7 +181,7 @@ function KPI({label,val,color,sub}) {
   return (
     <div style={{...SC,flex:1,minWidth:145}}>
       <div style={{fontSize:12,color:C.sub,marginBottom:8,fontWeight:500}}>{label}</div>
-      <div style={{fontSize:24,fontWeight:700,color,...NUM,lineHeight:1}}>{val}</div>
+      <div style={{fontSize:31,fontWeight:800,color,...NUM,lineHeight:1.05}}>{val}</div>
       {sub ? <div style={{fontSize:11,color:C.mut,marginTop:7,lineHeight:1.4}}>{sub}</div> : null}
     </div>
   );
@@ -340,8 +344,8 @@ function AddForm({onAdd, placeholder='Bezeichnung'}) {
           style={{...SI,width:78,...NUM}} />
         <span style={{fontSize:12,color:C.mut}}>€</span>
         <button onClick={commit} style={{
-          background:C.pri,color:C.priTxt,border:'none',borderRadius:10,
-          padding:'6px 14px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+          background:C.act,color:C.actTxt,border:'none',borderRadius:10,
+          padding:'7px 16px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
         }}>Hinzufügen</button>
         <button onClick={reset} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:18,lineHeight:1}}>×</button>
       </div>
@@ -384,7 +388,7 @@ function BulkAddButton({onAdd}) {
                 {items.map((it,i)=>(
                   <div key={i} style={{display:'flex',justifyContent:'space-between',gap:8,padding:'6px 0',borderBottom:'1px solid '+C.sep,fontSize:13}}>
                     <span style={{color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{it.name||'—'}</span>
-                    <span style={{color:it.amount?C.red:C.mut,...NUM,flexShrink:0}}>{fmt(it.amount)}</span>
+                    <span style={{color:it.amount?C.txt:C.mut,...NUM,flexShrink:0}}>{fmt(it.amount)}</span>
                   </div>
                 ))}
               </div>
@@ -503,7 +507,7 @@ function Login() {
         <label style={{fontSize:12,color:C.sub,display:'block',marginBottom:6}}>Passwort</label>
         <input type="password" value={pw} onChange={e=>setPw(e.target.value)} required style={{...inp,marginBottom:err?10:18}} />
         {err && <div style={{fontSize:12,color:C.red,marginBottom:14}}>{err}</div>}
-        <button type="submit" disabled={busy} style={{width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:12,padding:'12px',fontSize:14,fontWeight:700,cursor:busy?'default':'pointer',fontFamily:'inherit',opacity:busy?0.6:1}}>
+        <button type="submit" disabled={busy} style={{width:'100%',background:C.act,color:C.actTxt,border:'none',borderRadius:12,padding:'13px',fontSize:15,fontWeight:700,cursor:busy?'default':'pointer',fontFamily:'inherit',opacity:busy?0.6:1}}>
           {busy?'Wird eingeloggt…':'Einloggen'}
         </button>
       </form>
@@ -1036,8 +1040,8 @@ function App({session}) {
     const positive = value >= 0;
     return (
       <div style={{
-        background:positive?C.grnL:C.redL,
-        border:'1px solid '+(positive?'rgba(62,207,142,0.30)':'rgba(255,90,95,0.30)'),
+        background:positive?C.grnL:C.surf2,
+        border:'1px solid '+(positive?'rgba(62,207,142,0.30)':C.bdr),
         borderRadius:16,padding:'16px 22px',
         display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14,
       }}>
@@ -1045,7 +1049,7 @@ function App({session}) {
           <div style={{fontWeight:600,fontSize:15,marginBottom:4}}>{label}</div>
           <div style={{fontSize:12,color:C.sub}}>{sublabel}</div>
         </div>
-        <div style={{fontSize:28,fontWeight:700,color:positive?C.grn:C.red,...NUM}}>
+        <div style={{fontSize:32,fontWeight:800,color:positive?C.grn:C.txt,...NUM}}>
           {positive?'+':''}{fmt(value)}
         </div>
       </div>
@@ -1129,16 +1133,16 @@ function App({session}) {
           {/* ══ ÜBERSICHT ══ */}
           {tab==='dash' && <>
             <div style={{marginBottom:24}}>
-              <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>{MONTHS[mo]}</div>
+              <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>{MONTHS[mo]}</div>
               <div style={{fontSize:13,color:C.sub}}>{yr}</div>
             </div>
             <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:20}}>
               <KPI label="Gesamteinnahmen" val={fmt(tot.totalInc)} color={C.grn}
                 sub={'Immobilien '+fmt(tot.immoInc)+' · '+names.unternehmen+' '+fmt(tot.unterInc)} />
-              <KPI label="Gesamtausgaben" val={fmt(tot.totalExp)} color={C.red}
+              <KPI label="Gesamtausgaben" val={fmt(tot.totalExp)} color={C.txt}
                 sub={'Immobilien '+fmt(tot.immoExp)+' · Privat '+fmt(tot.privatExp)} />
               <KPI label="Nettogewinn" val={(tot.net>=0?'+':'')+fmt(tot.net)}
-                color={tot.net>=0?C.grn:C.red} sub={tot.net>=0?'Im Plus':'Im Minus'} />
+                color={tot.net>=0?C.grn:C.txt} sub={tot.net>=0?'Im Plus':'Im Minus'} />
             </div>
             <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
               <div style={{...SC,flex:2,minWidth:280}}>
@@ -1150,15 +1154,15 @@ function App({session}) {
                       <span style={{fontWeight:600}}>{names[p]}</span>
                       <div style={{display:'flex',gap:16,alignItems:'center'}}>
                         <span style={{fontSize:12,color:C.sub}}>Ein <b style={{color:C.grn,...NUM}}>{fmt(r.netto)}</b></span>
-                        <span style={{fontSize:12,color:C.sub}}>Aus <b style={{color:C.red,...NUM}}>{fmt(r.exp)}</b></span>
-                        <b style={{color:r.gewinn>=0?C.grn:C.red,...NUM,minWidth:68,textAlign:'right'}}>{r.gewinn>=0?'+':''}{fmt(r.gewinn)}</b>
+                        <span style={{fontSize:12,color:C.sub}}>Aus <b style={{color:C.txt,...NUM}}>{fmt(r.exp)}</b></span>
+                        <b style={{color:r.gewinn>=0?C.grn:C.txt,...NUM,minWidth:68,textAlign:'right'}}>{r.gewinn>=0?'+':''}{fmt(r.gewinn)}</b>
                       </div>
                     </div>
                   );
                 })}
                 <div style={{display:'flex',justifyContent:'space-between',marginTop:12,fontWeight:700}}>
                   <span style={{color:C.sub,fontSize:13}}>Gesamt</span>
-                  <span style={{color:(tot.immoInc-tot.immoExp)>=0?C.grn:C.red,...NUM}}>{(tot.immoInc-tot.immoExp)>=0?'+':''}{fmt(tot.immoInc-tot.immoExp)}</span>
+                  <span style={{color:(tot.immoInc-tot.immoExp)>=0?C.grn:C.txt,...NUM}}>{(tot.immoInc-tot.immoExp)>=0?'+':''}{fmt(tot.immoInc-tot.immoExp)}</span>
                 </div>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:12,flex:1,minWidth:190}}>
@@ -1168,17 +1172,17 @@ function App({session}) {
                     <span style={{color:C.sub}}>Einnahmen</span><span style={{color:C.grn,...NUM}}>{fmt(tot.unterInc)}</span>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
-                    <span style={{color:C.sub}}>Ausgaben</span><span style={{color:C.red,...NUM}}>{fmt(tot.unterExp)}</span>
+                    <span style={{color:C.sub}}>Ausgaben</span><span style={{color:C.txt,...NUM}}>{fmt(tot.unterExp)}</span>
                   </div>
                   <div style={{borderTop:'1px solid '+C.sep,marginTop:10,paddingTop:10,display:'flex',justifyContent:'space-between',fontWeight:700}}>
                     <span style={{color:C.sub,fontSize:13}}>Ergebnis</span>
-                    <span style={{color:(tot.unterInc-tot.unterExp)>=0?C.grn:C.red,...NUM}}>{(tot.unterInc-tot.unterExp)>=0?'+':''}{fmt(tot.unterInc-tot.unterExp)}</span>
+                    <span style={{color:(tot.unterInc-tot.unterExp)>=0?C.grn:C.txt,...NUM}}>{(tot.unterInc-tot.unterExp)>=0?'+':''}{fmt(tot.unterInc-tot.unterExp)}</span>
                   </div>
                 </div>
                 <div style={SC}>
                   <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:10}}>Privat</div>
                   <div style={{display:'flex',justifyContent:'space-between',fontWeight:700}}>
-                    <span style={{color:C.sub,fontSize:13}}>Ausgaben</span><span style={{color:C.red,...NUM}}>{fmt(tot.privatExp)}</span>
+                    <span style={{color:C.sub,fontSize:13}}>Ausgaben</span><span style={{color:C.txt,...NUM}}>{fmt(tot.privatExp)}</span>
                   </div>
                 </div>
               </div>
@@ -1274,7 +1278,7 @@ function App({session}) {
                 <BulkAddButton onAdd={(n,a,r)=>addPropExp(sp,n,a,r)} />
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
                   <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
-                  <span style={{fontSize:22,fontWeight:700,color:C.red,...NUM}}>{fmt(pc.exp)}</span>
+                  <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmt(pc.exp)}</span>
                 </div>
               </div>
             </div>
@@ -1357,7 +1361,7 @@ function App({session}) {
                 <BulkAddButton onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
                   <span style={{fontSize:12,color:C.sub}}>Gesamt Ausgaben</span>
-                  <span style={{fontSize:22,fontWeight:700,color:C.red,...NUM}}>{fmt(tot.unterExp)}</span>
+                  <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmt(tot.unterExp)}</span>
                 </div>
               </div>
             )}
@@ -1369,7 +1373,7 @@ function App({session}) {
           {tab==='privat' && <>
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:24}}>
               <div>
-                <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Privat</div>
+                <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Privat</div>
                 <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
               </div>
             </div>
@@ -1394,7 +1398,7 @@ function App({session}) {
               <BulkAddButton onAdd={(n,a,r)=>addSec('privat','items',n,a,r)} />
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:16}}>
                 <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
-                <span style={{fontSize:22,fontWeight:700,color:C.red,...NUM}}>{fmt(tot.privatExp)}</span>
+                <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmt(tot.privatExp)}</span>
               </div>
             </div>
           </>}
@@ -1402,7 +1406,7 @@ function App({session}) {
           {/* ══ JAHRESÜBERSICHT ══ */}
           {tab==='yr' && <>
             <div style={{marginBottom:24}}>
-              <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Jahresübersicht</div>
+              <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Jahresübersicht</div>
               <div style={{fontSize:13,color:C.sub}}>{yr}</div>
             </div>
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
@@ -1480,7 +1484,7 @@ function App({session}) {
           {/* ══ STEUER ══ */}
           {tab==='steuer' && <>
             <div style={{marginBottom:24}}>
-              <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Steuer-Übersicht</div>
+              <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Steuer-Übersicht</div>
               <div style={{fontSize:13,color:C.sub}}>{yr} · Mönchengladbach, NRW · Schätzungen ohne Gewähr</div>
             </div>
             <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:20}}>
@@ -1547,7 +1551,7 @@ function App({session}) {
           {tab==='kal' && <>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:12}}>
               <div>
-                <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Events {yr}</div>
+                <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Events {yr}</div>
                 <div style={{fontSize:13,color:C.sub}}>Mönchengladbach · Nachfrage-Treiber fürs ganze Jahr</div>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
