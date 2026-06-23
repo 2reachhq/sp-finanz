@@ -198,7 +198,7 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
     if(onUploadFile&&folderPath) onUploadFile(f, folderPath, filePath=>onUpdate(item.id,'__file__',{filePath,fileName:f.name,fileData:null}));
     e.target.value='';
   };
-  const badge=(icon,col,title)=>(<span title={title} style={{display:'flex',alignItems:'center'}}><Ic p={icon} sz={11} col={col}/></span>);
+  const chip=(icon,col,label,onClick)=>(<span onClick={onClick} style={{display:'inline-flex',alignItems:'center',gap:4,background:C.surf2,color:col,borderRadius:6,padding:'3px 8px',fontSize:11,fontWeight:500,whiteSpace:'nowrap',cursor:onClick?'pointer':'default'}}><Ic p={icon} sz={11} col={col}/>{label}</span>);
   const menuBtn={display:'flex',alignItems:'center',gap:8,width:'100%',background:C.surf2,border:'none',borderRadius:10,padding:'10px 12px',fontSize:13,color:C.txt,cursor:'pointer',fontFamily:'inherit',marginTop:8,textAlign:'left'};
 
   return (
@@ -216,13 +216,6 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
             display:'flex',alignItems:'center',justifyContent:'center'}}>
           <Ic p={P.repeat} sz={13} col={item.recurring?C.amb:C.mut}/>
         </button>
-        {(hasNote||hasFile||hasUntil) && (
-          <div style={{display:'flex',gap:4,alignItems:'center',flexShrink:0}}>
-            {hasUntil && badge(P.cal,C.sub,'Gültig bis '+MONTHS[item.until.m]+' '+item.until.y)}
-            {hasNote && badge(P.note,C.mut,'Notiz')}
-            {hasFile && badge(P.clip,C.mut,'Datei')}
-          </div>
-        )}
         <button onClick={()=>setMenuOpen(true)} title="Optionen" style={{
           background:'none',border:'none',color:C.sub,cursor:'pointer',flexShrink:0,
           width:26,height:26,borderRadius:6,fontSize:18,lineHeight:1,fontFamily:'inherit',
@@ -230,6 +223,13 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
         }}>⋮</button>
         <input type="file" ref={fileRef} onChange={handleFile} style={{display:'none'}} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt" />
       </div>
+      {(hasUntil||hasNote||hasFile) && (
+        <div style={{display:'flex',flexWrap:'wrap',gap:5,padding:'0 0 9px 2px',marginTop:-3}}>
+          {hasUntil && chip(P.cal,C.sub,'bis '+MONTHS[item.until.m]+' '+item.until.y, ()=>setMenuOpen(true))}
+          {hasNote && chip(P.note,C.mut,'Notiz', ()=>setMenuOpen(true))}
+          {hasFile && chip(P.clip,C.mut,'Datei', ()=>setMenuOpen(true))}
+        </div>
+      )}
 
       {menuOpen && (
         <div onClick={()=>setMenuOpen(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:20}}>
@@ -331,6 +331,52 @@ function AddForm({onAdd, placeholder='Bezeichnung'}) {
         padding:'5px 11px',fontSize:11,fontWeight:500,cursor:'pointer',fontFamily:'inherit',
       }}>{recur?'🔁 Für alle Monate dieses Jahres':'📅 Nur dieser Monat'}</button>
     </div>
+  );
+}
+
+/* ══ Sammel-Eingabe: mehrere Ausgaben per Text einfügen ══ */
+function BulkAddButton({onAdd}) {
+  const [open,setOpen]=useState(false);
+  const [text,setText]=useState('');
+  const parse=(t)=> (t||'').split(/[\n;,]+/).map(s=>s.trim()).filter(Boolean).map(chunk=>{
+    const m=chunk.match(/^(.*?)[\s:]+(-?\d[\d.]*)\s*€?$/);
+    if(m && m[1].trim()) return {name:m[1].trim(), amount:parseFloat(m[2])||0};
+    return {name:chunk, amount:0};
+  });
+  const items=parse(text);
+  const commit=()=>{ items.forEach(it=>onAdd(it.name, it.amount, false)); setText(''); setOpen(false); };
+  return (
+    <>
+      <button onClick={()=>setOpen(true)} style={{background:'none',border:'1px dashed '+C.surf3,color:C.mut,borderRadius:8,padding:'7px 14px',fontSize:13,cursor:'pointer',fontFamily:'inherit',marginTop:6,width:'100%'}}>⚡ Mehrere auf einmal einfügen</button>
+      {open && (
+        <div onClick={()=>setOpen(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,padding:'22px 24px',maxWidth:480,width:'100%',maxHeight:'85vh',overflowY:'auto',boxShadow:'0 16px 48px rgba(0,0,0,0.5)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+              <div style={{fontSize:16,fontWeight:700}}>Mehrere Ausgaben einfügen</div>
+              <button onClick={()=>setOpen(false)} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:22,lineHeight:1}}>×</button>
+            </div>
+            <div style={{fontSize:12,color:C.mut,marginBottom:12,lineHeight:1.5}}>Eine Ausgabe pro Zeile (oder mit Komma getrennt). Format: <b>Bezeichnung Betrag</b>.<br/>z. B. „Strom 120, Wasser 45, Internet 50". Für Cent bitte Punkt: 49.90</div>
+            <textarea autoFocus value={text} onChange={e=>setText(e.target.value)} rows={6} placeholder={"Strom 120\nWasser 45\nInternet 50"}
+              style={{width:'100%',background:C.surf2,border:'none',borderRadius:10,color:C.txt,padding:'10px 12px',fontSize:14,outline:'none',fontFamily:'inherit',resize:'vertical',lineHeight:1.6}} />
+            {items.length>0 && (
+              <div style={{marginTop:12,maxHeight:170,overflowY:'auto'}}>
+                <div style={{fontSize:11,color:C.mut,marginBottom:6,fontWeight:600}}>Vorschau · {items.length} {items.length===1?'Eintrag':'Einträge'}</div>
+                {items.map((it,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',gap:8,padding:'6px 0',borderBottom:'1px solid '+C.sep,fontSize:13}}>
+                    <span style={{color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{it.name||'—'}</span>
+                    <span style={{color:it.amount?C.red:C.mut,...NUM,flexShrink:0}}>{fmt(it.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:16}}>
+              <button onClick={()=>setOpen(false)} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:10,padding:'9px 16px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Abbrechen</button>
+              <button onClick={commit} disabled={!items.length} style={{background:C.pri,border:'none',color:C.priTxt,borderRadius:10,padding:'9px 16px',fontSize:13,fontWeight:700,cursor:items.length?'pointer':'default',opacity:items.length?1:0.5,fontFamily:'inherit'}}>{items.length||0} hinzufügen</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1173,6 +1219,7 @@ function App({session}) {
                   item=>setRecurPropExp(sp,item)
                 )}
                 <AddForm onAdd={(n,a,r)=>addPropExp(sp,n,a,r)} />
+                <BulkAddButton onAdd={(n,a,r)=>addPropExp(sp,n,a,r)} />
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
                   <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
                   <span style={{fontSize:22,fontWeight:700,color:C.red,...NUM}}>{fmt(pc.exp)}</span>
@@ -1252,6 +1299,7 @@ function App({session}) {
                   item=>setRecurSec('unternehmen','items',item)
                 )}
                 <AddForm onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
+                <BulkAddButton onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
                   <span style={{fontSize:12,color:C.sub}}>Gesamt Ausgaben</span>
                   <span style={{fontSize:22,fontWeight:700,color:C.red,...NUM}}>{fmt(tot.unterExp)}</span>
@@ -1286,6 +1334,7 @@ function App({session}) {
                 item=>setRecurSec('privat','items',item)
               )}
               <AddForm onAdd={(n,a,r)=>addSec('privat','items',n,a,r)} />
+              <BulkAddButton onAdd={(n,a,r)=>addSec('privat','items',n,a,r)} />
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:16}}>
                 <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
                 <span style={{fontSize:22,fontWeight:700,color:C.red,...NUM}}>{fmt(tot.privatExp)}</span>
