@@ -208,9 +208,16 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
           style={{...SI,flex:1,width:'auto',textAlign:'left',fontSize:14}} />
         <CalcField value={item.amount} onCommit={v=>onUpdate(item.id,'amount',v)} style={{...SI,width:84,...NUM}} />
         <span style={{fontSize:12,color:C.mut,width:12,flexShrink:0}}>€</span>
-        {(item.recurring||hasNote||hasFile||hasUntil) && (
+        {/* Jeden-Monat-Schalter — immer sichtbar, klickbar (grau = aus, gelb = an) */}
+        <button onClick={()=>onToggleRecurring&&onToggleRecurring()}
+          title={item.recurring?'Jeden Monat aktiv — Betrag gilt für alle Monate. Klicken zum Ausschalten.':'Nur dieser Monat — klicken, damit der Betrag für jeden Monat gilt'}
+          style={{width:24,height:24,border:'none',borderRadius:6,cursor:'pointer',flexShrink:0,padding:0,
+            background:item.recurring?C.ambL:'transparent',
+            display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <Ic p={P.repeat} sz={13} col={item.recurring?C.amb:C.mut}/>
+        </button>
+        {(hasNote||hasFile||hasUntil) && (
           <div style={{display:'flex',gap:4,alignItems:'center',flexShrink:0}}>
-            {item.recurring && badge(P.repeat,C.amb,'Jeden Monat')}
             {hasUntil && badge(P.cal,C.sub,'Gültig bis '+MONTHS[item.until.m]+' '+item.until.y)}
             {hasNote && badge(P.note,C.mut,'Notiz')}
             {hasFile && badge(P.clip,C.mut,'Datei')}
@@ -238,9 +245,6 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
               </button>
             )}
 
-            <button onClick={()=>onToggleRecurring&&onToggleRecurring()} style={{...menuBtn,background:item.recurring?C.ambL:C.surf2,color:item.recurring?C.amb:C.txt}}>
-              <Ic p={P.repeat} sz={15} col={item.recurring?C.amb:C.sub}/> <span>{item.recurring?'Jeden Monat (aktiv) — klicken zum Ausschalten':'Für jeden Monat übernehmen'}</span>
-            </button>
 
             <div style={{background:C.surf2,borderRadius:10,padding:'10px 12px',marginTop:8}}>
               <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}>
