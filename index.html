@@ -736,7 +736,7 @@ function App({session}) {
     {id:'immo',   label:'Immobilien',   icon:P.house},
     {id:'unter',  label:names.unternehmen, icon:P.brief},
     {id:'privat', label:'Privat',       icon:P.prson},
-    {id:'kal',    label:'Termine',      icon:P.note},
+    {id:'kal',    label:'Events',       icon:P.bed},
     {id:'yr',     label:'Jahresübersicht', icon:P.cal},
     {id:'steuer', label:'Steuer',       icon:P.doc},
   ];
@@ -1190,7 +1190,7 @@ function App({session}) {
           {tab==='kal' && <>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:12}}>
               <div>
-                <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Termine {yr}</div>
+                <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Events {yr}</div>
                 <div style={{fontSize:13,color:C.sub}}>Mönchengladbach · Nachfrage-Treiber fürs ganze Jahr</div>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
