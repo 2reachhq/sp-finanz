@@ -95,6 +95,10 @@ const emptyMonth   = () => ({
 
 /* ══ Calculations ══ */
 const incomeVal = (inc, fld) => {
+  if((fld==='airbnb'||fld==='booking') && inc && inc.ins && inc.ins[fld]){
+    const vals = Object.values(inc.ins[fld]);
+    if(vals.length) return vals.reduce((s,v)=>s+num(v),0);
+  }
   const d = inc && inc.detail && inc.detail[fld];
   if(Array.isArray(d) && d.length) return d.reduce((s,i)=>s+num(i.amount),0);
   return num(inc && inc[fld]);
@@ -626,6 +630,25 @@ function App({session}) {
     const income={...p.income, detail:{...(p.income?.detail||{}), [fld]:items}};
     return{...m,props:{...m.props,[pid]:{...p,income}}};
   });
+  /* Inserate (pro Standort, global) + Beträge (pro Monat/Kanal) */
+  const setInserate=(pid,list)=>setNames(n=>({...n, inserate:{...(n.inserate||{}), [pid]:list}}));
+  const setInsAmount=(pid,ch,id,val)=>upd(m=>{
+    const p=m.props?.[pid]||emptyProp();
+    const ins=p.income?.ins||{};
+    const income={...p.income, ins:{...ins, [ch]:{...(ins[ch]||{}), [id]:num(val)}}};
+    return{...m,props:{...m.props,[pid]:{...p,income}}};
+  });
+  const deleteInserat=(pid,id)=>{
+    setInserate(pid, (names.inserate?.[pid]||[]).filter(i=>i.id!==id));
+    setData(prev=>{
+      const nd=JSON.parse(JSON.stringify(prev));
+      Object.keys(nd).forEach(y=>Object.keys(nd[y]||{}).forEach(mm=>{
+        const p=nd[y][mm] && nd[y][mm].props && nd[y][mm].props[pid];
+        if(p && p.income && p.income.ins){ ['airbnb','booking'].forEach(ch=>{ if(p.income.ins[ch]) delete p.income.ins[ch][id]; }); }
+      }));
+      return nd;
+    });
+  };
   const toggleRecurIncome=(pid,fld)=>{
     const inc=(md.props?.[pid]?.income)||{};
     const on=!(inc.recur && inc.recur[fld]);
@@ -726,6 +749,34 @@ function App({session}) {
     const pm=mo===0?11:mo-1;const py=mo===0?yr-1:yr;
     const prev=(getMD(py,pm)[sec]?.[sub]||[]).map(i=>({...i,id:uid()}));
     upd(md=>{const s=md[sec]||{};return{...md,[sec]:{...s,[sub]:prev}};});
+  };
+  /* In den nächsten Monat kopieren */
+  const copyNextPropExp=pid=>{
+    const nm=mo===11?0:mo+1; const ny=mo===11?yr+1:yr;
+    const cur=(getMD(yr,mo).props?.[pid]?.expenses||[]).map(i=>({...i,id:uid()}));
+    setData(prev=>{
+      const nd=JSON.parse(JSON.stringify(prev));
+      if(!nd[ny]) nd[ny]={};
+      if(!nd[ny][nm]) nd[ny][nm]=emptyMonth();
+      if(!nd[ny][nm].props) nd[ny][nm].props={};
+      const p=nd[ny][nm].props[pid]||emptyProp();
+      nd[ny][nm].props[pid]={...p,expenses:cur};
+      return nd;
+    });
+    setToast('Ausgaben → '+MONTHS[nm]+' kopiert');
+  };
+  const copyNextSec=(sec,sub)=>{
+    const nm=mo===11?0:mo+1; const ny=mo===11?yr+1:yr;
+    const cur=(getMD(yr,mo)[sec]?.[sub]||[]).map(i=>({...i,id:uid()}));
+    setData(prev=>{
+      const nd=JSON.parse(JSON.stringify(prev));
+      if(!nd[ny]) nd[ny]={};
+      if(!nd[ny][nm]) nd[ny][nm]=emptyMonth();
+      const s=nd[ny][nm][sec]||{};
+      nd[ny][nm][sec]={...s,[sub]:cur};
+      return nd;
+    });
+    setToast('→ '+MONTHS[nm]+' kopiert');
   };
 
   /* Derived */
@@ -1057,27 +1108,27 @@ function App({session}) {
                   <input value={names[sp]} onChange={e=>setNames(n=>({...n,[sp]:e.target.value}))}
                     style={{background:'transparent',border:'none',padding:0,fontWeight:700,fontSize:17,color:C.txt,outline:'none',fontFamily:'inherit',flex:1,letterSpacing:'-0.02em'}} />
                 </div>
-                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:12}}>Einnahmen</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Einnahmen</div>
+                  <button onClick={()=>setEditIncome(true)} style={BVm} title="Inserate anlegen (gelten für Airbnb & Booking, jeden Monat)">＋ Inserate</button>
+                </div>
                 {[['Mieteinnahmen','mieteinnahmen'],['Airbnb','airbnb'],['Booking','booking'],['Sonstige','sonstig']].map(([label,fld])=>{
                   const rec = !!(pd.income?.recur && pd.income.recur[fld]);
-                  const detail = pd.income?.detail?.[fld] || [];
-                  const hasDetail = detail.length>0;
-                  const sum = detail.reduce((s,i)=>s+num(i.amount),0);
+                  const inserate = names.inserate?.[sp] || [];
+                  const channelLocked = (fld==='airbnb'||fld==='booking') && inserate.length>0;
                   return (
                   <div key={fld} style={{display:'flex',alignItems:'center',gap:6,padding:'9px 0',borderBottom:'1px solid '+C.sep}}>
-                    <span style={{flex:1,fontSize:14,color:C.sub}}>{label}{hasDetail?<span style={{fontSize:11,color:C.mut,marginLeft:6}}>· {detail.length} {detail.length===1?'Posten':'Posten'}</span>:null}</span>
-                    <button onClick={()=>toggleRecurIncome(sp,fld)}
-                      title={rec?'Wird jeden Monat übernommen — klicken zum Ausschalten':'Nur dieser Monat — klicken, um jeden Monat zu übernehmen'}
-                      style={{width:24,height:24,border:'none',borderRadius:6,cursor:'pointer',flexShrink:0,padding:0,
-                        background:rec?C.ambL:'transparent',
-                        display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.repeat} sz={12} col={rec?C.amb:C.mut}/></button>
-                    <button onClick={()=>setEditIncome(fld)} title="Aufschlüsseln (z. B. pro Inserat)"
-                      style={{width:24,height:24,border:'none',borderRadius:6,cursor:'pointer',flexShrink:0,padding:0,
-                        background:hasDetail?C.priL:'transparent',
-                        display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.note} sz={13} col={hasDetail?C.pri:C.mut}/></button>
-                    {hasDetail ? (
-                      <div onClick={()=>setEditIncome(fld)} title="Aufschlüsselung öffnen"
-                        style={{...SI,width:96,...NUM,display:'flex',alignItems:'center',justifyContent:'flex-end',cursor:'pointer',color:C.pri,fontWeight:600}}>{sum}</div>
+                    <span style={{flex:1,fontSize:14,color:C.sub}}>{label}{channelLocked?<span style={{fontSize:11,color:C.mut,marginLeft:6}}>· {inserate.length} Inserate</span>:null}</span>
+                    {!channelLocked && (
+                      <button onClick={()=>toggleRecurIncome(sp,fld)}
+                        title={rec?'Wird jeden Monat übernommen — klicken zum Ausschalten':'Nur dieser Monat — klicken, um jeden Monat zu übernehmen'}
+                        style={{width:24,height:24,border:'none',borderRadius:6,cursor:'pointer',flexShrink:0,padding:0,
+                          background:rec?C.ambL:'transparent',
+                          display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.repeat} sz={12} col={rec?C.amb:C.mut}/></button>
+                    )}
+                    {channelLocked ? (
+                      <div onClick={()=>setEditIncome(true)} title="Beträge über Inserate eintragen"
+                        style={{...SI,width:96,...NUM,display:'flex',alignItems:'center',justifyContent:'flex-end',cursor:'pointer',color:C.pri,fontWeight:600}}>{incomeVal(pd.income,fld)}</div>
                     ) : (
                       <CalcField value={pd.income?.[fld]} onCommit={v=>setPropInc(sp,fld,v)} style={{...SI,width:96,...NUM}} />
                     )}
@@ -1093,7 +1144,10 @@ function App({session}) {
               <div style={{...SC,flex:2,minWidth:280}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
                   <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Ausgaben</div>
-                  <button onClick={()=>copyPrevPropExp(sp)} style={BVm}>← Vormonat</button>
+                  <div style={{display:'flex',gap:6}}>
+                    <button onClick={()=>copyPrevPropExp(sp)} style={BVm}>← Vormonat</button>
+                    <button onClick={()=>copyNextPropExp(sp)} style={BVm}>Nachmonat →</button>
+                  </div>
                 </div>
                 {renderItems(
                   pd.expenses||[],
@@ -1137,7 +1191,10 @@ function App({session}) {
                 <div style={{...SC,flex:1,minWidth:280}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
                     <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Kunden / Einnahmen</div>
-                    <button onClick={()=>copyPrevSec('unternehmen','clients')} style={BVm}>← Vormonat</button>
+                    <div style={{display:'flex',gap:6}}>
+                      <button onClick={()=>copyPrevSec('unternehmen','clients')} style={BVm}>← Vormonat</button>
+                      <button onClick={()=>copyNextSec('unternehmen','clients')} style={BVm}>Nachmonat →</button>
+                    </div>
                   </div>
                   <div style={{fontSize:12,color:C.mut,marginBottom:14}}>Monatliche Kundenzahlungen · ✏️ für Vertrag, Kontakt & Notizen</div>
                   {renderItems(
@@ -1169,7 +1226,10 @@ function App({session}) {
               <div style={SC}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
                   <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Ausgaben</div>
-                  <button onClick={()=>copyPrevSec('unternehmen','items')} style={BVm}>← Vormonat</button>
+                  <div style={{display:'flex',gap:6}}>
+                    <button onClick={()=>copyPrevSec('unternehmen','items')} style={BVm}>← Vormonat</button>
+                    <button onClick={()=>copyNextSec('unternehmen','items')} style={BVm}>Nachmonat →</button>
+                  </div>
                 </div>
                 <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:12,marginTop:8}}>
                   {UNTER_PRESETS.map(name=>(
@@ -1202,7 +1262,10 @@ function App({session}) {
                 <div style={{fontSize:26,fontWeight:700,letterSpacing:'-0.03em',marginBottom:3}}>Privat</div>
                 <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
               </div>
-              <button onClick={()=>copyPrevSec('privat','items')} style={{...BVm,marginTop:4}}>← Vormonat</button>
+              <div style={{display:'flex',gap:6,marginTop:4}}>
+                <button onClick={()=>copyPrevSec('privat','items')} style={BVm}>← Vormonat</button>
+                <button onClick={()=>copyNextSec('privat','items')} style={BVm}>Nachmonat →</button>
+              </div>
             </div>
             <div style={SC}>
               <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:4}}>Ausgaben</div>
@@ -1404,36 +1467,44 @@ function App({session}) {
       </div>
 
       {editIncome && (()=>{
-        const fld = editIncome;
-        const labels = {mieteinnahmen:'Mieteinnahmen',airbnb:'Airbnb',booking:'Booking',sonstig:'Sonstige'};
-        const items = (pd.income?.detail?.[fld]) || [];
-        const total = items.reduce((s,i)=>s+num(i.amount),0);
-        const setItems = next => setIncomeDetail(sp, fld, next);
+        const list = names.inserate?.[sp] || [];
+        const insMap = pd.income?.ins || {};
+        const amt = (ch,id) => (insMap[ch]||{})[id];
+        const sumA = list.reduce((s,it)=>s+num(amt('airbnb',it.id)),0);
+        const sumB = list.reduce((s,it)=>s+num(amt('booking',it.id)),0);
         return (
           <div onClick={()=>setEditIncome(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:20}}>
-            <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,padding:'22px 24px',maxWidth:480,width:'100%',maxHeight:'85vh',overflowY:'auto',boxShadow:'0 16px 48px rgba(0,0,0,0.5)'}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,padding:'22px 24px',maxWidth:560,width:'100%',maxHeight:'85vh',overflowY:'auto',boxShadow:'0 16px 48px rgba(0,0,0,0.5)'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                <div style={{fontSize:17,fontWeight:700,letterSpacing:'-0.02em'}}>{labels[fld]} · Aufschlüsselung</div>
+                <div style={{fontSize:17,fontWeight:700,letterSpacing:'-0.02em'}}>Inserate · {names[sp]}</div>
                 <button onClick={()=>setEditIncome(null)} title="Schließen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:22,lineHeight:1,padding:'0 2px'}}>×</button>
               </div>
-              <div style={{fontSize:12,color:C.mut,marginBottom:14}}>{names[sp]} · {MONTHS[mo]} {yr} — einzelne Posten (z. B. pro Inserat). Die Summe wird oben automatisch übernommen.</div>
-              {items.length===0 && <div style={{fontSize:13,color:C.mut,padding:'8px 0'}}>Noch keine Posten — füge unten welche hinzu.</div>}
-              {items.map(it=>(
-                <div key={it.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:'1px solid '+C.sep}}>
-                  <input value={it.name} placeholder="Bezeichnung (z. B. Inserat Whg. A)…"
-                    onChange={e=>setItems(items.map(x=>x.id===it.id?{...x,name:e.target.value}:x))}
+              <div style={{fontSize:12,color:C.mut,marginBottom:14}}>Inserate gelten für <b>alle Monate</b> (Airbnb &amp; Booking). Die Beträge trägst du pro Monat ein — gerade: <b>{MONTHS[mo]} {yr}</b>.</div>
+              {list.length===0 && <div style={{fontSize:13,color:C.mut,padding:'8px 0'}}>Noch keine Inserate — füge unten welche hinzu (z. B. „Whg. A").</div>}
+              {list.length>0 && (
+                <div style={{display:'flex',alignItems:'center',gap:8,padding:'0 0 6px'}}>
+                  <span style={{flex:1,fontSize:11,color:C.mut,fontWeight:600}}>Inserat</span>
+                  <span style={{width:84,fontSize:11,color:C.mut,fontWeight:600,textAlign:'right'}}>Airbnb €</span>
+                  <span style={{width:84,fontSize:11,color:C.mut,fontWeight:600,textAlign:'right'}}>Booking €</span>
+                  <span style={{width:24}} />
+                </div>
+              )}
+              {list.map(it=>(
+                <div key={it.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid '+C.sep}}>
+                  <input value={it.name} placeholder="Inserat-Name (z. B. Whg. A)…"
+                    onChange={e=>setInserate(sp, list.map(x=>x.id===it.id?{...x,name:e.target.value}:x))}
                     style={{...SI,flex:1,width:'auto',textAlign:'left',fontSize:14}} />
-                  <CalcField value={it.amount} onCommit={v=>setItems(items.map(x=>x.id===it.id?{...x,amount:num(v)}:x))} style={{...SI,width:90,...NUM}} />
-                  <span style={{fontSize:12,color:C.mut,width:12}}>€</span>
-                  <button onClick={()=>setItems(items.filter(x=>x.id!==it.id))} title="Löschen"
+                  <CalcField value={amt('airbnb',it.id)} onCommit={v=>setInsAmount(sp,'airbnb',it.id,v)} style={{...SI,width:84,...NUM}} />
+                  <CalcField value={amt('booking',it.id)} onCommit={v=>setInsAmount(sp,'booking',it.id,v)} style={{...SI,width:84,...NUM}} />
+                  <button onClick={()=>askConfirm('Inserat „'+(it.name||'ohne Namen')+'" wirklich löschen? Es verschwindet aus allen Monaten (Airbnb & Booking).', ()=>deleteInserat(sp,it.id))} title="Inserat löschen"
                     style={{background:'rgba(255,90,95,0.12)',border:'none',color:C.red,borderRadius:6,width:24,height:24,cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.trash} sz={12} col={C.red}/></button>
                 </div>
               ))}
-              <button onClick={()=>setItems([...items,{id:uid(),name:'',amount:0}])}
-                style={{background:'none',border:'1px dashed '+C.surf3,color:C.mut,borderRadius:8,padding:'8px 14px',fontSize:13,cursor:'pointer',fontFamily:'inherit',width:'100%',marginTop:10}}>+ Posten hinzufügen</button>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:16,paddingTop:12,borderTop:'1px solid '+C.bdrM}}>
-                <span style={{fontSize:13,color:C.sub,fontWeight:600}}>Summe {labels[fld]}</span>
-                <span style={{fontSize:20,fontWeight:700,color:C.grn,...NUM}}>{fmt(total)}</span>
+              <button onClick={()=>setInserate(sp,[...list,{id:uid(),name:''}])}
+                style={{background:'none',border:'1px dashed '+C.surf3,color:C.mut,borderRadius:8,padding:'8px 14px',fontSize:13,cursor:'pointer',fontFamily:'inherit',width:'100%',marginTop:10}}>+ Inserat hinzufügen</button>
+              <div style={{display:'flex',justifyContent:'flex-end',gap:24,alignItems:'center',marginTop:16,paddingTop:12,borderTop:'1px solid '+C.bdrM}}>
+                <span style={{fontSize:13,color:C.sub}}>Summe Airbnb <b style={{color:C.grn,...NUM}}>{fmt(sumA)}</b></span>
+                <span style={{fontSize:13,color:C.sub}}>Summe Booking <b style={{color:C.grn,...NUM}}>{fmt(sumB)}</b></span>
               </div>
             </div>
           </div>
