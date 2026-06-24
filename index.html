@@ -230,6 +230,9 @@ const P = {
   upload:'M12 3v13 M7 8l5-5 5 5 M5 21h14',
   plus:  'M12 5v14 M5 12h14',
   swap:  'M7 16V4 M3 8l4-4 4 4 M17 8v12 M21 16l-4 4-4-4',
+  spark: 'M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z',
+  send:  'M22 2L11 13 M22 2l-7 20-4-9-9-4z',
+  pin:   'M9 4h6l-1 7 4 3v2H6v-2l4-3z M12 16v4',
 };
 
 /* ══ Icon component ══ */
@@ -726,6 +729,9 @@ function App({session}) {
   const [draftSel,setDraftSel]= useState([]);     // ausgewählte Entwürfe (Import)
   const [assignOpen,setAssignOpen]= useState(false);
   const [importBusy,setImportBusy]= useState(false);
+  const [chat,setChat]= useState([]);             // KI-Berater Verlauf
+  const [chatInput,setChatInput]= useState('');
+  const [aiBusy,setAiBusy]= useState(false);
   const toggleSel = id => setSelIds(s=> s.includes(id)? s.filter(x=>x!==id) : [...s,id]);
   const exitSel = () => { setSelKey(null); setSelIds([]); };
   const askConfirm = (message, onConfirm, title) => setConfirmState({message, onConfirm, title: title||'Wirklich löschen?'});
@@ -1187,6 +1193,32 @@ function App({session}) {
     }catch(e){ setToast('Export fehlgeschlagen: '+(e.message||e)); }
   };
 
+  /* ── KI-Berater (Sonnet 4.6 über Supabase-Funktion) ── */
+  const advisorNotes = data.advisorNotes || [];
+  const addNote = (text) => setData(prev=>({...prev, advisorNotes:[{id:uid(), text, ts:new Date().toISOString()}, ...(prev.advisorNotes||[])]}));
+  const delNote = (id) => setData(prev=>({...prev, advisorNotes:(prev.advisorNotes||[]).filter(n=>n.id!==id)}));
+  const aiSend = async (text) => {
+    const q=(text||chatInput).trim(); if(!q||aiBusy) return;
+    const next=[...chat,{role:'user',content:q}];
+    setChat(next); setChatInput(''); setAiBusy(true);
+    try{
+      const monatswerte = Array.from({length:12},(_,i)=>{const t=calcTotals(getMD(yr,i),yr,i);return {monat:MONTHS[i],einnahmen:t.totalInc,ausgaben:t.totalExp,ergebnis:t.net};});
+      const snapshot = { namen:names, jahr:yr, monatswerte, jahresdaten:data[yr]||{} };
+      const system = "Du bist der persönliche Finanz- und Steuer-Assistent in der App „SP Finanz“ für einen Nutzer in Deutschland (Immobilien-Vermietung, ein Unternehmen, private Ausgaben). "
+        + "Du kennst seine echten Daten (JSON unten; Beträge in EUR, Monate 0=Januar … 11=Dezember; Ausgaben sind positiv gespeichert). "
+        + "Antworte auf Deutsch: konkret, freundlich, kompakt, mit echten Zahlen aus den Daten. Gib praktische Hinweise (worauf achten, wo evtl. sparen, was in Deutschland häufig absetzbar ist). "
+        + "Erfinde niemals Zahlen. Wenn Daten fehlen, sag es. "
+        + "WICHTIG: Du bist KEIN zugelassener Steuerberater – weise bei verbindlichen Steuerfragen kurz darauf hin, dass ein echter Steuerberater das prüfen sollte.\n\n"
+        + "DATEN (Jahr "+yr+"):\n"+JSON.stringify(snapshot);
+      const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-sonnet-4-6', max_tokens:1800, system, messages: next.map(m=>({role:m.role,content:m.content})) } });
+      if(error) throw error;
+      if(resp && resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
+      const txt = (resp && resp.content && resp.content[0] && resp.content[0].text) || 'Keine Antwort erhalten.';
+      setChat(c=>[...c,{role:'assistant',content:txt}]);
+    }catch(e){ setChat(c=>[...c,{role:'assistant',content:'⚠️ Fehler: '+(e.message||e)+'\n\n(Bist du eingeloggt? Ist die Funktion „ai" deployt und der Schlüssel hinterlegt?)'}]); }
+    setAiBusy(false);
+  };
+
   /* Derived */
   const md    = getMD(yr,mo);
   const futureMonth = isFuture(yr, mo);
@@ -1309,6 +1341,7 @@ function App({session}) {
     {id:'unter',  label:names.unternehmen, icon:P.brief},
     {id:'privat', label:'Privat',       icon:P.prson},
     {id:'import', label:'Import',       icon:P.upload},
+    {id:'berater',label:'KI-Berater',   icon:P.spark},
     {id:'kal',    label:'Events',       icon:P.bed},
     {id:'yr',     label:'Jahresübersicht', icon:P.cal},
     {id:'steuer', label:'Steuer',       icon:P.doc},
@@ -1857,6 +1890,66 @@ function App({session}) {
               </>
             );
           })()}
+
+          {/* ══ KI-BERATER ══ */}
+          {tab==='berater' && (
+            <>
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3,display:'flex',alignItems:'center',gap:8}}><Ic p={P.spark} sz={24} col={C.pri}/> KI-Berater</div>
+                <div style={{fontSize:13,color:C.sub}}>Fragt deine Zahlen (Jahr {yr}) – gibt Hinweise & Spar-Tipps. Kein Ersatz für einen Steuerberater.</div>
+              </div>
+
+              {advisorNotes.length>0 && (
+                <div style={{...SC,marginBottom:14}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:8,display:'flex',alignItems:'center',gap:6}}><Ic p={P.pin} sz={13} col={C.amb}/> Gespeicherte Notizen</div>
+                  {advisorNotes.map(n=>(
+                    <div key={n.id} style={{display:'flex',gap:8,alignItems:'flex-start',padding:'8px 0',borderBottom:'1px solid '+C.sep}}>
+                      <div style={{flex:1,fontSize:13,color:C.txt,whiteSpace:'pre-wrap',lineHeight:1.5}}>{n.text}</div>
+                      <button onClick={()=>delNote(n.id)} title="Notiz löschen" style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,flexShrink:0}}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{...SC,minHeight:200,marginBottom:12}}>
+                {chat.length===0 ? (
+                  <div>
+                    <div style={{fontSize:13,color:C.mut,marginBottom:12,lineHeight:1.5}}>Stell eine Frage zu deinen Finanzen – z.B.:</div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                      {['Analysiere mein Jahr '+yr,'Wo kann ich sparen?','Was könnte absetzbar sein?','Welcher Monat war am besten/schlechtesten?'].map(q=>(
+                        <button key={q} onClick={()=>aiSend(q)} disabled={aiBusy} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:10,padding:'9px 13px',fontSize:13,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>{q}</button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                    {chat.map((m,i)=>(
+                      <div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
+                        <div style={{maxWidth:'88%'}}>
+                          <div style={{
+                            background:m.role==='user'?C.act:C.surf2, color:m.role==='user'?C.actTxt:C.txt,
+                            borderRadius:14, padding:'10px 13px', fontSize:14, lineHeight:1.55, whiteSpace:'pre-wrap',
+                          }}>{m.content}</div>
+                          {m.role==='assistant' && (
+                            <button onClick={()=>{addNote(m.content); setToast('Als Notiz gespeichert');}} style={{marginTop:5,background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:12,fontFamily:'inherit',display:'flex',alignItems:'center',gap:5,padding:0}}><Ic p={P.pin} sz={12} col={C.sub}/> Als Notiz speichern</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {aiBusy && <div style={{fontSize:13,color:C.mut,fontStyle:'italic'}}>Denkt nach…</div>}
+                  </div>
+                )}
+              </div>
+
+              <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+                <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder="Frage eingeben…" rows={1}
+                  onKeyDown={e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); aiSend(); } }}
+                  style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,color:C.txt,padding:'11px 14px',fontSize:14,outline:'none',fontFamily:'inherit',resize:'none',lineHeight:1.4,minHeight:44}} />
+                <button onClick={()=>aiSend()} disabled={aiBusy||!chatInput.trim()} title="Senden" style={{background:C.act,color:C.actTxt,border:'none',borderRadius:12,width:46,height:46,flexShrink:0,cursor:aiBusy||!chatInput.trim()?'default':'pointer',opacity:aiBusy||!chatInput.trim()?0.5:1,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.send} sz={18} col={C.actTxt}/></button>
+              </div>
+              {chat.length>0 && <button onClick={()=>setChat([])} style={{marginTop:10,background:'none',border:'none',color:C.mut,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Gespräch zurücksetzen</button>}
+            </>
+          )}
 
           {/* ══ JAHRESÜBERSICHT ══ */}
           {tab==='yr' && <>
