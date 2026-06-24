@@ -1173,6 +1173,20 @@ function App({session}) {
     setToast(dlist.length+' → '+moveLabel(destKey)+' · '+MONTHS[tm]+' '+ty);
   };
 
+  /* Alle Daten als Datei exportieren (zur Auswertung) */
+  const exportData = () => {
+    try{
+      const payload = { app:'SP Finanz', exportedAt:new Date().toISOString(), names, data };
+      const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'sp-finanz-export-'+new Date().toISOString().slice(0,10)+'.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 1000);
+      setToast('Daten exportiert – Datei wurde heruntergeladen');
+    }catch(e){ setToast('Export fehlgeschlagen: '+(e.message||e)); }
+  };
+
   /* Derived */
   const md    = getMD(yr,mo);
   const futureMonth = isFuture(yr, mo);
@@ -1572,6 +1586,17 @@ function App({session}) {
               })() : (
                 <div style={{fontSize:12,color:C.mut}}>{storageLoading?'Wird berechnet…':'—'}</div>
               )}
+            </div>
+
+            {/* Daten-Export (für Auswertung / Sicherung) */}
+            <div style={{...SC,marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:2}}>Daten exportieren</div>
+                <div style={{fontSize:12,color:C.mut,lineHeight:1.5}}>Lädt alle deine Zahlen als Datei (.json) herunter – z.B. zur Auswertung oder als Sicherung.</div>
+              </div>
+              <button onClick={exportData} style={{display:'flex',alignItems:'center',gap:7,background:C.priL,border:'none',color:C.pri,borderRadius:10,padding:'9px 16px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>
+                <Ic p={P.upload} sz={15} col={C.pri}/> Exportieren
+              </button>
             </div>
           </>}
 
