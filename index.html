@@ -68,6 +68,7 @@ const C = {
 const FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', system-ui, sans-serif";
 const NUM  = {fontVariantNumeric:'tabular-nums', letterSpacing:'-0.02em'};
 const fmt  = v => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(v||0);
+const fmtN = v => ((v||0)>0 ? '-' : '')+fmt(v||0);
 const num  = v => parseFloat(v)||0;
 const evalAmount = s => {
   if(s===''||s==null) return 0;
@@ -1139,7 +1140,7 @@ function App({session}) {
             <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:20}}>
               <KPI label="Gesamteinnahmen" val={fmt(tot.totalInc)} color={C.grn}
                 sub={'Immobilien '+fmt(tot.immoInc)+' · '+names.unternehmen+' '+fmt(tot.unterInc)} />
-              <KPI label="Gesamtausgaben" val={fmt(tot.totalExp)} color={C.txt}
+              <KPI label="Gesamtausgaben" val={fmtN(tot.totalExp)} color={C.txt}
                 sub={'Immobilien '+fmt(tot.immoExp)+' · Privat '+fmt(tot.privatExp)} />
               <KPI label="Nettogewinn" val={(tot.net>=0?'+':'')+fmt(tot.net)}
                 color={tot.net>=0?C.grn:C.txt} sub={tot.net>=0?'Im Plus':'Im Minus'} />
@@ -1154,7 +1155,7 @@ function App({session}) {
                       <span style={{fontWeight:600}}>{names[p]}</span>
                       <div style={{display:'flex',gap:16,alignItems:'center'}}>
                         <span style={{fontSize:12,color:C.sub}}>Ein <b style={{color:C.grn,...NUM}}>{fmt(r.netto)}</b></span>
-                        <span style={{fontSize:12,color:C.sub}}>Aus <b style={{color:C.txt,...NUM}}>{fmt(r.exp)}</b></span>
+                        <span style={{fontSize:12,color:C.sub}}>Aus <b style={{color:C.txt,...NUM}}>{fmtN(r.exp)}</b></span>
                         <b style={{color:r.gewinn>=0?C.grn:C.txt,...NUM,minWidth:68,textAlign:'right'}}>{r.gewinn>=0?'+':''}{fmt(r.gewinn)}</b>
                       </div>
                     </div>
@@ -1172,7 +1173,7 @@ function App({session}) {
                     <span style={{color:C.sub}}>Einnahmen</span><span style={{color:C.grn,...NUM}}>{fmt(tot.unterInc)}</span>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
-                    <span style={{color:C.sub}}>Ausgaben</span><span style={{color:C.txt,...NUM}}>{fmt(tot.unterExp)}</span>
+                    <span style={{color:C.sub}}>Ausgaben</span><span style={{color:C.txt,...NUM}}>{fmtN(tot.unterExp)}</span>
                   </div>
                   <div style={{borderTop:'1px solid '+C.sep,marginTop:10,paddingTop:10,display:'flex',justifyContent:'space-between',fontWeight:700}}>
                     <span style={{color:C.sub,fontSize:13}}>Ergebnis</span>
@@ -1182,7 +1183,7 @@ function App({session}) {
                 <div style={SC}>
                   <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:10}}>Privat</div>
                   <div style={{display:'flex',justifyContent:'space-between',fontWeight:700}}>
-                    <span style={{color:C.sub,fontSize:13}}>Ausgaben</span><span style={{color:C.txt,...NUM}}>{fmt(tot.privatExp)}</span>
+                    <span style={{color:C.sub,fontSize:13}}>Ausgaben</span><span style={{color:C.txt,...NUM}}>{fmtN(tot.privatExp)}</span>
                   </div>
                 </div>
               </div>
@@ -1278,7 +1279,7 @@ function App({session}) {
                 <BulkAddButton onAdd={(n,a,r)=>addPropExp(sp,n,a,r)} />
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
                   <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
-                  <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmt(pc.exp)}</span>
+                  <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmtN(pc.exp)}</span>
                 </div>
               </div>
             </div>
@@ -1361,7 +1362,7 @@ function App({session}) {
                 <BulkAddButton onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
                   <span style={{fontSize:12,color:C.sub}}>Gesamt Ausgaben</span>
-                  <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmt(tot.unterExp)}</span>
+                  <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmtN(tot.unterExp)}</span>
                 </div>
               </div>
             )}
@@ -1398,7 +1399,7 @@ function App({session}) {
               <BulkAddButton onAdd={(n,a,r)=>addSec('privat','items',n,a,r)} />
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:16}}>
                 <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
-                <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmt(tot.privatExp)}</span>
+                <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmtN(tot.privatExp)}</span>
               </div>
             </div>
           </>}
