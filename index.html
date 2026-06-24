@@ -1153,14 +1153,38 @@ function App({session}) {
   const setDrafts = updater => setData(prev=>({...prev, drafts: updater(prev.drafts||[])}));
   const updateDraft = (id,patch) => setDrafts(ds=>ds.map(d=>d.id===id?{...d,...patch}:d));
   const delDraft = id => { setDrafts(ds=>ds.filter(d=>d.id!==id)); setDraftSel(s=>s.filter(x=>x!==id)); };
+  const fileToB64 = file => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(new Error('Datei lesen fehlgeschlagen')); r.readAsDataURL(file); });
   const importPdf = async file => {
     setImportBusy(true);
     try{
-      const lines = await pdfToLines(file);
-      const parsed = parseStatement(lines);
-      if(!parsed.length){ setToast('Keine Umsätze erkannt. Ist es ein Text-PDF (kein Scan)?'); }
-      else { setDrafts(ds=>[...parsed,...ds]); setToast(parsed.length+' Umsätze als Entwurf erstellt'); }
-    }catch(e){ setToast('PDF konnte nicht gelesen werden: '+(e.message||e)); }
+      const isPdf = file.type==='application/pdf' || /\.pdf$/i.test(file.name);
+      if(file.size > 28*1024*1024) throw new Error('Datei zu groß (max. 28 MB)');
+      const b64 = await fileToB64(file);
+      const block = isPdf
+        ? { type:'document', source:{ type:'base64', media_type:'application/pdf', data:b64 } }
+        : { type:'image', source:{ type:'base64', media_type:(file.type||'image/jpeg'), data:b64 } };
+      const prompt = "Dies ist ein Bankauszug oder ein Beleg/eine Rechnung (Deutschland). Lies ALLE einzelnen Umsätze bzw. Belegpositionen aus. "
+        + "Antworte AUSSCHLIESSLICH mit reinem JSON, ohne Text drumherum, ohne Markdown, genau in diesem Format:\n"
+        + '{"posten":[{"beschreibung":"Kurzbezeichnung/Händler","betrag":12.34,"art":"einnahme","datum":"TT.MM.JJJJ","rechnungsnummer":""}]}\n'
+        + "Regeln: betrag immer als positive Zahl (Punkt als Dezimaltrennzeichen). art = \"einnahme\" bei Geldeingang/Gutschrift, sonst \"ausgabe\". "
+        + "datum und rechnungsnummer leer lassen, wenn nicht vorhanden. Erfinde nichts.";
+      const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-haiku-4-5', max_tokens:8000, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
+      if(error) throw error;
+      if(resp && resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
+      let txt = (resp && resp.content && resp.content[0] && resp.content[0].text) || '';
+      txt = txt.replace(/```json|```/g,'').trim();
+      const mm = txt.match(/\{[\s\S]*\}/); if(mm) txt = mm[0];
+      const parsed = JSON.parse(txt);
+      const list = (parsed.posten||[]).map(p=>({
+        id:uid(),
+        name:String(p.beschreibung||'Posten').slice(0,70),
+        amount:Math.abs(parseFloat(String(p.betrag).replace(',','.'))||0),
+        kind:(p.art==='einnahme'?'ein':'aus'),
+        info:[p.rechnungsnummer&&('Nr. '+p.rechnungsnummer), p.datum].filter(Boolean).join(' · '),
+      })).filter(p=>p.amount>0);
+      if(!list.length) setToast('Keine Posten erkannt.');
+      else { setDrafts(ds=>[...list,...ds]); setToast(list.length+' Posten erkannt'); }
+    }catch(e){ setToast('Konnte „'+file.name+'" nicht auslesen: '+(e.message||e)); }
     setImportBusy(false);
   };
   const assignDrafts = (ids, destKey, ty, tm) => {
@@ -1170,7 +1194,7 @@ function App({session}) {
       const nd=JSON.parse(JSON.stringify(prev));
       if(!nd[ty]) nd[ty]={};
       if(!nd[ty][tm]) nd[ty][tm]=emptyMonth();
-      const copies=dlist.map(d=>({...newItem(d.name),amount:num(d.amount),id:uid()}));
+      const copies=dlist.map(d=>({...newItem(d.name),amount:num(d.amount),note:d.info||'',id:uid()}));
       setListAt(nd[ty][tm],dstLoc,[...getListAt(nd[ty][tm],dstLoc),...copies]);
       nd.drafts=(nd.drafts||[]).filter(d=>!ids.includes(d.id));
       return nd;
@@ -1841,7 +1865,10 @@ function App({session}) {
             const draftRow = d => (
               <div key={d.id} style={{display:'flex',gap:8,alignItems:'center',padding:'8px 0',borderBottom:'1px solid '+C.sep}}>
                 <button onClick={()=>setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id])} style={{width:22,height:22,flexShrink:0,borderRadius:6,border:'1.5px solid '+(draftSel.includes(d.id)?C.pri:C.bdrM),background:draftSel.includes(d.id)?C.pri:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}>{draftSel.includes(d.id)&&<Ic p={P.check} sz={13} col={C.priTxt}/>}</button>
-                <input value={d.name} onChange={e=>updateDraft(d.id,{name:e.target.value})} style={{...SI,flex:1,width:'auto',textAlign:'left',fontSize:14}} />
+                <div style={{flex:1,minWidth:0}}>
+                  <input value={d.name} onChange={e=>updateDraft(d.id,{name:e.target.value})} style={{...SI,width:'100%',textAlign:'left',fontSize:14}} />
+                  {d.info && <div style={{fontSize:11,color:C.mut,marginTop:2,paddingLeft:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.info}</div>}
+                </div>
                 <input value={d.amount} onChange={e=>updateDraft(d.id,{amount:e.target.value})} inputMode="decimal" style={{...SI,width:74,...NUM}} />
                 <span style={{fontSize:12,color:C.mut,width:10,flexShrink:0}}>€</span>
                 <button onClick={()=>updateDraft(d.id,{kind:d.kind==='ein'?'aus':'ein'})} title="Einnahme/Ausgabe wechseln" style={{width:24,height:24,border:'none',borderRadius:6,cursor:'pointer',flexShrink:0,padding:0,background:'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.swap} sz={14} col={C.sub}/></button>
@@ -1857,16 +1884,16 @@ function App({session}) {
             return (
               <>
                 <div style={{marginBottom:18}}>
-                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Bankauszug-Import</div>
-                  <div style={{fontSize:13,color:C.sub}}>PDF hochladen → automatisch in Einnahmen/Ausgaben → einzeln/mehrere dem richtigen Konto zuordnen</div>
+                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Beleg- & Bankauszug-Import</div>
+                  <div style={{fontSize:13,color:C.sub}}>PDF oder Foto hochladen → KI liest die Posten aus → einzeln/mehrere dem richtigen Konto zuordnen</div>
                 </div>
 
                 <div style={{...SC,marginBottom:16}}>
-                  <label style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:'22px',border:'1.5px dashed '+C.surf3,borderRadius:14,cursor:'pointer',textAlign:'center'}}>
+                  <label style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:'22px',border:'1.5px dashed '+C.surf3,borderRadius:14,cursor:importBusy?'default':'pointer',textAlign:'center',opacity:importBusy?0.6:1}}>
                     <Ic p={P.upload} sz={26} col={C.pri}/>
-                    <div style={{fontSize:15,fontWeight:600,color:C.txt}}>{importBusy?'Wird gelesen…':'Bankauszug-PDF auswählen'}</div>
-                    <div style={{fontSize:12,color:C.mut,lineHeight:1.5}}>Nur Text-PDFs (keine Foto-Scans). Die Umsätze landen unten als Entwurf – nichts wird automatisch gebucht.</div>
-                    <input type="file" accept=".pdf,application/pdf" disabled={importBusy} onChange={e=>{const f=e.target.files[0]; if(f)importPdf(f); e.target.value='';}} style={{display:'none'}} />
+                    <div style={{fontSize:15,fontWeight:600,color:C.txt}}>{importBusy?'KI liest aus…':'Beleg/Bankauszug auswählen'}</div>
+                    <div style={{fontSize:12,color:C.mut,lineHeight:1.5}}>PDF oder Foto (Rechnung, Quittung, Kontoauszug). Mehrere Dateien möglich. Die KI erkennt Beschreibung, Betrag, Datum & Rechnungsnummer – alles landet unten als Entwurf, nichts wird automatisch gebucht.</div>
+                    <input type="file" accept=".pdf,application/pdf,image/*" multiple disabled={importBusy} onChange={async e=>{const fs=[...e.target.files]; e.target.value=''; for(const f of fs){ await importPdf(f); }}} style={{display:'none'}} />
                   </label>
                 </div>
 
