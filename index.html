@@ -203,8 +203,11 @@ function KPI({label,val,color,sub}) {
 }
 
 /* ══ Item row (aufgeräumt: Name + Betrag + ⋮-Menü) ══ */
-function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails}) {
+function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails, moveTargets, onMoveItem}) {
   const [menuOpen,setMenuOpen]=useState(false);
+  const [mvDest,setMvDest]=useState((moveTargets&&moveTargets[0]&&moveTargets[0].key)||'');
+  const [mvY,setMvY]=useState(curY);
+  const [mvM,setMvM]=useState(curM);
   const fileRef=useRef();
   const hasNote=!!(item.note&&item.note.trim());
   const hasFile=!!(item.filePath||item.fileData);
@@ -315,6 +318,32 @@ function ItemRow({item, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLas
               </div>
             ) : (
               <button onClick={()=>fileRef.current.click()} style={{...menuBtn,marginTop:0,justifyContent:'center',color:C.sub}}>+ Datei anhängen</button>
+            )}
+
+            {moveTargets && onMoveItem && (
+              <div style={{background:C.surf2,borderRadius:10,padding:'12px',marginTop:14}}>
+                <div style={{fontSize:13,fontWeight:600,marginBottom:6,display:'flex',alignItems:'center',gap:6}}><Ic p={P.out} sz={14} col={C.sub}/> Verschieben</div>
+                <div style={{fontSize:11,color:C.mut,marginBottom:10,lineHeight:1.5}}>Verschiebt diesen Posten in einen anderen Bereich und/oder Monat. Standard ist der aktuelle Monat.</div>
+                <div style={{fontSize:11,color:C.sub,marginBottom:4}}>Bereich</div>
+                <select value={mvDest} onChange={e=>setMvDest(e.target.value)} style={{...SS,marginBottom:10}}>
+                  {moveTargets.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+                <div style={{fontSize:11,color:C.sub,marginBottom:4}}>Monat</div>
+                <div style={{display:'flex',gap:8,marginBottom:10}}>
+                  <button onClick={()=>{ let m=mvM-1,y=mvY; if(m<0){m=11;y--;} setMvM(m);setMvY(y); }} title="Monat zurück" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:8,padding:'0 12px',cursor:'pointer',fontFamily:'inherit',fontSize:16}}>‹</button>
+                  <select value={mvM} onChange={e=>setMvM(+e.target.value)} style={{...SS,flex:1}}>
+                    {MONTHS.map((mn,i)=><option key={i} value={i}>{mn}</option>)}
+                  </select>
+                  <select value={mvY} onChange={e=>setMvY(+e.target.value)} style={{...SS,width:96}}>
+                    {years.map(y=><option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <button onClick={()=>{ let m=mvM+1,y=mvY; if(m>11){m=0;y++;} setMvM(m);setMvY(y); }} title="Monat vor" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:8,padding:'0 12px',cursor:'pointer',fontFamily:'inherit',fontSize:16}}>›</button>
+                </div>
+                <button onClick={()=>{ onMoveItem(mvDest,mvY,mvM); setMenuOpen(false); }}
+                  style={{...menuBtn,marginTop:0,justifyContent:'center',background:C.priL,color:C.pri,fontWeight:600}}>
+                  <Ic p={P.out} sz={14} col={C.pri}/> Nach „{(moveTargets.find(t=>t.key===mvDest)||{}).label}" · {MONTHS[mvM]} {mvY}
+                </button>
+              </div>
             )}
 
             <div style={{display:'flex',gap:8,marginTop:14}}>
@@ -903,6 +932,45 @@ function App({session}) {
     setToast('→ '+MONTHS[nm]+' kopiert');
   };
 
+  /* ── Posten verschieben (anderer Bereich und/oder Monat) ── */
+  const moveTargets = [
+    {key:'p1',       label:names.p1||'Immobilie 1'},
+    {key:'p2',       label:names.p2||'Immobilie 2'},
+    {key:'p3',       label:names.p3||'Immobilie 3'},
+    {key:'unterInc', label:(names.unternehmen||'Unternehmen')+' · Einnahmen'},
+    {key:'unterExp', label:(names.unternehmen||'Unternehmen')+' · Ausgaben'},
+    {key:'privat',   label:'Privat'},
+  ];
+  const moveLabel = key => (moveTargets.find(t=>t.key===key)||{}).label || key;
+  const locOf = key => {
+    if(key==='p1'||key==='p2'||key==='p3') return {type:'prop',pid:key};
+    if(key==='unterInc') return {type:'sec',sec:'unternehmen',sub:'clients'};
+    if(key==='unterExp') return {type:'sec',sec:'unternehmen',sub:'items'};
+    if(key==='privat')   return {type:'sec',sec:'privat',sub:'items'};
+    return null;
+  };
+  const getListAt = (mdObj,loc) => loc.type==='prop' ? (mdObj.props?.[loc.pid]?.expenses||[]) : (mdObj[loc.sec]?.[loc.sub]||[]);
+  const setListAt = (mdObj,loc,arr) => {
+    if(loc.type==='prop'){ const p=mdObj.props?.[loc.pid]||emptyProp(); mdObj.props={...(mdObj.props||{}),[loc.pid]:{...p,expenses:arr}}; }
+    else { const s=mdObj[loc.sec]||{}; mdObj[loc.sec]={...s,[loc.sub]:arr}; }
+  };
+  const moveItem = (srcKey, item, destKey, ty, tm) => {
+    const srcLoc=locOf(srcKey), dstLoc=locOf(destKey);
+    if(!srcLoc||!dstLoc) return;
+    setData(prev=>{
+      const nd=JSON.parse(JSON.stringify(prev));
+      const removeFrom=(y,m)=>{ if(!nd[y]||!nd[y][m])return; const mo2=nd[y][m]; setListAt(mo2,srcLoc,getListAt(mo2,srcLoc).filter(i=>i.id!==item.id)); };
+      if(item.recurring){ Object.keys(nd).forEach(y=>Object.keys(nd[y]||{}).forEach(m=>removeFrom(y,m))); }
+      else removeFrom(yr,mo);
+      if(!nd[ty]) nd[ty]={};
+      if(!nd[ty][tm]) nd[ty][tm]=emptyMonth();
+      const copy={...item,id:uid(),recurring:false,from:null,until:null};
+      setListAt(nd[ty][tm],dstLoc,[...getListAt(nd[ty][tm],dstLoc),copy]);
+      return nd;
+    });
+    setToast('„'+(item.name||'Posten')+'" → '+moveLabel(destKey)+' · '+MONTHS[tm]+' '+ty);
+  };
+
   /* Derived */
   const md    = getMD(yr,mo);
   const futureMonth = isFuture(yr, mo);
@@ -1030,7 +1098,7 @@ function App({session}) {
   ];
 
   /* Reusable items renderer */
-  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn) => {
+  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey) => {
     const shown = (items||[]).filter(it=>activeInMonth(it, yr, mo));
     return shown.map((item,idx) => (
       <ItemRow key={item.id} item={item}
@@ -1049,6 +1117,8 @@ function App({session}) {
         curY={yr} curM={mo}
         askConfirm={askConfirm}
         onEditDetails={editFn}
+        moveTargets={srcKey?moveTargets:null}
+        onMoveItem={srcKey?((destKey,ty,tm)=>moveItem(srcKey,item,destKey,ty,tm)):null}
       />
     ));
   };
@@ -1357,7 +1427,8 @@ function App({session}) {
                   ['Immobilien', names[sp]],
                   item=>setRecurPropExp(sp,item),
                   undefined,
-                  (it,range)=>setPropExpRange(sp,it,range)
+                  (it,range)=>setPropExpRange(sp,it,range),
+                  sp
                 )}
                 <AddForm onAdd={(n,a,r)=>addPropExp(sp,n,a,r)} />
                 <BulkAddButton onAdd={(n,a,r)=>addPropExp(sp,n,a,r)} />
@@ -1404,7 +1475,8 @@ function App({session}) {
                     ['Unternehmen','Kunden'],
                     item=>setRecurSec('unternehmen','clients',item),
                     id=>setEditClient(id),
-                    (it,range)=>setSecRange('unternehmen','clients',it,range)
+                    (it,range)=>setSecRange('unternehmen','clients',it,range),
+                    'unterInc'
                   )}
                   <AddForm placeholder="Kundenname" onAdd={(n,a,r)=>addSec('unternehmen','clients',n,a,r)} />
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
@@ -1440,7 +1512,8 @@ function App({session}) {
                   ['Unternehmen','Ausgaben'],
                   item=>setRecurSec('unternehmen','items',item),
                   undefined,
-                  (it,range)=>setSecRange('unternehmen','items',it,range)
+                  (it,range)=>setSecRange('unternehmen','items',it,range),
+                  'unterExp'
                 )}
                 <AddForm onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
                 <BulkAddButton onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
@@ -1477,7 +1550,8 @@ function App({session}) {
                 ['Privat'],
                 item=>setRecurSec('privat','items',item),
                 undefined,
-                (it,range)=>setSecRange('privat','items',it,range)
+                (it,range)=>setSecRange('privat','items',it,range),
+                'privat'
               )}
               <AddForm onAdd={(n,a,r)=>addSec('privat','items',n,a,r)} />
               <BulkAddButton onAdd={(n,a,r)=>addSec('privat','items',n,a,r)} />
