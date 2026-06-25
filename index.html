@@ -722,6 +722,8 @@ function App({session}) {
   const [yr,   setYr]   = useState(now.getFullYear());
   const [mo,   setMo]   = useState(now.getMonth());
   const [tab,  setTab]  = useState('quellen');
+  const [sonstOpen,setSonstOpen]= useState(false);
+  const [gesamtHover,setGesamtHover]= useState(false);
   const [sp,   setSp]   = useState('p1');
   const [data, setData] = useState({});
   const [names,setNames]= useState({p1:'Immobilie 1',p2:'Immobilie 2',p3:'Immobilie 3',unternehmen:'Unternehmen'});
@@ -770,7 +772,7 @@ function App({session}) {
   const exitSel = () => { setSelKey(null); setSelIds([]); };
   /* Eigene URL pro Bereich (Hash-Routing) */
   useEffect(()=>{
-    const valid=new Set(['quellen','immo','unter','privat','import','berater','kal','yr','steuer','mehr']);
+    const valid=new Set(['quellen','immo','unter','privat','import','berater','kal','yr','steuer','mehr','settings']);
     const apply=()=>{ const h=(window.location.hash||'').replace(/^#\/?/,''); if(valid.has(h)) setTab(h); };
     apply();
     window.addEventListener('hashchange',apply);
@@ -1509,9 +1511,11 @@ function App({session}) {
 
   /* Sidebar nav */
   const NAV = [
-    {id:'quellen',label:'Konten',       icon:P.layers},
+    {id:'quellen',label:'Home',         icon:P.grid},
     {id:'import', label:'Import',       icon:P.upload},
     {id:'berater',label:'KI-Berater',   icon:P.spark},
+  ];
+  const SONSTIGES = [
     {id:'kal',    label:'Events',       icon:P.bed},
     {id:'yr',     label:'Jahresübersicht', icon:P.cal},
     {id:'steuer', label:'Steuer',       icon:P.doc},
@@ -1581,12 +1585,12 @@ function App({session}) {
         display:'flex',alignItems:'center',gap:isMobile?10:18,padding:isMobile?'0 12px':'0 20px',height:56,
         position:'relative',zIndex:40,
       }}>
-        {/* Logo — plain wordmark */}
-        <div style={{fontSize:isMobile?16:19,fontWeight:700,color:C.txt,letterSpacing:'-0.03em',flexShrink:0}}>SP Finanz</div>
+        {/* Logo — Klick = Home */}
+        <button onClick={()=>setTab('quellen')} style={{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:isMobile?16:19,fontWeight:700,color:C.txt,letterSpacing:'-0.03em',flexShrink:0,padding:0}}>SP Finanz</button>
 
-        {/* Nav items — inline nur Desktop */}
+        {/* Nav items — rechtsbündig, nur Desktop */}
         {!isMobile && (
-          <nav style={{display:'flex',alignItems:'center',gap:2,flex:1,overflowX:'auto'}}>
+          <nav style={{display:'flex',alignItems:'center',gap:2,flex:1,justifyContent:'flex-end'}}>
             {NAV.map(({id,label,icon})=>{
               const active = tab===id;
               return (
@@ -1603,6 +1607,23 @@ function App({session}) {
                 </button>
               );
             })}
+            {/* Sonstiges-Dropdown */}
+            <div style={{position:'relative'}}>
+              <button onClick={()=>setSonstOpen(o=>!o)} style={{
+                display:'flex',alignItems:'center',gap:7,padding:'7px 12px',borderRadius:9,border:'none',
+                background:SONSTIGES.some(s=>s.id===tab)?'rgba(62,207,142,0.16)':'transparent',
+                color:SONSTIGES.some(s=>s.id===tab)?C.pri:C.sub,fontFamily:'inherit',fontSize:13,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',
+              }}><Ic p={P.menu} sz={15}/> <span>Sonstiges</span></button>
+              {sonstOpen && (
+                <div onClick={()=>setSonstOpen(false)} style={{position:'fixed',inset:0,zIndex:90}}>
+                  <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:50,right:0,width:210,background:C.surf,border:'1px solid '+C.bdr,borderRadius:12,padding:5,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
+                    {SONSTIGES.map(({id,label,icon})=>(
+                      <button key={id} onClick={()=>{setTab(id);setSonstOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:tab===id?C.pri:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={icon} sz={16} col={tab===id?C.pri:C.sub}/> <span>{label}</span></button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </nav>
         )}
 
@@ -1665,7 +1686,13 @@ function App({session}) {
         {profOpen && (
           <div onClick={()=>setProfOpen(false)} style={{position:'fixed',inset:0,zIndex:90}}>
             <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:54,right:12,width:240,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:10,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
-              <div style={{fontSize:12,color:C.sub,padding:'6px 10px 10px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{(session&&session.user&&session.user.email)||'Angemeldet'}</div>
+              <div style={{fontSize:12,color:C.sub,padding:'6px 10px 6px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{(session&&session.user&&session.user.email)||'Angemeldet'}</div>
+              <div style={{fontSize:12,color:saved?C.mut:C.amb,fontWeight:500,padding:'2px 10px 8px',display:'flex',alignItems:'center',gap:6,borderBottom:'1px solid '+C.sep,marginBottom:4}}>
+                <span style={{width:6,height:6,borderRadius:'50%',background:saved?C.mut:C.amb,display:'inline-block'}}/>{saved?'Gespeichert':'Speichern…'}
+              </div>
+              <button onClick={()=>{ setProfOpen(false); setTab('settings'); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:10,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+                <Ic p={P.doc} sz={16} col={C.sub}/> <span>Einstellungen</span>
+              </button>
               <button onClick={()=>{ setProfOpen(false); sb.auth.signOut(); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:10,padding:'11px 12px',fontSize:14,color:C.red,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
                 <Ic p={P.out} sz={16} col={C.red}/> <span>Abmelden</span>
               </button>
@@ -1747,17 +1774,19 @@ function App({session}) {
             return (
               <>
                 <div style={{marginBottom:14}}>
-                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Konten</div>
+                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Home</div>
                   <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
                 </div>
-                {/* Gesamt über den Boxen */}
-                <div style={{...SC,marginBottom:14,background:'linear-gradient(135deg, rgba(62,207,142,0.12), rgba(171,196,255,0.08))'}}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:6}}>Gesamt · alle Quellen</div>
-                  <div style={{fontSize:34,fontWeight:800,color:tot.net>=0?C.grn:C.txt,...NUM,lineHeight:1.05}}>{tot.net>=0?'+':''}{fmt(tot.net)}</div>
-                  <div style={{display:'flex',gap:16,marginTop:8,fontSize:12,color:C.sub}}>
-                    <span>Einnahmen <b style={{color:C.grn,...NUM}}>{fmt(tot.totalInc)}</b></span>
-                    <span>Ausgaben <b style={{color:'#FFB37A',...NUM}}>{fmtN(tot.totalExp)}</b></span>
-                  </div>
+                {/* Gesamt über den Boxen — ohne Box, Aufschlüsselung bei Hover */}
+                <div onMouseEnter={()=>setGesamtHover(true)} onMouseLeave={()=>setGesamtHover(false)} style={{marginBottom:16,display:'inline-block'}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:4}}>Gesamt · alle Quellen</div>
+                  <div style={{fontSize:38,fontWeight:800,color:tot.net>=0?C.grn:C.txt,...NUM,lineHeight:1.02}}>{tot.net>=0?'+':''}{fmt(tot.net)}</div>
+                  {(gesamtHover||isMobile) && (
+                    <div style={{display:'flex',gap:16,marginTop:8,fontSize:13,color:C.sub}}>
+                      <span>Einnahmen <b style={{color:C.grn,...NUM}}>{fmt(tot.totalInc)}</b></span>
+                      <span>Ausgaben <b style={{color:'#FFB37A',...NUM}}>{fmtN(tot.totalExp)}</b></span>
+                    </div>
+                  )}
                 </div>
                 {/* Konto-Boxen nebeneinander + Pfeile */}
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -1776,55 +1805,59 @@ function App({session}) {
                   <button onClick={()=>scrollBy(230)} style={arrowBtn}>›</button>
                 </div>
 
-                {/* Online-Speicher */}
-                <div style={{...SC,marginTop:18}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                    <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Online-Speicher · Belege & Verträge</div>
-                    <button onClick={loadStorage} title="Neu berechnen" style={BVm}>↻</button>
-                  </div>
-                  {storageInfo ? (()=>{
-                    const mb=storageInfo.total/1048576, limit=1024, pct=Math.min(100,mb/limit*100);
-                    return (<>
-                      <div style={{height:8,background:C.surf3,borderRadius:99,overflow:'hidden',marginBottom:8}}>
-                        <div style={{height:'100%',width:pct+'%',background:pct>85?C.red:C.pri,borderRadius:99}} />
-                      </div>
-                      <div style={{fontSize:12,color:C.sub}}>{mb.toFixed(mb<10?2:1)} MB von 1.024 MB belegt · {storageInfo.files} {storageInfo.files===1?'Datei':'Dateien'}</div>
-                    </>);
-                  })() : (
-                    <div style={{fontSize:12,color:C.mut}}>{storageLoading?'Wird berechnet…':'—'}</div>
-                  )}
-                </div>
-
-                {/* Daten-Export */}
-                <div style={{...SC,marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
-                  <div>
-                    <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:2}}>Daten exportieren</div>
-                    <div style={{fontSize:12,color:C.mut,lineHeight:1.5}}>Alle Zahlen als Datei (.json) – z. B. zur Auswertung oder als Sicherung.</div>
-                  </div>
-                  <button onClick={exportData} style={{display:'flex',alignItems:'center',gap:7,background:C.priL,border:'none',color:C.pri,borderRadius:10,padding:'9px 16px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>
-                    <Ic p={P.upload} sz={15} col={C.pri}/> Exportieren
-                  </button>
-                </div>
               </>
             );
           })()}
+
+          {/* ══ EINSTELLUNGEN (Profil) ══ */}
+          {tab==='settings' && <>
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Einstellungen</div>
+              <div style={{fontSize:13,color:C.sub}}>{(session&&session.user&&session.user.email)||''}</div>
+            </div>
+            {/* Online-Speicher */}
+            <div style={{...SC,marginBottom:12}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Online-Speicher · Belege & Verträge</div>
+                <button onClick={loadStorage} title="Neu berechnen" style={BVm}>↻</button>
+              </div>
+              {storageInfo ? (()=>{
+                const mb=storageInfo.total/1048576, limit=1024, pct=Math.min(100,mb/limit*100);
+                return (<>
+                  <div style={{height:8,background:C.surf3,borderRadius:99,overflow:'hidden',marginBottom:8}}>
+                    <div style={{height:'100%',width:pct+'%',background:pct>85?C.red:C.pri,borderRadius:99}} />
+                  </div>
+                  <div style={{fontSize:12,color:C.sub}}>{mb.toFixed(mb<10?2:1)} MB von 1.024 MB belegt · {storageInfo.files} {storageInfo.files===1?'Datei':'Dateien'}</div>
+                </>);
+              })() : (
+                <div style={{fontSize:12,color:C.mut}}>{storageLoading?'Wird berechnet…':'—'}</div>
+              )}
+            </div>
+            {/* Daten-Export */}
+            <div style={{...SC,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:2}}>Daten exportieren</div>
+                <div style={{fontSize:12,color:C.mut,lineHeight:1.5}}>Alle Zahlen als Datei (.json) – z. B. zur Auswertung oder als Sicherung.</div>
+              </div>
+              <button onClick={exportData} style={{display:'flex',alignItems:'center',gap:7,background:C.priL,border:'none',color:C.pri,borderRadius:10,padding:'9px 16px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>
+                <Ic p={P.upload} sz={15} col={C.pri}/> Exportieren
+              </button>
+            </div>
+          </>}
 
           {/* ══ MEHR (mobile Sekundär-Navigation) ══ */}
           {tab==='mehr' && (
             <>
               <div style={{marginBottom:18}}>
-                <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Mehr</div>
+                <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Sonstiges</div>
                 <div style={{fontSize:13,color:C.sub}}>Weitere Bereiche</div>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                {[{id:'import',label:'Import',icon:P.upload},{id:'kal',label:'Events',icon:P.bed},{id:'yr',label:'Jahresübersicht',icon:P.cal},{id:'steuer',label:'Steuer',icon:P.doc}].map(m=>(
+                {[{id:'kal',label:'Events',icon:P.bed},{id:'yr',label:'Jahresübersicht',icon:P.cal},{id:'steuer',label:'Steuer',icon:P.doc},{id:'settings',label:'Einstellungen',icon:P.doc}].map(m=>(
                   <button key={m.id} onClick={()=>setTab(m.id)} style={{display:'flex',alignItems:'center',gap:13,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:'15px 16px',cursor:'pointer',fontFamily:'inherit',color:C.txt,fontSize:16,fontWeight:600,textAlign:'left'}}>
                     <Ic p={m.icon} sz={19} col={C.sub}/> <span style={{flex:1}}>{m.label}</span> <span style={{color:C.mut}}>›</span>
                   </button>
                 ))}
-                <button onClick={()=>sb.auth.signOut()} style={{display:'flex',alignItems:'center',gap:13,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:'15px 16px',cursor:'pointer',fontFamily:'inherit',color:C.sub,fontSize:16,fontWeight:600,textAlign:'left',marginTop:6}}>
-                  <Ic p={P.out} sz={19} col={C.sub}/> <span style={{flex:1}}>Abmelden</span>
-                </button>
               </div>
             </>
           )}
@@ -2594,15 +2627,15 @@ function App({session}) {
         ); };
         return (
           <div style={{position:'fixed',left:0,right:0,bottom:0,zIndex:60,background:C.surf,borderTop:'1px solid '+C.bdr,display:'flex',alignItems:'flex-end',justifyContent:'space-around',height:66,paddingBottom:'max(6px, env(safe-area-inset-bottom))'}}>
-            {cell('quellen','Konten',P.layers,['quellen','immo','unter','privat'])}
-            {cell('berater','Berater',P.spark,['berater'])}
+            {cell('quellen','Home',P.grid,['quellen','immo','unter','privat'])}
+            {cell('import','Import',P.upload,['import'])}
             <div style={{flex:1,display:'flex',justifyContent:'center'}}>
               <button onClick={()=>setBelegOpen(true)} title="Beleg erfassen" style={{width:56,height:56,borderRadius:'50%',background:C.act,border:'4px solid '+C.bg,color:C.actTxt,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',marginTop:-22,boxShadow:'0 6px 18px rgba(0,0,0,0.45)'}}>
                 <Ic p={P.camera} sz={24} col={C.actTxt}/>
               </button>
             </div>
-            {cell('yr','Jahr',P.cal,['yr'])}
-            {cell('mehr','Mehr',P.menu,['mehr','import','kal','steuer'])}
+            {cell('berater','Berater',P.spark,['berater'])}
+            {cell('mehr','Sonstiges',P.menu,['mehr','kal','yr','steuer'])}
           </div>
         );
       })()}
