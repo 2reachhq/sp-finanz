@@ -32,7 +32,9 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #2E2E2E; border-radius: 3px; }
     .navlink { background:none; border:none; cursor:pointer; color:rgba(255,255,255,0.62); transition:color .14s ease; }
-    .navlink:hover { color:#3ECF8E; }
+    .navlink:hover { color:#7BC2AA; }
+    .drawerPanel{animation:slideInRight .24s cubic-bezier(.2,.7,.2,1)}
+    @keyframes slideInRight{from{transform:translateX(100%);opacity:.5}to{transform:translateX(0);opacity:1}}
     .navlink.active { color:#fff; }
   </style>
 </head>
@@ -59,7 +61,7 @@ const PRIV_PRESETS  = ['Kleidung','Urlaub','Sport & Fitness','Streaming & Abos',
 const C = {
   bg:'#0A0A0A', surf:'#1A1A1A', surf2:'#242424', surf3:'#2E2E2E',
   bdr:'rgba(255,255,255,0.08)', bdrM:'rgba(255,255,255,0.14)',
-  pri:'#3ECF8E',  priL:'rgba(62,207,142,0.14)',  priTxt:'#06190F',
+  pri:'#7BC2AA',  priL:'rgba(123,194,170,0.16)',  priTxt:'#06231A',
   act:'#E8A39E',  actL:'rgba(232,163,158,0.14)', actTxt:'#2A100D',
   grn:'#3ECF8E',  grnL:'rgba(62,207,142,0.10)',
   red:'#FF5A5F',  redL:'rgba(255,90,95,0.10)',
@@ -67,6 +69,12 @@ const C = {
   txt:'#FFFFFF', sub:'rgba(255,255,255,0.62)', mut:'rgba(255,255,255,0.40)',
   sep:'rgba(255,255,255,0.07)',
 };
+// hex → rgba mit Alpha
+const hexA=(hex,a)=>{ const n=parseInt(String(hex).slice(1),16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; };
+// Konto-Farben in Anzeige-Reihenfolge: erstes Konto (Unternehmen) immer #7BC2AA
+const ACCT_ORDER=['unter','p1','p2','p3','privat'];
+const ACCT_PAL  =['#7BC2AA','#E8A39E','#ABC4FF','#FFC7A6','#C9B6FF'];
+const acctColor=(key)=>{ const i=ACCT_ORDER.indexOf(key); return ACCT_PAL[i>=0?i:0]; };
 
 /* ══ Helpers ══ */
 const FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', system-ui, sans-serif";
@@ -337,10 +345,12 @@ function TargetPicker({title, moveTargets, curY, curM, confirmLabel, onClose, on
 }
 
 /* ══ Item row (Name + Betrag + kompaktes ⋮-Dropdown) ══ */
-function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur}) {
+function ItemRow({item, accent, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur}) {
+  const acc = accent||C.pri;
   const [menu,setMenu]=useState(null);   // {top,bottom,right}
   const [catMenu,setCatMenu]=useState(null); // {left,top,bottom} Kategorie-Dropdown
-  const [dlg,setDlg]=useState(null);     // 'note'|'file'|'range'|'move'|'details'
+  const [drawer,setDrawer]=useState(false); // Detail-Drawer (von rechts)
+  const [dlg,setDlg]=useState(null);     // 'range'|'move'
   const [mvDest,setMvDest]=useState((moveTargets&&moveTargets[0]&&moveTargets[0].key)||'');
   const [mvY,setMvY]=useState(curY);
   const [mvM,setMvM]=useState(curM);
@@ -379,35 +389,89 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
     setCatMenu({ left:r.left, top:up?null:(r.bottom+6), bottom:up?(window.innerHeight-r.top+6):null });
   };
 
+  const money = new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(item.amount)||0);
+  const fLbl=(t)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6,letterSpacing:'0.02em'}}>{t}</div>);
+
   return (
-    <div style={{borderBottom:'1px solid '+C.sep}}>
-      <div style={{display:'flex',gap:14,alignItems:'center',padding:'13px 4px'}}>
+    <div onClick={()=>{ if(!selMode) setDrawer(true); }} style={{background:C.surf2,border:'1px solid '+(drawer?acc:C.bdr),borderRadius:14,padding:'12px 14px',cursor:selMode?'default':'pointer',transition:'border-color .14s'}}>
+      <div style={{display:'flex',gap:13,alignItems:'center'}}>
         {selMode && (
-          <button onClick={()=>onToggleSelect&&onToggleSelect()} title="Auswählen" style={{width:24,height:24,flexShrink:0,borderRadius:6,border:'1.5px solid '+(selected?C.pri:C.bdrM),background:selected?C.pri:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}>
+          <button onClick={e=>{e.stopPropagation();onToggleSelect&&onToggleSelect();}} title="Auswählen" style={{width:24,height:24,flexShrink:0,borderRadius:6,border:'1.5px solid '+(selected?acc:C.bdrM),background:selected?acc:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}>
             {selected && <Ic p={P.check} sz={14} col={C.priTxt}/>}
           </button>
         )}
         {/* Upload-Kachel ganz links — Beleg direkt hochladen/ansehen */}
-        <button onClick={hasFile?()=>setDlg('file'):()=>fileRef.current.click()} title={hasFile?'Beleg ansehen':'Beleg hochladen'} style={{position:'relative',width:46,height:46,flexShrink:0,borderRadius:14,background:hasFile?C.priL:C.surf2,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
-          <Ic p={hasFile?P.clip:P.upload} sz={18} col={hasFile?C.pri:C.sub}/>
-          {hasFile && <span style={{position:'absolute',right:-3,bottom:-3,width:15,height:15,borderRadius:'50%',background:C.grn,border:'2px solid '+C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.check} sz={8} col={'#06281C'}/></span>}
+        <button onClick={e=>{e.stopPropagation(); hasFile?setDlg('file'):fileRef.current.click();}} title={hasFile?'Beleg ansehen':'Beleg hochladen'} style={{position:'relative',width:46,height:46,flexShrink:0,borderRadius:14,background:hasFile?hexA(acc,0.16):C.surf3,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+          <Ic p={hasFile?P.clip:P.upload} sz={18} col={hasFile?acc:C.sub}/>
+          {hasFile && <span style={{position:'absolute',right:-3,bottom:-3,width:15,height:15,borderRadius:'50%',background:C.grn,border:'2px solid '+C.surf2,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.check} sz={8} col={'#06281C'}/></span>}
         </button>
         {/* Name + Kategorie */}
         <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:2}}>
-          <input value={item.name} placeholder="Bezeichnung…" onChange={e=>onUpdate(item.id,'name',e.target.value)} style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:15.5,fontWeight:600,color:C.txt,width:'100%',padding:0,letterSpacing:'-0.01em'}} />
-          <button onClick={openCat} style={{alignSelf:'flex-start',background:'none',border:'none',padding:0,cursor:'pointer',fontFamily:'inherit',fontSize:13,color:item.category?C.sub:C.mut,display:'inline-flex',alignItems:'center',gap:4}}>{item.category||'Kategorie'} <Ic p={P.down} sz={11} col={C.mut}/></button>
+          <input value={item.name} placeholder="Bezeichnung…" onClick={e=>e.stopPropagation()} onChange={e=>onUpdate(item.id,'name',e.target.value)} style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:15.5,fontWeight:600,color:C.txt,width:'100%',padding:0,letterSpacing:'-0.01em'}} />
+          <button onClick={e=>{e.stopPropagation();openCat(e);}} style={{alignSelf:'flex-start',background:'none',border:'none',padding:0,cursor:'pointer',fontFamily:'inherit',fontSize:13,color:item.category?C.sub:C.mut,display:'inline-flex',alignItems:'center',gap:4}}>{item.category||'Kategorie'} <Ic p={P.down} sz={11} col={C.mut}/></button>
         </div>
-        {/* Preis ganz rechts */}
-        <CalcField value={item.amount} onCommit={v=>onUpdate(item.id,'amount',v)} style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:16,fontWeight:700,color:C.txt,width:118,textAlign:'right',padding:0,...NUM}} />
+        {/* Preis */}
+        <div style={{fontSize:16,fontWeight:700,color:C.txt,...NUM,whiteSpace:'nowrap'}}>{money}</div>
         {!selMode && (
-          <button onClick={openMenu} title="Optionen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',flexShrink:0,width:26,height:26,borderRadius:6,fontSize:18,lineHeight:1,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>⋮</button>
+          <button onClick={e=>{e.stopPropagation();openMenu(e);}} title="Optionen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',flexShrink:0,width:26,height:26,borderRadius:6,fontSize:18,lineHeight:1,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>⋮</button>
         )}
         <input type="file" ref={fileRef} onChange={handleFile} style={{display:'none'}} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt" />
       </div>
-      {(hasFrom||hasUntil||hasNote) && !selMode && (
-        <div style={{display:'flex',flexWrap:'wrap',gap:5,padding:'0 0 10px 60px',marginTop:-4}}>
-          {(hasFrom||hasUntil) && chip(P.cal,C.sub,rangeLabel, ()=>setDlg('range'))}
-          {hasNote && chip(P.note,C.mut,'Notiz', ()=>setDlg('note'))}
+      {(hasFrom||hasUntil) && !selMode && (
+        <div style={{display:'flex',flexWrap:'wrap',gap:5,padding:'8px 0 2px 59px'}}>
+          {(hasFrom||hasUntil) && chip(P.cal,C.sub,rangeLabel, (e)=>{e.stopPropagation();setDlg('range');})}
+        </div>
+      )}
+
+      {/* Detail-Drawer (slidet von rechts herein) */}
+      {drawer && (
+        <div onClick={(e)=>{e.stopPropagation();setDrawer(false);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:130,display:'flex',justifyContent:'flex-end'}}>
+          <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'min(440px,100%)',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,boxShadow:'-24px 0 60px rgba(0,0,0,0.5)',overflowY:'auto',padding:'20px 20px 48px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+              <div style={{fontSize:19,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>Buchung</div>
+              <button onClick={()=>setDrawer(false)} title="Schließen" style={{background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:10,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
+            </div>
+
+            {fLbl('Bezeichnung')}
+            <input value={item.name} placeholder="Bezeichnung…" onChange={e=>onUpdate(item.id,'name',e.target.value)} style={{...dInput('100%'),fontSize:15,padding:'10px 12px',marginBottom:16}} />
+
+            {fLbl('Betrag (Brutto)')}
+            <CalcField value={item.amount} onCommit={v=>onUpdate(item.id,'amount',v)} style={{...dInput('100%'),fontSize:18,fontWeight:700,padding:'10px 12px',...NUM,marginBottom:16}} />
+
+            {fLbl('Kategorie')}
+            <select value={item.category||''} onChange={e=>onUpdate(item.id,'category',e.target.value)} style={{...dInput('100%'),padding:'10px 12px',marginBottom:16,cursor:'pointer'}}>
+              <option value="">— wählen —</option>
+              {CATS.map(cat=><option key={cat} value={cat}>{cat}</option>)}
+            </select>
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+              {dcell('Datum', <input type="date" value={isoDate(item.datum)} onChange={e=>onUpdate(item.id,'datum',e.target.value)} style={{...dInput('100%'),padding:'10px 12px',colorScheme:'dark'}} />)}
+              {dcell('Beleg-Nr', <input value={item.belegnr||''} onChange={e=>onUpdate(item.id,'belegnr',e.target.value)} placeholder="Beleg-Nr" style={{...dInput('100%'),padding:'10px 12px'}} />)}
+              {dcell('Netto €', <input value={item.netto||''} onChange={e=>onUpdate(item.id,'netto',e.target.value)} inputMode="decimal" placeholder="Netto" style={{...dInput('100%'),padding:'10px 12px',...NUM}} />)}
+              {dcell('MwSt', <select value={(item.mwst!=null&&item.mwst!=='')?String(item.mwst):'19'} onChange={e=>onUpdate(item.id,'mwst',e.target.value)} style={{...dInput('100%'),padding:'10px 12px',cursor:'pointer'}}><option value="19">19%</option><option value="7">7%</option><option value="0">0%</option></select>)}
+            </div>
+
+            {fLbl('Beleg')}
+            {hasFile ? (
+              <div style={{display:'flex',alignItems:'center',gap:8,background:C.surf2,borderRadius:10,padding:'10px 12px',marginBottom:16}}>
+                <Ic p={P.clip} sz={15} col={acc}/>
+                {item.filePath ? <button onClick={()=>onOpenFile&&onOpenFile(item.filePath,item.fileName)} style={{background:'none',border:'none',color:acc,fontSize:14,cursor:'pointer',fontFamily:'inherit',padding:0,flex:1,textAlign:'left',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.fileName}</button>
+                  : <a href={item.fileData} download={item.fileName} style={{color:acc,fontSize:14,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.fileName}</a>}
+                <button onClick={()=>{ const run=()=>{ if(item.filePath&&onDeleteFile) onDeleteFile(item.filePath); onUpdate(item.id,'__file__',{filePath:null,fileData:null,fileName:''}); }; askConfirm?askConfirm('Beleg „'+item.fileName+'" entfernen?',run):run(); }} style={{background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:18,lineHeight:1}}>×</button>
+              </div>
+            ) : (
+              <button onClick={()=>fileRef.current.click()} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:hexA(acc,0.16),border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:acc,cursor:'pointer',fontFamily:'inherit',marginBottom:16}}><Ic p={P.upload} sz={15} col={acc}/> Beleg hochladen</button>
+            )}
+
+            {fLbl('Notiz')}
+            <textarea value={item.note||''} onChange={e=>onUpdate(item.id,'note',e.target.value)} placeholder="Notiz…" rows={3} style={{...dInput('100%'),padding:'10px 12px',resize:'vertical',marginBottom:16}} />
+
+            {onSetRange && (
+              <button onClick={()=>{setDrawer(false);setDlg('range');}} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:C.surf2,border:'none',borderRadius:10,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',marginBottom:10,textAlign:'left'}}><Ic p={P.cal} sz={15} col={C.sub}/> {rangeLabel||'Zeitraum (von–bis)'}</button>
+            )}
+
+            <button onClick={()=>{ const run=()=>{ if(item.filePath&&onDeleteFile) onDeleteFile(item.filePath); onDelete(item.id); setDrawer(false); }; askConfirm?askConfirm('Buchung „'+(item.name||'ohne Bezeichnung')+'" wirklich löschen?',run):run(); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.redL,border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:C.red,cursor:'pointer',fontFamily:'inherit',marginTop:6}}><Ic p={P.trash} sz={15} col={C.red}/> Buchung löschen</button>
+          </div>
         </div>
       )}
 
@@ -417,7 +481,7 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
           <div onClick={e=>e.stopPropagation()} style={{position:'fixed',left:catMenu.left,top:catMenu.top!=null?catMenu.top:undefined,bottom:catMenu.bottom!=null?catMenu.bottom:undefined,width:200,maxHeight:300,overflowY:'auto',background:C.surf,border:'1px solid '+C.bdr,borderRadius:12,padding:5,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
             {CATS.map(cat=>(
               <button key={cat} onClick={()=>{onUpdate(item.id,'category',cat);setCatMenu(null);}} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:item.category===cat?C.surf2:'none',border:'none',borderRadius:8,padding:'10px 12px',fontSize:14,color:item.category===cat?C.txt:C.sub,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
-                <span style={{width:6,height:6,borderRadius:'50%',background:item.category===cat?C.pri:'transparent',flexShrink:0}}/> {cat}
+                <span style={{width:6,height:6,borderRadius:'50%',background:item.category===cat?acc:'transparent',flexShrink:0}}/> {cat}
               </button>
             ))}
           </div>
@@ -428,10 +492,8 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
       {menu && (
         <div onClick={()=>setMenu(null)} style={{position:'fixed',inset:0,zIndex:110}}>
           <div onClick={e=>e.stopPropagation()} style={{position:'fixed',right:menu.right,top:menu.top!=null?menu.top:undefined,bottom:menu.bottom!=null?menu.bottom:undefined,width:212,background:C.surf,border:'1px solid '+C.bdr,borderRadius:12,padding:5,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
-            {onEditDetails && mItem(P.brief,'Kundendetails…',()=>{setMenu(null);onEditDetails(item.id);},C.pri)}
-            {mItem(P.doc,'Details (Datum, Beleg-Nr, Netto, MwSt)',()=>{setMenu(null);setDlg('details');})}
-            {mItem(P.note, hasNote?'Notiz bearbeiten':'Notiz', ()=>{setMenu(null);setDlg('note');})}
-            {mItem(P.clip, hasFile?'Beleg':'Beleg anhängen', ()=>{setMenu(null);setDlg('file');})}
+            {onEditDetails && mItem(P.brief,'Kundendetails…',()=>{setMenu(null);onEditDetails(item.id);},acc)}
+            {mItem(P.doc,'Öffnen / Bearbeiten',()=>{setMenu(null);setDrawer(true);})}
             {onSetRange && mItem(P.cal,'Zeitraum (von–bis)',()=>{setMenu(null);setDlg('range');})}
             {onMoveItem && mItem(P.out,'Verschieben…',()=>{setMenu(null);setDlg('move');})}
             {onMoveUp && !isFirst && mItem(P.up,'Nach oben',()=>{setMenu(null);onMoveUp();})}
@@ -526,12 +588,11 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
 }
 
 /* ══ Sortier-/Auswahl-Liste (Drag & Drop + Mehrfachauswahl) ══ */
-function ItemList({items, srcKey, updFn, delFn, recurFn, rangeFn, editFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, curY, curM, hideRecur}) {
+function ItemList({items, srcKey, accent, updFn, delFn, recurFn, rangeFn, editFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, curY, curM, hideRecur}) {
   return (
-    <div>
-      <div>
+    <div style={{display:'flex',flexDirection:'column',gap:10}}>
         {items.map((item,idx)=>(
-          <ItemRow key={item.id} item={item}
+          <ItemRow key={item.id} item={item} accent={accent}
             onUpdate={updFn} onDelete={delFn}
             folderPath={folderPath}
             onUploadFile={onUploadFile} onOpenFile={onOpenFile} onDeleteFile={onDeleteFile}
@@ -547,7 +608,6 @@ function ItemList({items, srcKey, updFn, delFn, recurFn, rangeFn, editFn, folder
             hideRecur={hideRecur}
           />
         ))}
-      </div>
     </div>
   );
 }
@@ -1608,6 +1668,10 @@ function App({session}) {
 
   /* Reusable items renderer */
   const toolBtn = {background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:8,padding:'5px 11px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'};
+  // Akzentfarbe des aktuell geöffneten/aktiven Kontos (Zahlen bleiben grün)
+  const activeAcct = tab==='quellen' ? openAcct : (tab==='immo' ? sp : tab==='unter' ? 'unter' : tab==='privat' ? 'privat' : null);
+  const secAccent = activeAcct ? acctColor(activeAcct) : C.pri;
+
   const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey, hideRecur) => {
     const shown = (items||[]).filter(it=>activeInMonth(it, yr, mo));
     const inSel = srcKey && selKey===srcKey;
@@ -1623,13 +1687,13 @@ function App({session}) {
             {inSel && (<>
               <span style={{fontSize:12,color:C.sub,marginRight:'auto'}}>{selIds.length} ausgewählt</span>
               <button onClick={()=>setSelIds(allSel?[]:shownIds)} style={toolBtn}>{allSel?'Keine':'Alle'}</button>
-              <button disabled={!selIds.length} onClick={()=>setBulkMove({srcKey,ids:selIds})} style={{...toolBtn,color:C.pri,opacity:selIds.length?1:0.4}}>Verschieben</button>
+              <button disabled={!selIds.length} onClick={()=>setBulkMove({srcKey,ids:selIds})} style={{...toolBtn,color:secAccent,opacity:selIds.length?1:0.4}}>Verschieben</button>
               <button disabled={!selIds.length} onClick={()=>{ const ids=[...selIds]; askConfirm(ids.length+' Zeilen wirklich löschen?',()=>{ bulkDelete(srcKey,ids); exitSel(); }); }} style={{...toolBtn,color:C.red,opacity:selIds.length?1:0.4}}>Löschen</button>
               <button onClick={exitSel} style={{...toolBtn,color:C.txt}}>Fertig</button>
             </>)}
           </div>
         )}
-        <ItemList items={shown} srcKey={srcKey}
+        <ItemList items={shown} srcKey={srcKey} accent={secAccent}
           updFn={updFn} delFn={delFn} recurFn={recurFn} rangeFn={rangeFn} editFn={editFn}
           folderPath={folderPath}
           moveTargets={srcKey?moveTargets:null} moveItemFn={srcKey?moveItem:null}
@@ -1832,9 +1896,6 @@ function App({session}) {
           {/* ══ ÜBERSICHT ══ */}
           {/* ══ QUELLEN (Konten-Karten, N26-Stil) ══ */}
           {tab==='quellen' && (()=>{
-            const PAL=['#8FE3C6','#ABC4FF','#FFC7A6','#E8A39E','#C9B6FF'];
-            const TINT=['rgba(143,227,198,0.13)','rgba(171,196,255,0.13)','rgba(255,199,166,0.13)','rgba(232,163,158,0.13)','rgba(201,182,255,0.13)'];
-            const BD=['rgba(143,227,198,0.4)','rgba(171,196,255,0.4)','rgba(255,199,166,0.4)','rgba(232,163,158,0.4)','rgba(201,182,255,0.4)'];
             const ICONS={house:P.house,bed:P.bed,brief:P.brief,prson:P.prson,grid:P.grid,cal:P.cal,doc:P.doc};
             const iconFor=(key,def)=>ICONS[(names.propIcon&&names.propIcon[key])||def]||P.house;
             const konten=[
@@ -1864,7 +1925,7 @@ function App({session}) {
                   <button onClick={()=>scrollBy(-1)} title="Zurück" style={{...arrowBtn,position:'absolute',left:-46,top:'50%',transform:'translateY(-50%)',zIndex:5}}>‹</button>
                   <button onClick={()=>scrollBy(1)} title="Weiter" style={{...arrowBtn,position:'absolute',right:-46,top:'50%',transform:'translateY(-50%)',zIndex:5}}>›</button>
                   <div ref={quellenScrollRef} style={{display:'flex',gap:14,overflowX:'auto',scrollbarWidth:'none',scrollSnapType:'x mandatory',paddingBottom:4}}>
-                    {konten.map(k=>{ const erg=k.inc-k.exp; const c=PAL[k.ci], tint=TINT[k.ci], bd=BD[k.ci]; const open=openAcct===k.key; const toggle=()=>{ if(open){ setOpenAcct(null); } else { if(k.kind==='prop')setSp(k.pid); setOpenAcct(k.key); } }; return (
+                    {konten.map(k=>{ const erg=k.inc-k.exp; const c=acctColor(k.key), tint=hexA(c,0.13), bd=hexA(c,0.4); const open=openAcct===k.key; const toggle=()=>{ if(open){ setOpenAcct(null); } else { if(k.kind==='prop')setSp(k.pid); setOpenAcct(k.key); } }; return (
                       <div key={k.key} onClick={toggle} style={{flexShrink:0,width:isMobile?'82%':'calc((100% - 28px)/3)',scrollSnapAlign:'start',background:open?tint:C.surf2,border:'1px solid '+(open?c:'transparent'),borderRadius:18,padding:'18px 20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
                         <div style={{flex:1,minWidth:0}}>
                           <input value={k.name} onChange={k.onName} onClick={e=>e.stopPropagation()} placeholder="Name" style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:16,fontWeight:500,color:C.sub,width:'100%',padding:0,marginBottom:7}} />
@@ -1986,9 +2047,9 @@ function App({session}) {
               <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
                 {['einnahmen','ausgaben','wied','inserate'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend',inserate:'Inserate'}[id]; const on=immoView===id; return (
                   <button key={id} onClick={()=>setImmoView(id)} style={{
-                    background:on?'rgba(62,207,142,0.16)':C.surf,
-                    border:'1px solid '+(on?'rgba(62,207,142,0.45)':'transparent'),
-                    color:on?C.pri:C.sub,borderRadius:10,padding:'8px 18px',
+                    background:on?hexA(secAccent,0.16):C.surf,
+                    border:'1px solid '+(on?hexA(secAccent,0.45):'transparent'),
+                    color:on?secAccent:C.sub,borderRadius:10,padding:'8px 18px',
                     fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
                   }}>{lbl}</button>
                 ); })}
@@ -1996,7 +2057,6 @@ function App({session}) {
 
               {immoView==='einnahmen' && (
                 <div style={SC}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Einnahmen</div>
                   {futureMonth && <div style={{fontSize:12,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.22)',borderRadius:8,padding:'8px 11px',marginBottom:12}}>Dieser Monat hat noch nicht begonnen.</div>}
                   {[['Mieteinnahmen','mieteinnahmen'],['Sonstige','sonstig']].map(([label,fld])=>(
                     <div key={fld} style={{display:'flex',alignItems:'center',gap:6,padding:'9px 0',borderBottom:'1px solid '+C.sep}}>
@@ -2024,7 +2084,6 @@ function App({session}) {
 
               {immoView==='ausgaben' && (
                 <div style={SC}>
-                  <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Ausgaben</div>
                   {renderItems(
                     (pd.expenses||[]).filter(i=>!i.recurring),
                     (id,fld,val)=>updPropSub(sp,'expenses',id,fld,val),
@@ -2080,8 +2139,7 @@ function App({session}) {
 
               {immoView==='inserate' && (
                 <div style={SC}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-                    <div style={{fontSize:12,fontWeight:600,color:C.grn}}>Inserate</div>
+                  <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',marginBottom:6}}>
                     <button onClick={()=>setEditIncome(true)} style={BVm} title="Inserate anlegen (gelten für Airbnb & Booking)">＋ Inserate</button>
                   </div>
                   <div style={{fontSize:12,color:C.mut,marginBottom:12,lineHeight:1.5}}>Lege deine Inserate an – die Beträge fließen pro Monat in Airbnb & Booking.</div>
@@ -2142,9 +2200,9 @@ function App({session}) {
             <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
               {['einnahmen','ausgaben','wied'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend'}[id]; const on=unterTab===id; return (
                 <button key={id} onClick={()=>setUnterTab(id)} style={{
-                  background:on?'rgba(62,207,142,0.16)':C.surf,
-                  border:'1px solid '+(on?'rgba(62,207,142,0.45)':'transparent'),
-                  color:on?C.pri:C.sub,borderRadius:10,padding:'8px 18px',
+                  background:on?hexA(secAccent,0.16):C.surf,
+                  border:'1px solid '+(on?hexA(secAccent,0.45):'transparent'),
+                  color:on?secAccent:C.sub,borderRadius:10,padding:'8px 18px',
                   fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
                 }}>{lbl}</button>
               ); })}
@@ -2152,7 +2210,6 @@ function App({session}) {
 
             {unterTab==='einnahmen' && (
               <div style={SC}>
-                <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Einnahmen</div>
                 {renderItems(
                   (md.unternehmen?.clients||[]).filter(i=>!i.recurring),
                   (id,fld,val)=>updSec('unternehmen','clients',id,fld,val),
@@ -2171,7 +2228,6 @@ function App({session}) {
 
             {unterTab==='ausgaben' && (
               <div style={SC}>
-                <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Ausgaben</div>
                 {renderItems(
                   (md.unternehmen?.items||[]).filter(i=>!i.recurring),
                   (id,fld,val)=>updSec('unternehmen','items',id,fld,val),
@@ -2241,9 +2297,9 @@ function App({session}) {
             <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
               {['einnahmen','ausgaben','wied'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend'}[id]; const on=privTab===id; return (
                 <button key={id} onClick={()=>setPrivTab(id)} style={{
-                  background:on?'rgba(62,207,142,0.16)':C.surf,
-                  border:'1px solid '+(on?'rgba(62,207,142,0.45)':'transparent'),
-                  color:on?C.pri:C.sub,borderRadius:10,padding:'8px 18px',
+                  background:on?hexA(secAccent,0.16):C.surf,
+                  border:'1px solid '+(on?hexA(secAccent,0.45):'transparent'),
+                  color:on?secAccent:C.sub,borderRadius:10,padding:'8px 18px',
                   fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
                 }}>{lbl}</button>
               ); })}
@@ -2251,7 +2307,6 @@ function App({session}) {
 
             {privTab==='einnahmen' && (
               <div style={SC}>
-                <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Einnahmen</div>
                 {renderItems(
                   (md.privat?.einnahmen||[]).filter(i=>!i.recurring),
                   (id,fld,val)=>updSec('privat','einnahmen',id,fld,val),
@@ -2270,7 +2325,6 @@ function App({session}) {
 
             {privTab==='ausgaben' && (
               <div style={SC}>
-                <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Ausgaben</div>
                 {renderItems(
                   (md.privat?.items||[]).filter(i=>!i.recurring),
                   (id,fld,val)=>updSec('privat','items',id,fld,val),
