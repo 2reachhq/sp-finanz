@@ -147,6 +147,8 @@ const evalAmount = s => {
 const uid  = () => Math.random().toString(36).slice(2,9);
 const newItem = (name='') => ({id:uid(), name, amount:0, recurring:false, note:'', filePath:null, fileName:'', fileData:null});
 const CATS = ['Allgemein','Miete','Nebenkosten','Versicherung','Material','Personal','Steuern','Software','Marketing','Reise','Bewirtung','Bank & Gebühren','Sonstiges'];
+const DEF_INV_HEADER = 'Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihr Vertrauen. Für die erbrachten Leistungen erlaube ich mir, Ihnen folgende Positionen in Rechnung zu stellen:';
+const DEF_INV_FOOTER = 'Bitte überweisen Sie den Rechnungsbetrag innerhalb von 14 Tagen ohne Abzug auf das unten genannte Konto.\n\nMit freundlichen Grüßen';
 const mkItems  = names => names.map(n=>newItem(n));
 const safeName = s => {
   const map = {'ä':'ae','ö':'oe','ü':'ue','Ä':'Ae','Ö':'Oe','Ü':'Ue','ß':'ss'};
@@ -1495,8 +1497,8 @@ function App({session}) {
   const newInvoice = ()=>({ id:uid(), number:nextInvNo(), customerId:'', custName:'', custAddress:'', custEmail:'', saveCust:true, account:'unter', date:new Date().toISOString().slice(0,10), due:'', items:[{desc:'',qty:1,price:0,mwst:19}], note:'' });
   const invCustomer = (inv)=>{ const c=customers.find(x=>x.id===inv.customerId); if(c) return c; return {name:inv.custName||'', address:inv.custAddress||'', email:inv.custEmail||''}; };
   // Standard-Kopf-/Footertext (pro Rechnung überschreibbar, Default bleibt erhalten)
-  const defaultHeader = (cust)=> 'Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihr Vertrauen. Für die erbrachten Leistungen erlaube ich mir, Ihnen folgende Positionen in Rechnung zu stellen:';
-  const defaultFooter = ()=> 'Bitte überweisen Sie den Rechnungsbetrag innerhalb von 14 Tagen ohne Abzug auf das unten genannte Konto.\n\nMit freundlichen Grüßen\n'+((company&&company.name)||'');
+  const defaultHeader = (cust)=> (company&&company.invHeaderDefault!=null&&company.invHeaderDefault!=='') ? company.invHeaderDefault : DEF_INV_HEADER;
+  const defaultFooter = ()=> (company&&company.invFooterDefault!=null&&company.invFooterDefault!=='') ? company.invFooterDefault : (DEF_INV_FOOTER+'\n'+((company&&company.name)||''));
   const invHeader = (inv)=> inv.headerText!=null ? inv.headerText : defaultHeader(invCustomer(inv));
   const invFooter = (inv)=> inv.footerText!=null ? inv.footerText : defaultFooter();
   const openInvoice = (inv)=>{ let v={...inv}; if(v.customerId && !v.custName){ const c=customers.find(x=>x.id===v.customerId); if(c){ v.custName=c.name||''; v.custAddress=c.address||''; v.custEmail=c.email||''; v.saveCust=false; } } if(v.account==null) v.account='unter'; setInvEdit(v); };
@@ -2117,6 +2119,12 @@ function App({session}) {
                   <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>E-Mail</div><input value={company.email||''} onChange={e=>setCompany({email:e.target.value})} style={{...SS,textAlign:'left'}}/></div>
                   <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Telefon</div><input value={company.phone||''} onChange={e=>setCompany({phone:e.target.value})} style={{...SS,textAlign:'left'}}/></div>
                 </div>
+                <div style={{height:1,background:C.sep,margin:'4px 0'}}/>
+                <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Rechnungs-Standardtexte</div>
+                <div style={{fontSize:11,color:C.mut,lineHeight:1.5,marginTop:-4}}>Werden bei neuen Rechnungen automatisch vorausgefüllt. Pro Rechnung kannst du sie trotzdem individuell ändern – diese Standardtexte bleiben dann erhalten.</div>
+                <div><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Standard-Kopftext</div><textarea value={company.invHeaderDefault!=null?company.invHeaderDefault:DEF_INV_HEADER} onChange={e=>setCompany({invHeaderDefault:e.target.value})} rows={4} style={{...SS,textAlign:'left',resize:'vertical'}}/></div>
+                <div><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Standard-Footertext</div><textarea value={company.invFooterDefault!=null?company.invFooterDefault:DEF_INV_FOOTER} onChange={e=>setCompany({invFooterDefault:e.target.value})} rows={4} style={{...SS,textAlign:'left',resize:'vertical'}}/></div>
+                <button onClick={()=>{ setCompany({invHeaderDefault:null,invFooterDefault:null}); setToast('Standardtexte zurückgesetzt'); }} style={{...BVm,alignSelf:'flex-start'}}>Auf Vorlage zurücksetzen</button>
               </div>
             </div>
             {/* Online-Speicher */}
