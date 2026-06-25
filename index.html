@@ -358,6 +358,8 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
   const chip=(icon,col,label,onClick)=>(<span onClick={onClick} style={{display:'inline-flex',alignItems:'center',gap:4,background:C.surf2,color:col,borderRadius:6,padding:'3px 8px',fontSize:11,fontWeight:500,whiteSpace:'nowrap',cursor:onClick?'pointer':'default'}}><Ic p={icon} sz={11} col={col}/>{label}</span>);
   const menuBtn={display:'flex',alignItems:'center',gap:8,width:'100%',background:C.surf2,border:'none',borderRadius:10,padding:'10px 12px',fontSize:13,color:C.txt,cursor:'pointer',fontFamily:'inherit',marginTop:8,textAlign:'left'};
   const mItem=(icon,label,onClick,col)=>(<button onClick={onClick} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:col||C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={icon} sz={16} col={col||C.sub}/> <span>{label}</span></button>);
+  const dInput=(w)=>({background:C.surf2,border:'none',borderRadius:7,color:C.txt,padding:'6px 8px',fontSize:13,outline:'none',fontFamily:'inherit',width:w,textAlign:'left'});
+  const dcell=(label,node)=>(<label style={{display:'flex',flexDirection:'column',gap:3}}><span style={{fontSize:10,color:C.mut,fontWeight:600}}>{label}</span>{node}</label>);
 
   const openMenu=(e)=>{
     const r=e.currentTarget.getBoundingClientRect();
@@ -396,6 +398,14 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
         )}
         <input type="file" ref={fileRef} onChange={handleFile} style={{display:'none'}} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt" />
       </div>
+      {!selMode && (
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'0 0 10px 28px'}}>
+          {dcell('Datum', <input value={item.datum||''} onChange={e=>onUpdate(item.id,'datum',e.target.value)} placeholder="TT.MM.JJ" style={dInput(84)} />)}
+          {dcell('Beleg-Nr', <input value={item.belegnr||''} onChange={e=>onUpdate(item.id,'belegnr',e.target.value)} placeholder="—" style={dInput(96)} />)}
+          {dcell('Netto €', <input value={item.netto||''} onChange={e=>onUpdate(item.id,'netto',e.target.value)} inputMode="decimal" placeholder="—" style={{...dInput(74),...NUM}} />)}
+          {dcell('MwSt', <select value={(item.mwst!=null&&item.mwst!=='')?String(item.mwst):'19'} onChange={e=>onUpdate(item.id,'mwst',e.target.value)} style={dInput(60)}><option value="19">19 %</option><option value="7">7 %</option><option value="0">0 %</option></select>)}
+        </div>
+      )}
       {(hasFrom||hasUntil||hasNote||hasFile) && !selMode && (
         <div style={{display:'flex',flexWrap:'wrap',gap:5,padding:'0 0 9px 28px',marginTop:-3}}>
           {(hasFrom||hasUntil) && chip(P.cal,C.sub,rangeLabel, ()=>setDlg('range'))}
@@ -409,7 +419,6 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
         <div onClick={()=>setMenu(null)} style={{position:'fixed',inset:0,zIndex:110}}>
           <div onClick={e=>e.stopPropagation()} style={{position:'fixed',right:menu.right,top:menu.top!=null?menu.top:undefined,bottom:menu.bottom!=null?menu.bottom:undefined,width:212,background:C.surf,border:'1px solid '+C.bdr,borderRadius:12,padding:5,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
             {onEditDetails && mItem(P.brief,'Kundendetails…',()=>{setMenu(null);onEditDetails(item.id);},C.pri)}
-            {mItem(P.doc,'Details (Datum, Netto, MwSt)',()=>{setMenu(null);setDlg('details');})}
             {mItem(P.note, hasNote?'Notiz bearbeiten':'Notiz', ()=>{setMenu(null);setDlg('note');})}
             {mItem(P.clip, hasFile?'Beleg':'Beleg anhängen', ()=>{setMenu(null);setDlg('file');})}
             {onSetRange && mItem(P.cal,'Zeitraum (von–bis)',()=>{setMenu(null);setDlg('range');})}
@@ -441,38 +450,6 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
           ) : (
             <button onClick={()=>fileRef.current.click()} style={{...menuBtn,marginTop:0,justifyContent:'center',color:C.pri,background:C.priL,fontWeight:600}}>+ Beleg anhängen</button>
           )}
-        </Sheet>
-      )}
-
-      {/* Details: Datum, Belegnummer, Netto, MwSt */}
-      {dlg==='details' && (
-        <Sheet title={(item.name||'Zeile')+' · Details'} onClose={()=>setDlg(null)}>
-          <div style={{fontSize:12,color:C.mut,marginBottom:12,lineHeight:1.5}}>Brutto ist der Betrag in der Zeile. Hier zusätzliche Angaben für den Steuerberater.</div>
-          <div style={{display:'flex',gap:8,marginBottom:10}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Datum</div>
-              <input value={item.datum||''} onChange={e=>onUpdate(item.id,'datum',e.target.value)} placeholder="TT.MM.JJJJ" style={{...SS,textAlign:'left'}} />
-            </div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Belegnummer</div>
-              <input value={item.belegnr||''} onChange={e=>onUpdate(item.id,'belegnr',e.target.value)} style={{...SS,textAlign:'left'}} />
-            </div>
-          </div>
-          <div style={{display:'flex',gap:8}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Netto (€)</div>
-              <input value={item.netto||''} onChange={e=>onUpdate(item.id,'netto',e.target.value)} inputMode="decimal" style={{...SS,textAlign:'left',...NUM}} />
-            </div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:12,color:C.sub,marginBottom:6}}>MwSt (%)</div>
-              <select value={(item.mwst!=null&&item.mwst!=='')?String(item.mwst):'19'} onChange={e=>onUpdate(item.id,'mwst',e.target.value)} style={{...SS}}>
-                <option value="19">19 %</option>
-                <option value="7">7 %</option>
-                <option value="0">0 %</option>
-              </select>
-            </div>
-          </div>
-          <button onClick={()=>setDlg(null)} style={{...menuBtn,justifyContent:'center',background:C.priL,color:C.pri,fontWeight:600,marginTop:14}}>Fertig</button>
         </Sheet>
       )}
 
@@ -1915,7 +1892,7 @@ function App({session}) {
 
               {/* Toggle */}
               <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
-                {['einnahmen','ausgaben','wied'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend'}[id]; const on=immoView===id; return (
+                {['einnahmen','ausgaben','wied','inserate'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend',inserate:'Inserate'}[id]; const on=immoView===id; return (
                   <button key={id} onClick={()=>setImmoView(id)} style={{
                     background:on?'rgba(62,207,142,0.16)':C.surf,
                     border:'1px solid '+(on?'rgba(62,207,142,0.45)':'transparent'),
@@ -1927,26 +1904,15 @@ function App({session}) {
 
               {immoView==='einnahmen' && (
                 <div style={SC}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                    <div style={{fontSize:12,fontWeight:600,color:C.grn}}>Einnahmen</div>
-                    <button onClick={()=>setEditIncome(true)} style={BVm} title="Inserate (Airbnb & Booking)">＋ Inserate</button>
-                  </div>
+                  <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Einnahmen</div>
                   {futureMonth && <div style={{fontSize:12,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.22)',borderRadius:8,padding:'8px 11px',marginBottom:12}}>Dieser Monat hat noch nicht begonnen.</div>}
-                  {[['Mieteinnahmen','mieteinnahmen'],['Airbnb','airbnb'],['Booking','booking'],['Sonstige','sonstig']].map(([label,fld])=>{
-                    const inserate = names.inserate?.[sp] || [];
-                    const channelLocked = (fld==='airbnb'||fld==='booking') && inserate.length>0;
-                    return (
+                  {[['Mieteinnahmen','mieteinnahmen'],['Sonstige','sonstig']].map(([label,fld])=>(
                     <div key={fld} style={{display:'flex',alignItems:'center',gap:6,padding:'9px 0',borderBottom:'1px solid '+C.sep}}>
-                      <span style={{flex:1,fontSize:14,color:C.sub}}>{label}{channelLocked?<span style={{fontSize:11,color:C.mut,marginLeft:6}}>· {inserate.length} Inserate</span>:null}</span>
-                      {channelLocked ? (
-                        <div onClick={futureMonth?undefined:()=>setEditIncome(true)} style={{...SI,width:96,...NUM,display:'flex',alignItems:'center',justifyContent:'flex-end',cursor:futureMonth?'not-allowed':'pointer',opacity:futureMonth?0.4:1,color:C.pri,fontWeight:600}}>{incomeVal(pd.income,fld)}</div>
-                      ) : (
-                        <CalcField value={pd.income?.[fld]} onCommit={v=>setPropInc(sp,fld,v)} disabled={futureMonth} style={{...SI,width:96,...NUM}} />
-                      )}
+                      <span style={{flex:1,fontSize:14,color:C.sub}}>{label}</span>
+                      <CalcField value={pd.income?.[fld]} onCommit={v=>setPropInc(sp,fld,v)} disabled={futureMonth} style={{...SI,width:96,...NUM}} />
                       <span style={{fontSize:12,color:C.mut,width:14}}>€</span>
                     </div>
-                    );
-                  })}
+                  ))}
                   <div style={{fontSize:11,color:C.mut,margin:'12px 0 6px'}}>Weitere Einnahmen</div>
                   {renderItems(
                     (pd.einnahmen||[]).filter(i=>!i.recurring),
@@ -2018,6 +1984,36 @@ function App({session}) {
                     </div>
                   </div>
                 </>
+              )}
+
+              {immoView==='inserate' && (
+                <div style={SC}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.grn}}>Inserate</div>
+                    <button onClick={()=>setEditIncome(true)} style={BVm} title="Inserate anlegen (gelten für Airbnb & Booking)">＋ Inserate</button>
+                  </div>
+                  <div style={{fontSize:12,color:C.mut,marginBottom:12,lineHeight:1.5}}>Lege deine Inserate an – die Beträge fließen pro Monat in Airbnb & Booking.</div>
+                  {futureMonth && <div style={{fontSize:12,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.22)',borderRadius:8,padding:'8px 11px',marginBottom:12}}>Dieser Monat hat noch nicht begonnen.</div>}
+                  {[['Airbnb','airbnb'],['Booking','booking']].map(([label,fld])=>{
+                    const inserate = names.inserate?.[sp] || [];
+                    const channelLocked = inserate.length>0;
+                    return (
+                    <div key={fld} style={{display:'flex',alignItems:'center',gap:6,padding:'9px 0',borderBottom:'1px solid '+C.sep}}>
+                      <span style={{flex:1,fontSize:14,color:C.sub}}>{label}{channelLocked?<span style={{fontSize:11,color:C.mut,marginLeft:6}}>· {inserate.length} Inserate</span>:null}</span>
+                      {channelLocked ? (
+                        <div onClick={futureMonth?undefined:()=>setEditIncome(true)} style={{...SI,width:96,...NUM,display:'flex',alignItems:'center',justifyContent:'flex-end',cursor:futureMonth?'not-allowed':'pointer',opacity:futureMonth?0.4:1,color:C.pri,fontWeight:600}}>{incomeVal(pd.income,fld)}</div>
+                      ) : (
+                        <CalcField value={pd.income?.[fld]} onCommit={v=>setPropInc(sp,fld,v)} disabled={futureMonth} style={{...SI,width:96,...NUM}} />
+                      )}
+                      <span style={{fontSize:12,color:C.mut,width:14}}>€</span>
+                    </div>
+                    );
+                  })}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                    <span style={{fontSize:12,color:C.sub}}>Gesamt Airbnb + Booking</span>
+                    <span style={{fontSize:22,fontWeight:700,color:C.grn,...NUM}}>{fmt(incomeVal(pd.income,'airbnb')+incomeVal(pd.income,'booking'))}</span>
+                  </div>
+                </div>
               )}
 
               <ResultBanner label={names[sp]} sublabel={fmt(pc.netto)+' Einnahmen · '+fmt(pc.exp)+' Ausgaben'} value={pc.gewinn} />
