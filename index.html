@@ -39,6 +39,9 @@
     @keyframes slideInLeft{from{transform:translateX(-100%);opacity:.5}to{transform:translateX(0);opacity:1}}
     .nocal::-webkit-calendar-picker-indicator{display:none;-webkit-appearance:none}
     .nocal{-moz-appearance:textfield}
+    .prog{height:5px;width:100%;background:rgba(123,194,170,0.18);border-radius:99px;overflow:hidden;position:relative}
+    .prog::after{content:'';position:absolute;top:0;height:100%;width:40%;border-radius:99px;background:#7BC2AA;animation:progslide 1.05s ease-in-out infinite}
+    @keyframes progslide{0%{left:-42%}100%{left:100%}}
     .navlink.active { color:#fff; }
   </style>
 </head>
@@ -356,12 +359,13 @@ function TargetPicker({title, moveTargets, curY, curM, confirmLabel, onClose, on
 }
 
 /* ══ Item row (Name + Betrag + kompaktes ⋮-Dropdown) ══ */
-function ItemRow({item, accent, kind, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur}) {
+function ItemRow({item, accent, kind, onExtract, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur}) {
   const acc = accent||C.pri;
   const dateLabel = kind==='aus' ? 'Abbuchungsdatum' : kind==='ein' ? 'Eingangsdatum' : 'Datum';
   const [menu,setMenu]=useState(null);   // {top,bottom,right}
   const [catMenu,setCatMenu]=useState(null); // {left,top,bottom} Kategorie-Dropdown
   const [drawer,setDrawer]=useState(false); // Detail-Drawer (von rechts)
+  const [uploading,setUploading]=useState(false); // Beleg-Upload/Auslesen läuft
   const [dlg,setDlg]=useState(null);     // 'range'|'move'
   const [mvDest,setMvDest]=useState((moveTargets&&moveTargets[0]&&moveTargets[0].key)||'');
   const [mvY,setMvY]=useState(curY);
@@ -376,11 +380,15 @@ function ItemRow({item, accent, kind, onUpdate, onDelete, folderPath, onUploadFi
   const M3=(o)=>MONTHS[o.m].slice(0,3)+' '+o.y;
   const rangeLabel = (hasFrom&&hasUntil) ? (M3(item.from)+' – '+M3(item.until)) : hasFrom ? ('ab '+M3(item.from)) : hasUntil ? ('bis '+M3(item.until)) : '';
 
-  const handleFile=e=>{
+  const handleFile=async e=>{
     const f=e.target.files[0]; if(!f) return;
     if(f.size>10*1024*1024){ alert('Max. 10 MB pro Datei.'); return; }
-    if(onUploadFile&&folderPath) onUploadFile(f, folderPath, filePath=>onUpdate(item.id,'__file__',{filePath,fileName:f.name,fileData:null}));
     e.target.value='';
+    setUploading(true);
+    try{
+      if(onUploadFile&&folderPath) await onUploadFile(f, folderPath, filePath=>onUpdate(item.id,'__file__',{filePath,fileName:f.name,fileData:null}));
+      if(onExtract) await onExtract(f, item, onUpdate);
+    } finally { setUploading(false); }
   };
   const chip=(icon,col,label,onClick)=>(<span onClick={onClick} style={{display:'inline-flex',alignItems:'center',gap:4,background:C.surf2,color:col,borderRadius:6,padding:'3px 8px',fontSize:11,fontWeight:500,whiteSpace:'nowrap',cursor:onClick?'pointer':'default'}}><Ic p={icon} sz={11} col={col}/>{label}</span>);
   const menuBtn={display:'flex',alignItems:'center',gap:8,width:'100%',background:C.surf2,border:'none',borderRadius:10,padding:'10px 12px',fontSize:13,color:C.txt,cursor:'pointer',fontFamily:'inherit',marginTop:8,textAlign:'left'};
@@ -414,12 +422,13 @@ function ItemRow({item, accent, kind, onUpdate, onDelete, folderPath, onUploadFi
         )}
         {/* Upload-Kachel ganz links — Beleg direkt hochladen/ansehen */}
         <button onClick={e=>{e.stopPropagation(); hasFile?setDlg('file'):fileRef.current.click();}} title={hasFile?'Beleg ansehen':'Beleg hochladen'} style={{position:'relative',width:46,height:46,flexShrink:0,borderRadius:14,background:hasFile?hexA(acc,0.16):C.surf3,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
-          <Ic p={hasFile?P.clip:P.upload} sz={18} col={hasFile?acc:C.sub}/>
-          {hasFile && <span style={{position:'absolute',right:-3,bottom:-3,width:15,height:15,borderRadius:'50%',background:C.grn,border:'2px solid '+C.surf2,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.check} sz={8} col={'#06281C'}/></span>}
+          <Ic p={uploading?P.spark:(hasFile?P.clip:P.upload)} sz={18} col={uploading?acc:(hasFile?acc:C.sub)}/>
+          {uploading && <div className="prog" style={{position:'absolute',bottom:4,left:6,right:6,height:3}}/>}
+          {!uploading && hasFile && <span style={{position:'absolute',right:-3,bottom:-3,width:15,height:15,borderRadius:'50%',background:C.grn,border:'2px solid '+C.surf2,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.check} sz={8} col={'#06281C'}/></span>}
         </button>
         {/* Name + Kategorie + Datum */}
         <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:5}}>
-          <input value={item.name} placeholder="Bezeichnung…" onClick={e=>e.stopPropagation()} onChange={e=>onUpdate(item.id,'name',e.target.value)} style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:15.5,fontWeight:600,color:C.txt,width:'100%',padding:0,letterSpacing:'-0.01em'}} />
+          <input value={item.name} placeholder="Name…" onClick={e=>e.stopPropagation()} onChange={e=>onUpdate(item.id,'name',e.target.value)} style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:15.5,fontWeight:600,color:C.txt,width:'100%',padding:0,letterSpacing:'-0.01em'}} />
           <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap'}}>
             <button onClick={e=>{e.stopPropagation();openCat(e);}} style={item.category
               ? {background:hexA(acc,0.18),border:'1px solid '+hexA(acc,0.5),borderRadius:8,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:600,color:acc,display:'inline-flex',alignItems:'center',gap:5}
@@ -443,14 +452,14 @@ function ItemRow({item, accent, kind, onUpdate, onDelete, folderPath, onUploadFi
       {/* Detail-Drawer (slidet von rechts herein) */}
       {drawer && (
         <div onClick={(e)=>{e.stopPropagation();setDrawer(false);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:130,display:'flex',justifyContent:'flex-end'}}>
-          <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'min(440px,100%)',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,boxShadow:'-24px 0 60px rgba(0,0,0,0.5)',overflowY:'auto',padding:'20px 20px 48px'}}>
+          <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'min(520px,100%)',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,borderTopLeftRadius:22,borderBottomLeftRadius:22,boxShadow:'-30px 0 80px rgba(0,0,0,0.55)',overflowY:'auto',padding:'30px 30px 56px'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
               <div style={{fontSize:19,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>Buchung</div>
               <button onClick={()=>setDrawer(false)} title="Schließen" style={{background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:10,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
             </div>
 
-            {fLbl('Bezeichnung')}
-            <input value={item.name} placeholder="Bezeichnung…" onChange={e=>onUpdate(item.id,'name',e.target.value)} style={{...dInput('100%'),fontSize:15,padding:'10px 12px',marginBottom:16}} />
+            {fLbl('Name')}
+            <input value={item.name} placeholder="Name…" onChange={e=>onUpdate(item.id,'name',e.target.value)} style={{...dInput('100%'),fontSize:15,padding:'10px 12px',marginBottom:16}} />
 
             {fLbl('Betrag (Brutto)')}
             <CalcField value={item.amount} onCommit={v=>onUpdate(item.id,'amount',v)} style={{...dInput('100%'),fontSize:18,fontWeight:700,padding:'10px 12px',...NUM,marginBottom:16}} />
@@ -487,7 +496,7 @@ function ItemRow({item, accent, kind, onUpdate, onDelete, folderPath, onUploadFi
               <button onClick={()=>{setDrawer(false);setDlg('range');}} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:C.surf2,border:'none',borderRadius:10,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',marginBottom:10,textAlign:'left'}}><Ic p={P.cal} sz={15} col={C.sub}/> {rangeLabel||'Zeitraum (von–bis)'}</button>
             )}
 
-            <button onClick={()=>{ const run=()=>{ if(item.filePath&&onDeleteFile) onDeleteFile(item.filePath); onDelete(item.id); setDrawer(false); }; askConfirm?askConfirm('Buchung „'+(item.name||'ohne Bezeichnung')+'" wirklich löschen?',run):run(); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.redL,border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:C.red,cursor:'pointer',fontFamily:'inherit',marginTop:6}}><Ic p={P.trash} sz={15} col={C.red}/> Buchung löschen</button>
+            <button onClick={()=>{ const run=()=>{ if(item.filePath&&onDeleteFile) onDeleteFile(item.filePath); onDelete(item.id); setDrawer(false); }; askConfirm?askConfirm('Buchung „'+(item.name||'ohne Namen')+'" wirklich löschen?',run):run(); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.redL,border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:C.red,cursor:'pointer',fontFamily:'inherit',marginTop:6}}><Ic p={P.trash} sz={15} col={C.red}/> Buchung löschen</button>
           </div>
         </div>
       )}
@@ -516,7 +525,7 @@ function ItemRow({item, accent, kind, onUpdate, onDelete, folderPath, onUploadFi
             {onMoveUp && !isFirst && mItem(P.up,'Nach oben',()=>{setMenu(null);onMoveUp();})}
             {onMoveDown && !isLast && mItem(P.down,'Nach unten',()=>{setMenu(null);onMoveDown();})}
             <div style={{height:1,background:C.sep,margin:'4px 8px'}}/>
-            {mItem(P.trash,'Löschen',()=>{ setMenu(null); const run=()=>{ if(item.filePath&&onDeleteFile) onDeleteFile(item.filePath); onDelete(item.id); }; askConfirm?askConfirm('Zeile „'+(item.name||'ohne Bezeichnung')+'" wirklich löschen?'+(hasFile?' Die angehängte Datei wird ebenfalls entfernt.':''),run):run(); },C.red)}
+            {mItem(P.trash,'Löschen',()=>{ setMenu(null); const run=()=>{ if(item.filePath&&onDeleteFile) onDeleteFile(item.filePath); onDelete(item.id); }; askConfirm?askConfirm('Zeile „'+(item.name||'ohne Namen')+'" wirklich löschen?'+(hasFile?' Die angehängte Datei wird ebenfalls entfernt.':''),run):run(); },C.red)}
           </div>
         </div>
       )}
@@ -605,11 +614,11 @@ function ItemRow({item, accent, kind, onUpdate, onDelete, folderPath, onUploadFi
 }
 
 /* ══ Sortier-/Auswahl-Liste (Drag & Drop + Mehrfachauswahl) ══ */
-function ItemList({items, srcKey, accent, kind, updFn, delFn, recurFn, rangeFn, editFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, curY, curM, hideRecur}) {
+function ItemList({items, srcKey, accent, kind, onExtract, updFn, delFn, recurFn, rangeFn, editFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, curY, curM, hideRecur}) {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:10}}>
         {items.map((item,idx)=>(
-          <ItemRow key={item.id} item={item} accent={accent} kind={kind}
+          <ItemRow key={item.id} item={item} accent={accent} kind={kind} onExtract={onExtract}
             onUpdate={updFn} onDelete={delFn}
             folderPath={folderPath}
             onUploadFile={onUploadFile} onOpenFile={onOpenFile} onDeleteFile={onDeleteFile}
@@ -630,7 +639,7 @@ function ItemList({items, srcKey, accent, kind, updFn, delFn, recurFn, rangeFn, 
 }
 
 /* ══ Add form ══ */
-function AddForm({onAdd, placeholder='Bezeichnung'}) {
+function AddForm({onAdd, placeholder='Name'}) {
   const [open,setOpen]=useState(false);
   const [name,setName]=useState('');
   const [amount,setAmount]=useState('');
@@ -964,6 +973,7 @@ function App({session}) {
   const [draftSel,setDraftSel]= useState([]);     // ausgewählte Entwürfe (Import)
   const [assignOpen,setAssignOpen]= useState(false);
   const [importBusy,setImportBusy]= useState(false);
+  const [dupPopup,setDupPopup]= useState(null);   // Dubletten-Hinweis {draft, match}
   const chat = data.chat || [];                   // KI-Berater Verlauf (gespeichert)
   const setChat = updater => setData(prev=>{ const cur=prev.chat||[]; const next=(typeof updater==='function'?updater(cur):updater).slice(-40); return {...prev, chat:next}; });
   const [chatInput,setChatInput]= useState('');
@@ -1446,6 +1456,26 @@ function App({session}) {
   const draftFile = async (id,f) => { if(!f) return; try{ let blob=f; try{ blob=await compressImage(f,1500,0.6); }catch(_){} const b64=await fileToB64(blob); updateDraft(id,{fileData:'data:image/jpeg;base64,'+b64, fileName:f.name}); setToast('Beleg angehängt'); }catch(e){ setToast('Beleg-Fehler: '+(e.message||e)); } };
   const delDraft = id => { setDrafts(ds=>ds.filter(d=>d.id!==id)); setDraftSel(s=>s.filter(x=>x!==id)); };
   const fileToB64 = file => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(new Error('Datei lesen fehlgeschlagen')); r.readAsDataURL(file); });
+  // Alle vorhandenen Buchungen einsammeln (für Dubletten-/Wiederkehrend-Erkennung)
+  const existingBookings = () => { const out=[]; Object.keys(data).forEach(y=>{ if(!/^\d+$/.test(y))return; const ym=data[y]||{}; Object.keys(ym).forEach(m=>{ const md=ym[m]; if(!md)return;
+      PROPS.forEach(p=>{ const pp=md.props?.[p]; if(!pp)return; (pp.expenses||[]).forEach(it=>out.push({it,acct:names[p],y:+y,m:+m,kind:'aus'})); (pp.einnahmen||[]).forEach(it=>out.push({it,acct:names[p],y:+y,m:+m,kind:'ein'})); });
+      const u=md.unternehmen; if(u){ (u.clients||[]).forEach(it=>out.push({it,acct:names.unternehmen,y:+y,m:+m,kind:'ein'})); (u.items||[]).forEach(it=>out.push({it,acct:names.unternehmen,y:+y,m:+m,kind:'aus'})); }
+      const pr=md.privat; if(pr){ (pr.einnahmen||[]).forEach(it=>out.push({it,acct:names.privatLabel||'Privat',y:+y,m:+m,kind:'ein'})); (pr.items||[]).forEach(it=>out.push({it,acct:names.privatLabel||'Privat',y:+y,m:+m,kind:'aus'})); }
+    }); }); return out; };
+  const normName = s => String(s||'').toLowerCase().replace(/[^a-z0-9äöü]/g,'');
+  const toISO = s => { if(!s) return ''; s=String(s); if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10); const m=s.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})/); if(m){ let y=m[3]; if(y.length===2)y='20'+y; return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); } return ''; };
+  // Dublette + Wiederkehrend für einen Entwurf bestimmen
+  const flagDraft = (d, all) => { const dn=normName(d.name), da=num(d.amount); let dup=null;
+    for(const b of all){ const bn=b.it.belegnr, ba=num(b.it.amount);
+      if(d.belegnr && bn && String(bn).toLowerCase()===String(d.belegnr).toLowerCase()){ dup=b; break; }
+      if(da>0 && Math.abs(ba-da)<0.005 && d.datum && b.it.datum && toISO(d.datum)===toISO(b.it.datum) && dn.length>3 && (normName(b.it.name).includes(dn.slice(0,6))||dn.includes(normName(b.it.name).slice(0,6)))){ dup=b; break; }
+    }
+    if(!dup && d.belegnr){ const inv=(data.invoices||[]).find(iv=>String(iv.number||'').toLowerCase()===String(d.belegnr).toLowerCase()); if(inv) dup={invoice:inv}; }
+    let recur=false; if(!dup && dn.length>2 && da>0){ const months=new Set(); for(const b of all){ if(normName(b.it.name)===dn && Math.abs(num(b.it.amount)-da)<Math.max(2,da*0.12)){ months.add(b.y+'-'+b.m); } } if(months.size>=1) recur=true; }
+    return {...d, dup, recur};
+  };
+  const flagDrafts = list => { const all=existingBookings(); return list.map(d=>flagDraft(d,all)); };
+
   const importPdf = async file => {
     setImportBusy(true);
     try{
@@ -1457,8 +1487,8 @@ function App({session}) {
         : { type:'image', source:{ type:'base64', media_type:(file.type||'image/jpeg'), data:b64 } };
       const prompt = "Dies ist ein Bankauszug oder ein Beleg/eine Rechnung (Deutschland). Lies ALLE einzelnen Umsätze bzw. Belegpositionen aus (keine Saldo-/Summen-/Kontostandzeilen). "
         + "Antworte AUSSCHLIESSLICH mit minifiziertem JSON (keine Leerzeichen, keine Zeilenumbrüche, kein Markdown) im Format:\n"
-        + '{"p":[{"b":"Händler/Beschreibung","a":12.34,"k":"a","d":"TT.MM.JJJJ","r":""}]}\n'
-        + "Felder: b=Kurzbeschreibung (max 60 Zeichen), a=Betrag positiv mit Punkt als Dezimaltrennzeichen, k=\"e\" bei Einnahme/Gutschrift sonst \"a\", d=Datum (leer wenn keins), r=Rechnungsnummer (leer wenn keine). "
+        + '{"p":[{"b":"Kunde/Name/Titel","a":12.34,"k":"a","d":"TT.MM.JJJJ","r":"","c":""}]}\n'
+        + "Felder: b=Kunde bzw. Name/Titel (max 60 Zeichen, KEINE generische Bezeichnung), a=Betrag positiv mit Punkt als Dezimaltrennzeichen, k=\"e\" bei Einnahme/Gutschrift sonst \"a\", d=Datum (leer wenn keins), r=Rechnungs-/Belegnummer (leer wenn keine), c=Kategorie-Vorschlag aus [Allgemein,Miete,Nebenkosten,Versicherung,Material,Personal,Steuern,Software,Marketing,Reise,Bewirtung,Bank & Gebühren,Sonstiges] (leer wenn unklar). "
         + "Halte b kurz. Erfinde nichts.";
       const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-haiku-4-5', max_tokens:8000, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
       if(error) throw error;
@@ -1474,15 +1504,16 @@ function App({session}) {
         if(lastObj>0){ try { parsed = JSON.parse(txt.slice(0,lastObj+1)+']}'); truncated=true; } catch(__){ throw new Error('Antwort unlesbar (zu lang). Versuch eine kürzere Datei / pro Monat eine Seite.'); } }
         else throw new Error('Antwort unlesbar.');
       }
-      const list = (parsed.p||parsed.posten||[]).map(p=>({
+      const list = (parsed.p||parsed.posten||[]).map(p=>{ const belegnr=String(p.r||p.rechnungsnummer||''); const datum=toISO(p.d||p.datum||''); return {
         id:uid(),
         name:String(p.b||p.beschreibung||'Posten').slice(0,70),
         amount:Math.abs(parseFloat(String(p.a!=null?p.a:p.betrag).replace(',','.'))||0),
         kind:((p.k||p.art)==='e'||(p.k||p.art)==='einnahme'?'ein':'aus'),
-        info:[(p.r||p.rechnungsnummer)&&('Nr. '+(p.r||p.rechnungsnummer)), (p.d||p.datum)].filter(Boolean).join(' · '),
-      })).filter(p=>p.amount>0);
+        belegnr, datum, category:String(p.c||''),
+        info:[belegnr&&('Nr. '+belegnr)].filter(Boolean).join(' · '),
+      }; }).filter(p=>p.amount>0);
       if(!list.length) setToast('Keine Posten erkannt.');
-      else { setDrafts(ds=>[...list,...ds]); setToast(list.length+' Posten erkannt'+(truncated?' (Auszug sehr lang – evtl. nicht alle; ggf. seitenweise hochladen)':'')); }
+      else { const flagged=flagDrafts(list); const dups=flagged.filter(d=>d.dup).length; setDrafts(ds=>[...flagged,...ds]); setToast(list.length+' Posten erkannt'+(dups?(' · '+dups+' evtl. Dublette(n)'):'')+(truncated?' (Auszug sehr lang – ggf. seitenweise)':'')); }
     }catch(e){ setToast('Konnte „'+file.name+'" nicht auslesen: '+(e.message||e)); }
     setImportBusy(false);
   };
@@ -1501,12 +1532,44 @@ function App({session}) {
       }
       const parsed = parseStatement(lines);
       if(!parsed.length) setToast('Ohne KI nichts erkannt (Text-PDF nötig bzw. OCR zu ungenau).');
-      else { setDrafts(ds=>[...parsed,...ds]); setToast(parsed.length+' Posten erkannt (ohne KI)'); }
+      else { const flagged=flagDrafts(parsed); setDrafts(ds=>[...flagged,...ds]); setToast(parsed.length+' Posten erkannt (ohne KI)'); }
     }catch(e){ setToast('Ohne KI fehlgeschlagen: '+(e.message||e)); }
     setImportBusy(false);
   };
   /* ── Beleg erfassen (Foto/Upload → KI → speichern + Bild in DB) ── */
   const folderFor = key => (key==='p1'||key==='p2'||key==='p3') ? ['Immobilien', names[key]] : key==='unterInc' ? [names.unternehmen,'Einnahmen'] : key==='unterExp' ? [names.unternehmen,'Ausgaben'] : ['Privat'];
+  // Liest einen einzelnen Beleg per KI aus → Objekt (für Drawer-Upload mit Vorausfüllen)
+  const aiExtractFile = async file => {
+    const isPdf = file.type==='application/pdf' || /\.pdf$/i.test(file.name);
+    let blob=file, media=file.type||'image/jpeg';
+    if(!isPdf){ try{ blob=await compressImage(file); media='image/jpeg'; }catch(_){} }
+    const b64 = await fileToB64(blob);
+    const block = isPdf ? { type:'document', source:{ type:'base64', media_type:'application/pdf', data:b64 } } : { type:'image', source:{ type:'base64', media_type:media, data:b64 } };
+    const prompt = "Dies ist EIN einzelner Beleg/Rechnung/Quittung (Deutschland). Lies die Felder aus. AUSSCHLIESSLICH minifiziertes JSON:\n"
+      + '{"b":"Kunde/Name/Titel","brutto":12.34,"netto":10.37,"mwst":19,"k":"a","d":"TT.MM.JJJJ","r":"Belegnummer","c":"Kategorie"}\n'
+      + "b=Kunde bzw. Name/Titel (keine generische Bezeichnung), brutto=Gesamtbetrag (Punkt-Dezimal), netto=Netto, mwst=MwSt-% (19/7/0), k=\"e\" bei Einnahme sonst \"a\", d/r leer wenn nicht vorhanden, c=Kategorie aus ["+CATS.join(',')+"]. Erfinde nichts.";
+    const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-haiku-4-5', max_tokens:900, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
+    if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
+    let txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; txt=txt.replace(/```json|```/g,'').trim(); const mm=txt.match(/\{[\s\S]*\}/); if(mm)txt=mm[0];
+    const p=JSON.parse(txt);
+    return { name:String(p.b||'').slice(0,70), amount:Math.abs(parseFloat(String(p.brutto!=null?p.brutto:p.a).replace(',','.'))||0), netto:Math.abs(parseFloat(String(p.netto).replace(',','.'))||0), mwst:parseFloat(String(p.mwst).replace(',','.'))||0, kind:(p.k==='e'?'ein':'aus'), belegnr:String(p.r||''), datum:toISO(p.d||''), category:String(p.c||'') };
+  };
+  // Beleg im Drawer hochladen → auslesen → Felder vorausfüllen + Dublettenprüfung
+  const extractToItem = async (file, item, onUpdate) => {
+    setToast('🔎 Beleg wird ausgelesen…');
+    try{ const r = await aiExtractFile(file); if(r){
+      if(r.name) onUpdate(item.id,'name',r.name);
+      if(r.amount) onUpdate(item.id,'amount',r.amount);
+      if(r.netto) onUpdate(item.id,'netto',r.netto);
+      if(r.mwst) onUpdate(item.id,'mwst',String(r.mwst));
+      if(r.datum) onUpdate(item.id,'datum',r.datum);
+      if(r.belegnr) onUpdate(item.id,'belegnr',r.belegnr);
+      if(r.category) onUpdate(item.id,'category',r.category);
+      const flagged=flagDraft({name:r.name,amount:r.amount,belegnr:r.belegnr,datum:r.datum}, existingBookings());
+      if(flagged.dup) setDupPopup({draft:flagged,match:flagged.dup});
+      setToast('Beleg ausgelesen ✓');
+    }}catch(e){ setToast('Auslesen fehlgeschlagen: '+(e.message||e)); }
+  };
   const extractBeleg = async file => {
     setBelegBusy(true); setBelegRes(null);
     try{
@@ -1946,7 +2009,7 @@ function App({session}) {
             </>)}
           </div>
         )}
-        <ItemList items={shown} srcKey={srcKey} accent={secAccent} kind={kindEff}
+        <ItemList items={shown} srcKey={srcKey} accent={secAccent} kind={kindEff} onExtract={extractToItem}
           updFn={updFn} delFn={delFn} recurFn={recurFn} rangeFn={rangeFn} editFn={editFn}
           folderPath={folderPath}
           moveTargets={srcKey?moveTargets:null} moveItemFn={srcKey?moveItem:null}
@@ -2456,7 +2519,7 @@ function App({session}) {
                   ['Unternehmen','Einnahmen'],
                   undefined, undefined, undefined, 'unterInc', true, undefined, {inc:tot.unterInc, exp:tot.unterExp}
                 )}
-                <AddForm placeholder="Bezeichnung" onAdd={(n,a)=>addSec('unternehmen','clients',n,a,false)} />
+                <AddForm placeholder="Name" onAdd={(n,a)=>addSec('unternehmen','clients',n,a,false)} />
                 <VoiceAdd accent={secAccent} onAdd={(n,a)=>addSec('unternehmen','clients',n,a,false)} />
               </div>
             )}
@@ -2492,7 +2555,7 @@ function App({session}) {
                       (it,range)=>setSecRange('unternehmen','clients',it,range),
                       null, true
                     )}
-                    <AddForm placeholder="Bezeichnung" onAdd={(n,a)=>addSec('unternehmen','clients',n,a,true)} />
+                    <AddForm placeholder="Name" onAdd={(n,a)=>addSec('unternehmen','clients',n,a,true)} />
                   </div>
                   <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
                     <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Wiederkehrende Ausgaben</div>
@@ -2617,11 +2680,13 @@ function App({session}) {
                   <input type="file" accept="image/*,.pdf" onChange={e=>{const f=e.target.files[0];e.target.value='';draftFile(d.id,f);}} style={{display:'none'}}/>
                 </label>
                 <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:6}}>
-                  <input onClick={e=>e.stopPropagation()} value={d.name} onChange={e=>updateDraft(d.id,{name:e.target.value})} placeholder="Bezeichnung…" style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:15,fontWeight:600,color:C.txt,width:'100%',padding:0}} />
+                  <input onClick={e=>e.stopPropagation()} value={d.name} onChange={e=>updateDraft(d.id,{name:e.target.value})} placeholder="Name…" style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:15,fontWeight:600,color:C.txt,width:'100%',padding:0}} />
                   <div style={{display:'flex',alignItems:'center',gap:6}}>
                     <select onClick={e=>e.stopPropagation()} value={d.category||''} onChange={e=>updateDraft(d.id,{category:e.target.value})} style={{background:'transparent',border:'none',color:d.category?C.sub:C.mut,padding:0,fontSize:11,outline:'none',fontFamily:'inherit',cursor:'pointer',maxWidth:110}}><option value="">Kategorie</option>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
                     <span style={{color:C.mut,fontSize:11}}>·</span>
                     <input className="nocal" onClick={e=>e.stopPropagation()} type="date" value={d.datum||''} onChange={e=>updateDraft(d.id,{datum:e.target.value})} style={{background:'transparent',border:'none',color:C.mut,padding:0,fontSize:11,outline:'none',fontFamily:'inherit',colorScheme:'dark'}}/>
+                    {d.dup && <button onClick={e=>{e.stopPropagation();setDupPopup({draft:d,match:d.dup});}} title="Bereits vorhanden – ansehen" style={{background:hexA('#FFB37A',0.16),border:'1px solid '+hexA('#FFB37A',0.4),color:'#FFB37A',borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>⚠ bereits vorhanden</button>}
+                    {!d.dup && d.recur && <span title="Sieht nach wiederkehrender Buchung aus" style={{background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}>🔁 wiederkehrend?</span>}
                   </div>
                 </div>
                 <span style={{display:'inline-flex',alignItems:'baseline',flexShrink:0}}>
@@ -2649,6 +2714,7 @@ function App({session}) {
                     <label style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:'24px 20px',border:'1.5px dashed '+C.pri,borderRadius:14,cursor:importBusy?'default':'pointer',textAlign:'center',opacity:importBusy?0.6:1}}>
                       <Ic p={P.spark} sz={24} col={C.pri}/>
                       <div style={{fontSize:14,fontWeight:600,color:C.txt}}>{importBusy?'KI liest aus…':'PDF/Foto auswählen'}</div>
+                      {importBusy && <div className="prog" style={{maxWidth:200}}/>}
                       <input type="file" accept=".pdf,application/pdf,image/*" multiple disabled={importBusy} onChange={async e=>{const fs=[...e.target.files]; e.target.value=''; for(const f of fs){ await importPdf(f); }}} style={{display:'none'}} />
                     </label>
                   </div>
@@ -2657,6 +2723,7 @@ function App({session}) {
                     <label style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:'24px 20px',border:'1.5px dashed '+C.surf3,borderRadius:14,cursor:importBusy?'default':'pointer',textAlign:'center',opacity:importBusy?0.6:1}}>
                       <Ic p={P.upload} sz={24} col={C.sub}/>
                       <div style={{fontSize:14,fontWeight:600,color:C.txt}}>{importBusy?'Wird gelesen…':'PDF/Foto auswählen'}</div>
+                      {importBusy && <div className="prog" style={{maxWidth:200}}/>}
                       <input type="file" accept=".pdf,application/pdf,image/*" multiple disabled={importBusy} onChange={async e=>{const fs=[...e.target.files]; e.target.value=''; for(const f of fs){ await importLocal(f); }}} style={{display:'none'}} />
                     </label>
                   </div>
@@ -2933,7 +3000,7 @@ function App({session}) {
               <>
                 {custEdit && (
                   <div onClick={()=>setCustEdit(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:130,display:'flex',justifyContent:'flex-end'}}>
-                    <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'min(440px,100%)',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,boxShadow:'-24px 0 60px rgba(0,0,0,0.5)',overflowY:'auto',padding:'20px 20px 48px'}}>
+                    <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'min(520px,100%)',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,borderTopLeftRadius:22,borderBottomLeftRadius:22,boxShadow:'-30px 0 80px rgba(0,0,0,0.55)',overflowY:'auto',padding:'30px 30px 56px'}}>
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
                         <div style={{fontSize:19,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>{cIsNew?('Neuer '+cDomLbl):(cDomLbl+' bearbeiten')}</div>
                         <button onClick={()=>setCustEdit(null)} title="Schließen" style={{background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:10,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
@@ -2951,6 +3018,26 @@ function App({session}) {
                         <div style={{maxWidth:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Kundennr.</div><input value={custEdit.custNo||''} onChange={e=>setCustEdit({...custEdit,custNo:e.target.value})} style={fld}/></div>
                         <button onClick={()=>{ saveCustomer(custEdit); setCustEdit(null); setToast('Kunde gespeichert'); }} style={primBtn}>Speichern</button>
                       </div>
+                      {/* Historie: Rechnungen & Belege dieses Kunden */}
+                      {!cIsNew && (()=>{ const cn=normName(custEdit.name); const invs=invoices.filter(iv=>iv.customerId===custEdit.id); const books=existingBookings().filter(b=> (b.it.invId && invs.find(iv=>iv.id===b.it.invId)) || (cn.length>2 && normName(b.it.name).includes(cn.slice(0,8))) ); const seen=new Set();
+                        const rows=[...invs.map(iv=>({key:'i'+iv.id,title:'Rechnung '+iv.number,date:iv.sentDate||iv.date,amount:(iv.total!=null?iv.total:0),tag:'Rechnung',pdf:iv.pdfPath,inv:iv})), ...books.filter(b=>{ if(b.it.invId){ if(seen.has(b.it.invId))return false; seen.add(b.it.invId);} return !b.it.invId; }).map(b=>({key:'b'+b.it.id,title:b.it.name||'Buchung',date:b.it.datum,amount:num(b.it.amount)*(b.kind==='aus'?-1:1),tag:b.acct,pdf:b.it.filePath,fileData:b.it.fileData}))];
+                        rows.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+                        return (
+                        <div style={{marginTop:22}}>
+                          <div style={{fontSize:13,fontWeight:700,color:C.txt,marginBottom:10}}>Historie · {rows.length} {rows.length===1?'Vorgang':'Vorgänge'}</div>
+                          {rows.length? <div style={{display:'flex',flexDirection:'column',gap:8}}>{rows.map(r=>(
+                            <div key={r.key} style={{display:'flex',alignItems:'center',gap:10,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,padding:'10px 12px'}}>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:14,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.title}</div>
+                                <div style={{fontSize:12,color:C.sub,marginTop:2}}>{[r.tag, r.date&&(toISO(r.date)||r.date)].filter(Boolean).join(' · ')}</div>
+                              </div>
+                              <div style={{fontSize:14,fontWeight:700,...NUM,color:r.amount<0?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{r.amount<0?'-':''}{fmt(Math.abs(r.amount))}</div>
+                              {r.inv && <button onClick={()=>{ setCustEdit(null); openInvoice(r.inv); setTab('rechnung'); }} title="Öffnen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:15,flexShrink:0}}>›</button>}
+                              {!r.inv && r.pdf && <button onClick={()=>openFile(r.pdf)} title="Beleg ansehen" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:8,padding:'5px 9px',fontSize:11,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Beleg</button>}
+                            </div>
+                          ))}</div> : <div style={{fontSize:13,color:C.mut}}>Noch keine Rechnungen oder Belege für diesen Kunden.</div>}
+                        </div>
+                        ); })()}
                     </div>
                   </div>
                 )}
@@ -3358,7 +3445,7 @@ function App({session}) {
               {belegRes.unsicher && (
                 <div style={{background:C.ambL,border:'1px solid rgba(255,180,0,0.4)',borderRadius:10,padding:'10px 12px',marginBottom:12,fontSize:12,color:C.amb,lineHeight:1.5}}>⚠ Bild war evtl. unscharf/unvollständig – bitte Beträge kurz prüfen.</div>
               )}
-              <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Bezeichnung</div>
+              <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Name / Kunde</div>
               <input value={belegRes.name} onChange={e=>setBelegRes(r=>({...r,name:e.target.value}))} style={{...SS,marginBottom:10,textAlign:'left'}} />
               <div style={{display:'flex',gap:8,marginBottom:10}}>
                 <div style={{flex:1}}>
@@ -3433,6 +3520,28 @@ function App({session}) {
           onConfirm={(dest,ty,tm)=>{ assignDrafts(draftSel,dest,ty,tm); setAssignOpen(false); }} />
       )}
 
+      {dupPopup && (()=>{ const m=dupPopup.match; const inv=m&&m.invoice; const it=m&&m.it; const betrag=inv?(inv.total!=null?inv.total:0):num(it&&it.amount); const datum=inv?inv.date:(it&&it.datum); const konto=inv?(names.unternehmen):(m&&m.acct); const fp=it&&(it.filePath||it.fileData); return (
+        <div onClick={()=>setDupPopup(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:150,padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,padding:'24px',maxWidth:420,width:'100%',boxShadow:'0 16px 48px rgba(0,0,0,0.5)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}><span style={{width:32,height:32,borderRadius:9,background:hexA('#FFB37A',0.18),display:'flex',alignItems:'center',justifyContent:'center',fontSize:17}}>⚠</span><div style={{fontSize:17,fontWeight:800,color:C.txt}}>Beleg vermutlich vorhanden</div></div>
+            <div style={{fontSize:13,color:C.sub,lineHeight:1.5,marginBottom:14}}>Dieser Beleg scheint bereits in deinen Daten zu existieren:</div>
+            <div style={{background:C.surf2,borderRadius:12,padding:'14px 16px',display:'flex',flexDirection:'column',gap:9,marginBottom:16}}>
+              <div style={{fontSize:15,fontWeight:700,color:C.txt}}>{inv?('Rechnung '+inv.number):(it&&it.name)||'—'}</div>
+              {(()=>{ const row=(l,v)=>(<div style={{display:'flex',justifyContent:'space-between',fontSize:13}}><span style={{color:C.sub}}>{l}</span><span style={{color:C.txt,...NUM}}>{v}</span></div>); return (<>
+                {row('Betrag', fmt(betrag))}
+                {datum && row('Datum', toISO(datum)||datum)}
+                {konto && row('Konto', konto)}
+                {(it&&it.belegnr)||inv ? row('Beleg-/Rechnungsnr.', (it&&it.belegnr)||inv.number) : null}
+              </>); })()}
+            </div>
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end',flexWrap:'wrap'}}>
+              {inv && <button onClick={()=>{ setDupPopup(null); openInvoice(inv); setTab('rechnung'); }} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:10,padding:'9px 14px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Rechnung öffnen</button>}
+              {fp && it.filePath && <button onClick={()=>{ openFile(it.filePath); }} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:10,padding:'9px 14px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Beleg ansehen</button>}
+              <button onClick={()=>setDupPopup(null)} style={{background:C.pri,border:'none',color:C.priTxt,borderRadius:10,padding:'9px 16px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Verstanden</button>
+            </div>
+          </div>
+        </div>
+      ); })()}
       {confirmState && (
         <div onClick={()=>setConfirmState(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:20}}>
           <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,padding:'22px 24px',maxWidth:380,width:'100%',boxShadow:'0 16px 48px rgba(0,0,0,0.5)'}}>
