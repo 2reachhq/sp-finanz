@@ -333,7 +333,7 @@ function TargetPicker({title, moveTargets, curY, curM, confirmLabel, onClose, on
 }
 
 /* ══ Item row (Name + Betrag + kompaktes ⋮-Dropdown) ══ */
-function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, dragHandleProps, dragging, dragOver}) {
+function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, dragHandleProps, dragging, dragOver, hideRecur}) {
   const [menu,setMenu]=useState(null);   // {top,bottom,right}
   const [dlg,setDlg]=useState(null);     // 'note'|'file'|'range'|'move'
   const [mvDest,setMvDest]=useState((moveTargets&&moveTargets[0]&&moveTargets[0].key)||'');
@@ -379,7 +379,7 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
           style={{...SI,flex:1,width:'auto',textAlign:'left',fontSize:14}} />
         <CalcField value={item.amount} onCommit={v=>onUpdate(item.id,'amount',v)} style={{...SI,width:84,...NUM}} />
         <span style={{fontSize:12,color:C.mut,width:12,flexShrink:0}}>€</span>
-        {!selMode && (
+        {!selMode && !hideRecur && (
           <button onClick={()=>onToggleRecurring&&onToggleRecurring()}
             title={item.recurring?'Jeden Monat aktiv — Betrag gilt für alle Monate. Klicken zum Ausschalten.':'Nur dieser Monat — klicken, damit der Betrag für jeden Monat gilt'}
             style={{width:24,height:24,border:'none',borderRadius:6,cursor:'pointer',flexShrink:0,padding:0,
@@ -465,7 +465,11 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
             </div>
             <div style={{flex:1}}>
               <div style={{fontSize:12,color:C.sub,marginBottom:6}}>MwSt (%)</div>
-              <input value={item.mwst||''} onChange={e=>onUpdate(item.id,'mwst',e.target.value)} inputMode="decimal" style={{...SS,textAlign:'left',...NUM}} />
+              <select value={(item.mwst!=null&&item.mwst!=='')?String(item.mwst):'19'} onChange={e=>onUpdate(item.id,'mwst',e.target.value)} style={{...SS}}>
+                <option value="19">19 %</option>
+                <option value="7">7 %</option>
+                <option value="0">0 %</option>
+              </select>
             </div>
           </div>
           <button onClick={()=>setDlg(null)} style={{...menuBtn,justifyContent:'center',background:C.priL,color:C.pri,fontWeight:600,marginTop:14}}>Fertig</button>
@@ -519,7 +523,7 @@ function ItemRow({item, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile
 }
 
 /* ══ Sortier-/Auswahl-Liste (Drag & Drop + Mehrfachauswahl) ══ */
-function ItemList({items, srcKey, updFn, delFn, recurFn, rangeFn, editFn, folderPath, moveTargets, moveItemFn, onReorder, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, curY, curM}) {
+function ItemList({items, srcKey, updFn, delFn, recurFn, rangeFn, editFn, folderPath, moveTargets, moveItemFn, onReorder, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, curY, curM, hideRecur}) {
   const dragRef=useRef(null), overRef=useRef(null);
   const [,force]=useState(0); const rr=()=>force(n=>n+1);
   const rowEls=useRef({});
@@ -559,6 +563,7 @@ function ItemList({items, srcKey, updFn, delFn, recurFn, rangeFn, editFn, folder
             dragHandleProps={{onPointerDown:(e)=>startDrag(e,item.id)}}
             dragging={dragRef.current===item.id}
             dragOver={overRef.current===item.id && dragRef.current && dragRef.current!==item.id}
+            hideRecur={hideRecur}
           />
         </div>
       ))}
@@ -811,6 +816,9 @@ function App({session}) {
   const [calYr,setCalYr]= useState(now.getFullYear());
   const [profOpen,setProfOpen]= useState(false);   // Profil-Menü
   const [taxBusy,setTaxBusy]= useState(false);     // Steuer-KI-Analyse
+  const [privTab,setPrivTab]= useState('ausgaben'); // Privat: Toggle
+  const [immoView,setImmoView]= useState('einnahmen'); // Immobilien: Toggle
+  const [iconPick,setIconPick]= useState(null);     // Standort-Icon-Auswahl (pid)
   const toggleSel = id => setSelIds(s=> s.includes(id)? s.filter(x=>x!==id) : [...s,id]);
   const exitSel = () => { setSelKey(null); setSelIds([]); };
   /* Eigene URL pro Bereich (Hash-Routing) */
@@ -1078,6 +1086,12 @@ function App({session}) {
     [arr[idx],arr[ni]]=[arr[ni],arr[idx]];
     return{...md,props:{...md.props,[pid]:{...p,expenses:arr}}};
   });
+  /* Generische Listen-Handler pro Standort (einnahmen | expenses) */
+  const addPropSub=(pid,sub,name,amount,recur)=>{ const item={...newItem(name),amount:num(amount),recurring:recur,id:uid()}; const fn=md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,[sub]:[...(p[sub]||[]),{...item}]}}};}; recur?updAll(fn):upd(fn); };
+  const updPropSub=(pid,sub,id,fld,val)=>{ const cur=(md.props?.[pid]?.[sub]||[]).find(i=>i.id===id); const prop=cur&&cur.recurring&&fld!=='__file__'; const fn=md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,[sub]:(p[sub]||[]).map(i=>i.id!==id?i:((fld==='__file__'||fld==='__merge__')?{...i,...val}:{...i,[fld]:fld==='amount'?num(val):val}))}}};}; prop?updAll(fn):upd(fn); };
+  const delPropSub=(pid,sub,id)=>upd(md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,[sub]:(p[sub]||[]).filter(i=>i.id!==id)}}};});
+  const movePropSub=(pid,sub,id,dir)=>upd(md=>{const p=md.props?.[pid]||emptyProp();const arr=[...(p[sub]||[])];const idx=arr.findIndex(i=>i.id===id);const ni=idx+dir;if(ni<0||ni>=arr.length)return md;[arr[idx],arr[ni]]=[arr[ni],arr[idx]];return{...md,props:{...md.props,[pid]:{...p,[sub]:arr}}};});
+  const setPropSubRange=(pid,sub,item,range)=>{ const hasRange=!!((range.from&&range.from.y!=null)||(range.until&&range.until.y!=null)); const recur=hasRange||!!item.recurring; updAll(md=>{const p=md.props?.[pid]||emptyProp();const arr=[...(p[sub]||[])];const idx=arr.findIndex(i=>i.id===item.id);const patch=base=>({...base,from:range.from||null,until:range.until||null,recurring:recur});if(idx>=0)arr[idx]=patch(arr[idx]);else if(recur)arr.push(patch({...item,filePath:null,fileName:'',fileData:null}));return{...md,props:{...md.props,[pid]:{...p,[sub]:arr}}};}); };
   const copyPrevPropExp=pid=>{
     const pm=mo===0?11:mo-1;const py=mo===0?yr-1:yr;
     const prev=(getMD(py,pm).props?.[pid]?.expenses||[]).map(i=>({...i,id:uid()}));
@@ -1558,7 +1572,7 @@ function App({session}) {
 
   /* Reusable items renderer */
   const toolBtn = {background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:8,padding:'5px 11px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'};
-  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey) => {
+  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey, hideRecur) => {
     const shown = (items||[]).filter(it=>activeInMonth(it, yr, mo));
     const inSel = srcKey && selKey===srcKey;
     const shownIds = shown.map(i=>i.id);
@@ -1586,7 +1600,7 @@ function App({session}) {
           onReorder={srcKey?(ids=>reorderList(srcKey,ids)):null}
           selMode={inSel} selIds={selIds} onToggleSel={toggleSel}
           onOpenFile={openFile} onUploadFile={uploadFile} onDeleteFile={deleteFile}
-          askConfirm={askConfirm} curY={yr} curM={mo} />
+          askConfirm={askConfirm} curY={yr} curM={mo} hideRecur={hideRecur} />
       </>
     );
   };
@@ -1870,97 +1884,161 @@ function App({session}) {
           )}
 
           {/* ══ IMMOBILIEN ══ */}
-          {tab==='immo' && <>
-            <div style={{display:'flex',gap:8,marginBottom:24,flexWrap:'wrap'}}>
-              {PROPS.map(p=>(
-                <button key={p} onClick={()=>setSp(p)} style={{
-                  background:sp===p?'rgba(62,207,142,0.16)':C.surf,
-                  border:'1px solid '+(sp===p?'rgba(62,207,142,0.45)':'transparent'),
-                  color:sp===p?C.pri:C.sub,borderRadius:10,padding:'8px 22px',
-                  fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
-                }}>{names[p]}</button>
-              ))}
-            </div>
-            <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-              <div style={{...SC,flex:1,minWidth:240}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
-                  <input value={names[sp]} onChange={e=>setNames(n=>({...n,[sp]:e.target.value}))}
-                    style={{background:'transparent',border:'none',padding:0,fontWeight:700,fontSize:17,color:C.txt,outline:'none',fontFamily:'inherit',flex:1,letterSpacing:'-0.02em'}} />
-                </div>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Einnahmen</div>
-                  <button onClick={()=>setEditIncome(true)} style={BVm} title="Inserate anlegen (gelten für Airbnb & Booking, jeden Monat)">＋ Inserate</button>
-                </div>
-                {futureMonth && <div style={{fontSize:12,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.22)',borderRadius:8,padding:'8px 11px',marginBottom:12}}>Dieser Monat hat noch nicht begonnen — Einnahmen kannst du erst ab Beginn von {MONTHS[mo]} {yr} eintragen.</div>}
-                {[['Mieteinnahmen','mieteinnahmen'],['Airbnb','airbnb'],['Booking','booking'],['Sonstige','sonstig']].map(([label,fld])=>{
-                  const rec = !!(pd.income?.recur && pd.income.recur[fld]);
-                  const inserate = names.inserate?.[sp] || [];
-                  const channelLocked = (fld==='airbnb'||fld==='booking') && inserate.length>0;
-                  return (
-                  <div key={fld} style={{display:'flex',alignItems:'center',gap:6,padding:'9px 0',borderBottom:'1px solid '+C.sep}}>
-                    <span style={{flex:1,fontSize:14,color:C.sub}}>{label}{channelLocked?<span style={{fontSize:11,color:C.mut,marginLeft:6}}>· {inserate.length} Inserate</span>:null}</span>
-                    {!channelLocked && (
-                      <button onClick={()=>toggleRecurIncome(sp,fld)}
-                        title={rec?'Wird jeden Monat übernommen — klicken zum Ausschalten':'Nur dieser Monat — klicken, um jeden Monat zu übernehmen'}
-                        style={{width:24,height:24,border:'none',borderRadius:6,cursor:'pointer',flexShrink:0,padding:0,
-                          background:rec?C.ambL:'transparent',
-                          display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.repeat} sz={12} col={rec?C.amb:C.mut}/></button>
-                    )}
-                    {channelLocked ? (
-                      <div onClick={futureMonth?undefined:()=>setEditIncome(true)} title={futureMonth?'Monat hat noch nicht begonnen':'Beträge über Inserate eintragen'}
-                        style={{...SI,width:96,...NUM,display:'flex',alignItems:'center',justifyContent:'flex-end',cursor:futureMonth?'not-allowed':'pointer',opacity:futureMonth?0.4:1,color:C.pri,fontWeight:600}}>{incomeVal(pd.income,fld)}</div>
-                    ) : (
-                      <CalcField value={pd.income?.[fld]} onCommit={v=>setPropInc(sp,fld,v)} disabled={futureMonth} style={{...SI,width:96,...NUM}} />
-                    )}
-                    <span style={{fontSize:12,color:C.mut,width:14}}>€</span>
-                  </div>
-                  );
-                })}
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
-                  <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
-                  <span style={{fontSize:22,fontWeight:700,color:C.grn,...NUM}}>{fmt(pc.netto)}</span>
-                </div>
+          {tab==='immo' && (()=>{
+            const PALETTE=['#8FE3C6','#ABC4FF','#FFC7A6','#E8A39E','#C9B6FF','#9FD8FF'];
+            const ICONS={house:P.house,bed:P.bed,brief:P.brief,prson:P.prson,grid:P.grid,cal:P.cal,doc:P.doc};
+            const pcol=(pid)=>PALETTE[PROPS.indexOf(pid)%PALETTE.length];
+            const picon=(pid)=>ICONS[(names.propIcon&&names.propIcon[pid])||'house']||P.house;
+            return (
+            <>
+              {/* Standort-Karten (nebeneinander, farbig, wischbar) */}
+              <div style={{display:'flex',gap:10,overflowX:'auto',paddingBottom:6,marginBottom:16}}>
+                {PROPS.map(p=>{ const r=calcProp(md.props?.[p],yr,mo); const on=sp===p; const c=pcol(p); return (
+                  <button key={p} onClick={()=>setSp(p)} style={{
+                    flexShrink:0,width:150,textAlign:'left',cursor:'pointer',fontFamily:'inherit',
+                    background: on?('rgba('+'255,255,255'+',0.04)'):C.surf, borderRadius:16,
+                    border:'2px solid '+(on?c:'transparent'), padding:'12px 13px',
+                  }}>
+                    <div style={{width:36,height:36,borderRadius:11,background:c,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:8}}><Ic p={picon(p)} sz={18} col={'#0A0A0A'}/></div>
+                    <div style={{fontSize:14,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{names[p]}</div>
+                    <div style={{fontSize:12,fontWeight:700,color:r.gewinn>=0?C.grn:'#FFB37A',...NUM,marginTop:2}}>{r.gewinn>=0?'+':''}{fmt(r.gewinn)}</div>
+                  </button>
+                ); })}
               </div>
-              <div style={{...SC,flex:2,minWidth:280}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Ausgaben</div>
-                </div>
-                {renderItems(
-                  pd.expenses||[],
-                  (id,fld,val)=>updPropExp(sp,id,fld,val),
-                  id=>delPropExp(sp,id),
-                  (id,dir)=>movePropExp(sp,id,dir),
-                  ['Immobilien', names[sp]],
-                  item=>setRecurPropExp(sp,item),
-                  undefined,
-                  (it,range)=>setPropExpRange(sp,it,range),
-                  sp
-                )}
-                <AddForm onAdd={(n,a,r)=>addPropExp(sp,n,a,r)} />
-                <BulkAddButton onAdd={(n,a,r)=>addPropExp(sp,n,a,r)} />
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
-                  <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
-                  <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmtN(pc.exp)}</span>
-                </div>
-              </div>
-            </div>
-            <ResultBanner label={names[sp]} sublabel={fmt(pc.netto)+' Einnahmen · '+fmt(pc.exp)+' Ausgaben'} value={pc.gewinn} />
 
-            {/* Events-Highlight (Nachfrage / dynamische Preise) */}
-            {(()=>{ const up=(events||[]).filter(e=>{ const d=new Date(e.date); return !isNaN(d) && d>=new Date(yr,0,1) && d<=new Date(yr,11,31); }).slice(0,8); const accent='#FFD27F'; return (
-              <div style={{marginTop:14,borderRadius:20,padding:'16px 18px',border:'1px solid rgba(255,210,127,0.35)',background:'rgba(255,210,127,0.10)'}}>
-                <div style={{fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:7,marginBottom:4,color:accent}}><Ic p={P.bed} sz={15} col={accent}/> Events & Nachfrage (für Preise)</div>
-                <div style={{fontSize:12,color:C.sub,marginBottom:up.length?10:0}}>Veranstaltungen in der Region {yr} – höhere Nachfrage = höhere Preise möglich.</div>
-                {up.length? up.map((e,i)=>(
-                  <div key={i} style={{display:'flex',gap:10,alignItems:'center',padding:'7px 0',borderTop:i?'1px solid '+C.sep:'none'}}>
-                    <span style={{fontSize:12,color:accent,fontWeight:700,...NUM,minWidth:56}}>{(()=>{const d=new Date(e.date);return isNaN(d)?'':d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'});})()}</span>
-                    <span style={{flex:1,fontSize:13,color:C.txt}}>{e.title}</span>
-                    {e.category && <span style={{fontSize:10,color:C.mut,background:C.surf2,borderRadius:6,padding:'2px 7px'}}>{e.category}</span>}
-                  </div>
-                )) : <div style={{fontSize:12,color:C.mut}}>Noch keine Events hinterlegt.</div>}
+              {/* Kopf: Name + Icon ändern */}
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+                <button onClick={()=>setIconPick(sp)} title="Icon wählen" style={{width:42,height:42,borderRadius:13,flexShrink:0,background:pcol(sp),border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={picon(sp)} sz={20} col={'#0A0A0A'}/></button>
+                <input value={names[sp]} onChange={e=>setNames(n=>({...n,[sp]:e.target.value}))}
+                  style={{background:'transparent',border:'none',padding:0,fontWeight:800,fontSize:26,color:C.txt,outline:'none',fontFamily:'inherit',flex:1,letterSpacing:'-0.03em'}} />
               </div>
-            ); })()}
-          </>}
+
+              {/* Toggle */}
+              <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
+                {['einnahmen','ausgaben','wied'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend'}[id]; const on=immoView===id; return (
+                  <button key={id} onClick={()=>setImmoView(id)} style={{
+                    background:on?'rgba(62,207,142,0.16)':C.surf,
+                    border:'1px solid '+(on?'rgba(62,207,142,0.45)':'transparent'),
+                    color:on?C.pri:C.sub,borderRadius:10,padding:'8px 18px',
+                    fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
+                  }}>{lbl}</button>
+                ); })}
+              </div>
+
+              {immoView==='einnahmen' && (
+                <div style={SC}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.grn}}>Einnahmen</div>
+                    <button onClick={()=>setEditIncome(true)} style={BVm} title="Inserate (Airbnb & Booking)">＋ Inserate</button>
+                  </div>
+                  {futureMonth && <div style={{fontSize:12,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.22)',borderRadius:8,padding:'8px 11px',marginBottom:12}}>Dieser Monat hat noch nicht begonnen.</div>}
+                  {[['Mieteinnahmen','mieteinnahmen'],['Airbnb','airbnb'],['Booking','booking'],['Sonstige','sonstig']].map(([label,fld])=>{
+                    const inserate = names.inserate?.[sp] || [];
+                    const channelLocked = (fld==='airbnb'||fld==='booking') && inserate.length>0;
+                    return (
+                    <div key={fld} style={{display:'flex',alignItems:'center',gap:6,padding:'9px 0',borderBottom:'1px solid '+C.sep}}>
+                      <span style={{flex:1,fontSize:14,color:C.sub}}>{label}{channelLocked?<span style={{fontSize:11,color:C.mut,marginLeft:6}}>· {inserate.length} Inserate</span>:null}</span>
+                      {channelLocked ? (
+                        <div onClick={futureMonth?undefined:()=>setEditIncome(true)} style={{...SI,width:96,...NUM,display:'flex',alignItems:'center',justifyContent:'flex-end',cursor:futureMonth?'not-allowed':'pointer',opacity:futureMonth?0.4:1,color:C.pri,fontWeight:600}}>{incomeVal(pd.income,fld)}</div>
+                      ) : (
+                        <CalcField value={pd.income?.[fld]} onCommit={v=>setPropInc(sp,fld,v)} disabled={futureMonth} style={{...SI,width:96,...NUM}} />
+                      )}
+                      <span style={{fontSize:12,color:C.mut,width:14}}>€</span>
+                    </div>
+                    );
+                  })}
+                  <div style={{fontSize:11,color:C.mut,margin:'12px 0 6px'}}>Weitere Einnahmen</div>
+                  {renderItems(
+                    (pd.einnahmen||[]).filter(i=>!i.recurring),
+                    (id,fld,val)=>updPropSub(sp,'einnahmen',id,fld,val),
+                    id=>delPropSub(sp,'einnahmen',id),
+                    (id,dir)=>movePropSub(sp,'einnahmen',id,dir),
+                    ['Immobilien',names[sp],'Einnahmen'],
+                    undefined, undefined, undefined, sp, true
+                  )}
+                  <AddForm onAdd={(n,a)=>addPropSub(sp,'einnahmen',n,a,false)} />
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                    <span style={{fontSize:12,color:C.sub}}>Gesamt Einnahmen</span>
+                    <span style={{fontSize:22,fontWeight:700,color:C.grn,...NUM}}>{fmt(pc.netto)}</span>
+                  </div>
+                </div>
+              )}
+
+              {immoView==='ausgaben' && (
+                <div style={SC}>
+                  <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Ausgaben</div>
+                  {renderItems(
+                    (pd.expenses||[]).filter(i=>!i.recurring),
+                    (id,fld,val)=>updPropSub(sp,'expenses',id,fld,val),
+                    id=>delPropSub(sp,'expenses',id),
+                    (id,dir)=>movePropSub(sp,'expenses',id,dir),
+                    ['Immobilien',names[sp]],
+                    undefined, undefined, undefined, sp, true
+                  )}
+                  <AddForm onAdd={(n,a)=>addPropSub(sp,'expenses',n,a,false)} />
+                  <BulkAddButton onAdd={(n,a,r)=>addPropSub(sp,'expenses',n,a,false)} />
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                    <span style={{fontSize:12,color:C.sub}}>Gesamt Ausgaben</span>
+                    <span style={{fontSize:22,fontWeight:700,color:'#FFB37A',...NUM}}>{fmtN(pc.exp)}</span>
+                  </div>
+                </div>
+              )}
+
+              {immoView==='wied' && (
+                <>
+                  <div style={{fontSize:12,color:C.mut,marginBottom:12,lineHeight:1.5}}>Wiederkehrende Posten gelten für alle Monate (z. B. Kredit, Versicherung, Strom). Vertrag/Beleg im ⋮-Menü anhängen, Zeitraum optional.</div>
+                  <div style={{display:'flex',flexDirection:isMobile?'column':'row',gap:12}}>
+                    <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
+                      <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Wiederkehrende Einnahmen</div>
+                      {renderItems(
+                        (pd.einnahmen||[]).filter(i=>i.recurring),
+                        (id,fld,val)=>updPropSub(sp,'einnahmen',id,fld,val),
+                        id=>delPropSub(sp,'einnahmen',id),
+                        ()=>{},
+                        ['Immobilien',names[sp],'Einnahmen'],
+                        undefined, undefined,
+                        (it,range)=>setPropSubRange(sp,'einnahmen',it,range),
+                        null, true
+                      )}
+                      <AddForm onAdd={(n,a)=>addPropSub(sp,'einnahmen',n,a,true)} />
+                    </div>
+                    <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
+                      <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Wiederkehrende Ausgaben</div>
+                      {renderItems(
+                        (pd.expenses||[]).filter(i=>i.recurring),
+                        (id,fld,val)=>updPropSub(sp,'expenses',id,fld,val),
+                        id=>delPropSub(sp,'expenses',id),
+                        ()=>{},
+                        ['Immobilien',names[sp]],
+                        undefined, undefined,
+                        (it,range)=>setPropSubRange(sp,'expenses',it,range),
+                        null, true
+                      )}
+                      <AddForm onAdd={(n,a)=>addPropSub(sp,'expenses',n,a,true)} />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <ResultBanner label={names[sp]} sublabel={fmt(pc.netto)+' Einnahmen · '+fmt(pc.exp)+' Ausgaben'} value={pc.gewinn} />
+
+              {/* Events-Highlight */}
+              {(()=>{ const up=(events||[]).filter(e=>{ const d=new Date(e.date); return !isNaN(d) && d>=new Date(yr,0,1) && d<=new Date(yr,11,31); }).slice(0,8); const accent='#FFD27F'; return (
+                <div style={{marginTop:14,borderRadius:20,padding:'16px 18px',border:'1px solid rgba(255,210,127,0.35)',background:'rgba(255,210,127,0.10)'}}>
+                  <div style={{fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:7,marginBottom:4,color:accent}}><Ic p={P.bed} sz={15} col={accent}/> Events & Nachfrage (für Preise)</div>
+                  <div style={{fontSize:12,color:C.sub,marginBottom:up.length?10:0}}>Veranstaltungen in der Region {yr} – höhere Nachfrage = höhere Preise möglich.</div>
+                  {up.length? up.map((e,i)=>(
+                    <div key={i} style={{display:'flex',gap:10,alignItems:'center',padding:'7px 0',borderTop:i?'1px solid '+C.sep:'none'}}>
+                      <span style={{fontSize:12,color:accent,fontWeight:700,...NUM,minWidth:56}}>{(()=>{const d=new Date(e.date);return isNaN(d)?'':d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'});})()}</span>
+                      <span style={{flex:1,fontSize:13,color:C.txt}}>{e.title}</span>
+                      {e.category && <span style={{fontSize:10,color:C.mut,background:C.surf2,borderRadius:6,padding:'2px 7px'}}>{e.category}</span>}
+                    </div>
+                  )) : <div style={{fontSize:12,color:C.mut}}>Noch keine Events hinterlegt.</div>}
+                </div>
+              ); })()}
+            </>
+            );
+          })()}
 
           {/* ══ UNTERNEHMEN ══ */}
           {tab==='unter' && <>
@@ -1969,80 +2047,91 @@ function App({session}) {
                 style={{background:'transparent',border:'none',padding:0,fontWeight:700,fontSize:26,color:C.txt,outline:'none',fontFamily:'inherit',letterSpacing:'-0.03em',display:'block',marginBottom:3}} />
               <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
             </div>
-            {/* Reiter: Einnahmen / Ausgaben */}
+            {/* Toggle: Einnahmen / Ausgaben / Wiederkehrend */}
             <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
-              {[['einnahmen','Einnahmen / Kunden'],['ausgaben','Ausgaben']].map(([id,label])=>(
+              {['einnahmen','ausgaben','wied'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend'}[id]; const on=unterTab===id; return (
                 <button key={id} onClick={()=>setUnterTab(id)} style={{
-                  background:unterTab===id?'rgba(62,207,142,0.16)':C.surf,
-                  border:'1px solid '+(unterTab===id?'rgba(62,207,142,0.45)':'transparent'),
-                  color:unterTab===id?C.pri:C.sub,borderRadius:10,padding:'8px 20px',
+                  background:on?'rgba(62,207,142,0.16)':C.surf,
+                  border:'1px solid '+(on?'rgba(62,207,142,0.45)':'transparent'),
+                  color:on?C.pri:C.sub,borderRadius:10,padding:'8px 18px',
                   fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
-                }}>{label}</button>
-              ))}
+                }}>{lbl}</button>
+              ); })}
             </div>
 
             {unterTab==='einnahmen' && (
-              <div style={{display:'flex',gap:12,alignItems:'flex-start',flexWrap:'wrap'}}>
-                <div style={{...SC,flex:1,minWidth:280}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                    <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Kunden / Einnahmen</div>
-                  </div>
-                  <div style={{fontSize:12,color:C.mut,marginBottom:14}}>Monatliche Kundenzahlungen · ✏️ für Vertrag, Kontakt & Notizen</div>
-                  {renderItems(
-                    md.unternehmen?.clients||[],
-                    (id,fld,val)=>updSec('unternehmen','clients',id,fld,val),
-                    id=>delSec('unternehmen','clients',id),
-                    (id,dir)=>moveSec('unternehmen','clients',id,dir),
-                    ['Unternehmen','Kunden'],
-                    item=>setRecurSec('unternehmen','clients',item),
-                    id=>setEditClient(id),
-                    (it,range)=>setSecRange('unternehmen','clients',it,range),
-                    'unterInc'
-                  )}
-                  <AddForm placeholder="Kundenname" onAdd={(n,a,r)=>addSec('unternehmen','clients',n,a,r)} />
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
-                    <span style={{fontSize:12,color:C.sub}}>Gesamt Einnahmen</span>
-                    <span style={{fontSize:22,fontWeight:700,color:C.grn,...NUM}}>{fmt(tot.unterInc)}</span>
-                  </div>
-                </div>
-                {editClientObj && (
-                  <ClientDetail client={editClientObj}
-                    onUpdate={(id,fld,val)=>updSec('unternehmen','clients',id,fld,val)}
-                    onClose={()=>setEditClient(null)}
-                    onUploadFile={uploadFile} onOpenFile={openFile} onDeleteFile={deleteFile}
-                    askConfirm={askConfirm} />
+              <div style={SC}>
+                <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Einnahmen</div>
+                {renderItems(
+                  (md.unternehmen?.clients||[]).filter(i=>!i.recurring),
+                  (id,fld,val)=>updSec('unternehmen','clients',id,fld,val),
+                  id=>delSec('unternehmen','clients',id),
+                  (id,dir)=>moveSec('unternehmen','clients',id,dir),
+                  ['Unternehmen','Einnahmen'],
+                  undefined, undefined, undefined, 'unterInc', true
                 )}
+                <AddForm placeholder="Bezeichnung" onAdd={(n,a)=>addSec('unternehmen','clients',n,a,false)} />
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                  <span style={{fontSize:12,color:C.sub}}>Gesamt Einnahmen</span>
+                  <span style={{fontSize:22,fontWeight:700,color:C.grn,...NUM}}>{fmt(tot.unterInc)}</span>
+                </div>
               </div>
             )}
 
             {unterTab==='ausgaben' && (
               <div style={SC}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Ausgaben</div>
-                </div>
-                <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:12,marginTop:8}}>
-                  {UNTER_PRESETS.map(name=>(
-                    <button key={name} onClick={()=>addSec('unternehmen','items',name,0,false)} style={BPrs}>+ {name}</button>
-                  ))}
-                </div>
+                <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Ausgaben</div>
                 {renderItems(
-                  md.unternehmen?.items||[],
+                  (md.unternehmen?.items||[]).filter(i=>!i.recurring),
                   (id,fld,val)=>updSec('unternehmen','items',id,fld,val),
                   id=>delSec('unternehmen','items',id),
                   (id,dir)=>moveSec('unternehmen','items',id,dir),
                   ['Unternehmen','Ausgaben'],
-                  item=>setRecurSec('unternehmen','items',item),
-                  undefined,
-                  (it,range)=>setSecRange('unternehmen','items',it,range),
-                  'unterExp'
+                  undefined, undefined, undefined, 'unterExp', true
                 )}
-                <AddForm onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
-                <BulkAddButton onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,r)} />
+                <AddForm onAdd={(n,a)=>addSec('unternehmen','items',n,a,false)} />
+                <BulkAddButton onAdd={(n,a,r)=>addSec('unternehmen','items',n,a,false)} />
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
                   <span style={{fontSize:12,color:C.sub}}>Gesamt Ausgaben</span>
-                  <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmtN(tot.unterExp)}</span>
+                  <span style={{fontSize:22,fontWeight:700,color:'#FFB37A',...NUM}}>{fmtN(tot.unterExp)}</span>
                 </div>
               </div>
+            )}
+
+            {unterTab==='wied' && (
+              <>
+                <div style={{fontSize:12,color:C.mut,marginBottom:12,lineHeight:1.5}}>Wiederkehrende Posten gelten für alle Monate (z. B. Verträge, Versicherungen, Löhne). Vertrag/Beleg im ⋮-Menü anhängen, Zeitraum optional.</div>
+                <div style={{display:'flex',flexDirection:isMobile?'column':'row',gap:12}}>
+                  <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Wiederkehrende Einnahmen</div>
+                    {renderItems(
+                      (md.unternehmen?.clients||[]).filter(i=>i.recurring),
+                      (id,fld,val)=>updSec('unternehmen','clients',id,fld,val),
+                      id=>delSec('unternehmen','clients',id),
+                      ()=>{},
+                      ['Unternehmen','Einnahmen'],
+                      undefined, undefined,
+                      (it,range)=>setSecRange('unternehmen','clients',it,range),
+                      null, true
+                    )}
+                    <AddForm placeholder="Bezeichnung" onAdd={(n,a)=>addSec('unternehmen','clients',n,a,true)} />
+                  </div>
+                  <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
+                    <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Wiederkehrende Ausgaben</div>
+                    {renderItems(
+                      (md.unternehmen?.items||[]).filter(i=>i.recurring),
+                      (id,fld,val)=>updSec('unternehmen','items',id,fld,val),
+                      id=>delSec('unternehmen','items',id),
+                      ()=>{},
+                      ['Unternehmen','Ausgaben'],
+                      undefined, undefined,
+                      (it,range)=>setSecRange('unternehmen','items',it,range),
+                      null, true
+                    )}
+                    <AddForm onAdd={(n,a)=>addSec('unternehmen','items',n,a,true)} />
+                  </div>
+                </div>
+              </>
             )}
 
             <ResultBanner label={names.unternehmen} sublabel={fmt(tot.unterInc)+' Einnahmen · '+fmt(tot.unterExp)+' Ausgaben'} value={tot.unterInc-tot.unterExp} />
@@ -2050,37 +2139,95 @@ function App({session}) {
 
           {/* ══ PRIVAT ══ */}
           {tab==='privat' && <>
-            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:24}}>
-              <div>
-                <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Privat</div>
-                <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
-              </div>
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>Privat</div>
+              <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
             </div>
-            <div style={SC}>
-              <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:4}}>Ausgaben</div>
-              <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:12,marginTop:8}}>
-                {PRIV_PRESETS.map(name=>(
-                  <button key={name} onClick={()=>addSec('privat','items',name,0,false)} style={BPrs}>+ {name}</button>
-                ))}
-              </div>
-              {renderItems(
-                md.privat?.items||[],
-                (id,fld,val)=>updSec('privat','items',id,fld,val),
-                id=>delSec('privat','items',id),
-                (id,dir)=>moveSec('privat','items',id,dir),
-                ['Privat'],
-                item=>setRecurSec('privat','items',item),
-                undefined,
-                (it,range)=>setSecRange('privat','items',it,range),
-                'privat'
-              )}
-              <AddForm onAdd={(n,a,r)=>addSec('privat','items',n,a,r)} />
-              <BulkAddButton onAdd={(n,a,r)=>addSec('privat','items',n,a,r)} />
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:16}}>
-                <span style={{fontSize:12,color:C.sub}}>Gesamt</span>
-                <span style={{fontSize:22,fontWeight:700,color:C.txt,...NUM}}>{fmtN(tot.privatExp)}</span>
-              </div>
+            <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
+              {['einnahmen','ausgaben','wied'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend'}[id]; const on=privTab===id; return (
+                <button key={id} onClick={()=>setPrivTab(id)} style={{
+                  background:on?'rgba(62,207,142,0.16)':C.surf,
+                  border:'1px solid '+(on?'rgba(62,207,142,0.45)':'transparent'),
+                  color:on?C.pri:C.sub,borderRadius:10,padding:'8px 18px',
+                  fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
+                }}>{lbl}</button>
+              ); })}
             </div>
+
+            {privTab==='einnahmen' && (
+              <div style={SC}>
+                <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Einnahmen</div>
+                {renderItems(
+                  (md.privat?.einnahmen||[]).filter(i=>!i.recurring),
+                  (id,fld,val)=>updSec('privat','einnahmen',id,fld,val),
+                  id=>delSec('privat','einnahmen',id),
+                  (id,dir)=>moveSec('privat','einnahmen',id,dir),
+                  ['Privat','Einnahmen'],
+                  undefined, undefined, undefined, 'privat', true
+                )}
+                <AddForm onAdd={(n,a)=>addSec('privat','einnahmen',n,a,false)} />
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:14}}>
+                  <span style={{fontSize:12,color:C.sub}}>Gesamt Einnahmen</span>
+                  <span style={{fontSize:22,fontWeight:700,color:C.grn,...NUM}}>{fmt(sumItems(md.privat?.einnahmen,yr,mo))}</span>
+                </div>
+              </div>
+            )}
+
+            {privTab==='ausgaben' && (
+              <div style={SC}>
+                <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Ausgaben</div>
+                {renderItems(
+                  (md.privat?.items||[]).filter(i=>!i.recurring),
+                  (id,fld,val)=>updSec('privat','items',id,fld,val),
+                  id=>delSec('privat','items',id),
+                  (id,dir)=>moveSec('privat','items',id,dir),
+                  ['Privat'],
+                  undefined, undefined, undefined, 'privat', true
+                )}
+                <AddForm onAdd={(n,a)=>addSec('privat','items',n,a,false)} />
+                <BulkAddButton onAdd={(n,a,r)=>addSec('privat','items',n,a,false)} />
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:16}}>
+                  <span style={{fontSize:12,color:C.sub}}>Gesamt Ausgaben</span>
+                  <span style={{fontSize:22,fontWeight:700,color:'#FFB37A',...NUM}}>{fmtN(tot.privatExp)}</span>
+                </div>
+              </div>
+            )}
+
+            {privTab==='wied' && (
+              <>
+                <div style={{fontSize:12,color:C.mut,marginBottom:12,lineHeight:1.5}}>Wiederkehrende Posten gelten für alle Monate. Vertrag/Beleg im ⋮-Menü anhängen, Zeitraum optional.</div>
+                <div style={{display:'flex',flexDirection:isMobile?'column':'row',gap:12}}>
+                  <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Wiederkehrende Einnahmen</div>
+                    {renderItems(
+                      (md.privat?.einnahmen||[]).filter(i=>i.recurring),
+                      (id,fld,val)=>updSec('privat','einnahmen',id,fld,val),
+                      id=>delSec('privat','einnahmen',id),
+                      ()=>{},
+                      ['Privat','Einnahmen'],
+                      undefined, undefined,
+                      (it,range)=>setSecRange('privat','einnahmen',it,range),
+                      null, true
+                    )}
+                    <AddForm onAdd={(n,a)=>addSec('privat','einnahmen',n,a,true)} />
+                  </div>
+                  <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
+                    <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Wiederkehrende Ausgaben</div>
+                    {renderItems(
+                      (md.privat?.items||[]).filter(i=>i.recurring),
+                      (id,fld,val)=>updSec('privat','items',id,fld,val),
+                      id=>delSec('privat','items',id),
+                      ()=>{},
+                      ['Privat'],
+                      undefined, undefined,
+                      (it,range)=>setSecRange('privat','items',it,range),
+                      null, true
+                    )}
+                    <AddForm onAdd={(n,a)=>addSec('privat','items',n,a,true)} />
+                  </div>
+                </div>
+              </>
+            )}
           </>}
 
           {/* ══ IMPORT (Bankauszug) ══ */}
@@ -2573,6 +2720,21 @@ function App({session}) {
               <button onClick={()=>{setBelegRes(null); belegBlobRef.current=null;}} disabled={belegBusy} style={{width:'100%',background:'none',border:'none',color:C.mut,fontSize:13,cursor:'pointer',fontFamily:'inherit',marginTop:10}}>Anderen Beleg auslesen</button>
             </>
           )}
+        </Sheet>
+      )}
+
+      {iconPick && (
+        <Sheet title="Icon wählen" onClose={()=>setIconPick(null)}>
+          <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
+            {[['house',P.house],['bed',P.bed],['brief',P.brief],['prson',P.prson],['grid',P.grid],['cal',P.cal],['doc',P.doc]].map(([key,icon])=>{
+              const cur=((names.propIcon&&names.propIcon[iconPick])||'house')===key;
+              return (
+                <button key={key} onClick={()=>{ setNames(n=>({...n,propIcon:{...(n.propIcon||{}),[iconPick]:key}})); setIconPick(null); }} style={{width:54,height:54,borderRadius:14,border:'2px solid '+(cur?C.pri:C.bdr),background:cur?C.priL:C.surf2,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <Ic p={icon} sz={22} col={cur?C.pri:C.txt}/>
+                </button>
+              );
+            })}
+          </div>
         </Sheet>
       )}
 
