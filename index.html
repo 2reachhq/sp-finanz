@@ -1634,9 +1634,9 @@ function App({session}) {
 
       {/* ═══ TOP BAR ═══ */}
       <header style={{
-        flexShrink:0,background:C.surf,
+        flexShrink:0,background:'transparent',
         display:'flex',alignItems:'center',gap:isMobile?12:30,padding:isMobile?'8px 14px':'14px 30px',minHeight:isMobile?60:72,
-        position:'relative',zIndex:40,
+        position:'sticky',top:0,zIndex:40,
       }}>
         {/* Logo — Klick = Konten */}
         <button onClick={()=>setTab('quellen')} style={{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:isMobile?18:23,fontWeight:800,color:C.txt,letterSpacing:'-0.03em',flexShrink:0,padding:0}}>SP Finanz</button>
