@@ -359,7 +359,7 @@ function TargetPicker({title, moveTargets, curY, curM, confirmLabel, onClose, on
 }
 
 /* ══ Item row (Name + Betrag + kompaktes ⋮-Dropdown) ══ */
-function ItemRow({item, accent, kind, onExtract, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur}) {
+function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur}) {
   const acc = accent||C.pri;
   const dateLabel = kind==='aus' ? 'Abbuchungsdatum' : kind==='ein' ? 'Eingangsdatum' : 'Datum';
   const [menu,setMenu]=useState(null);   // {top,bottom,right}
@@ -493,7 +493,32 @@ function ItemRow({item, accent, kind, onExtract, onUpdate, onDelete, folderPath,
             <textarea value={item.note||''} onChange={e=>onUpdate(item.id,'note',e.target.value)} placeholder="Notiz…" rows={3} style={{...dInput('100%'),padding:'10px 12px',resize:'vertical',marginBottom:16}} />
 
             {onSetRange && (
-              <button onClick={()=>{setDrawer(false);setDlg('range');}} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:C.surf2,border:'none',borderRadius:10,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',marginBottom:10,textAlign:'left'}}><Ic p={P.cal} sz={15} col={C.sub}/> {rangeLabel||'Zeitraum (von–bis)'}</button>
+              <button onClick={()=>{setDrawer(false);setDlg('range');}} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:C.surf2,border:'none',borderRadius:10,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',marginBottom:10,textAlign:'left'}}><Ic p={P.cal} sz={15} col={C.sub}/> {rangeLabel?('Zeitraum: '+rangeLabel):'Zeitraum festlegen (Standard: unbegrenzt)'}</button>
+            )}
+
+            {onMakeInvoice && item.recurring && (
+              <div style={{background:C.surf2,borderRadius:12,padding:'14px',marginBottom:10}}>
+                <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer',fontSize:14,fontWeight:600,color:C.txt}}>
+                  <input type="checkbox" checked={!!item.autoInvoice} onChange={e=>onUpdate(item.id,'autoInvoice',e.target.checked)} style={{accentColor:acc,width:16,height:16}}/>
+                  <span>Rechnung für diesen Posten erzeugen</span>
+                </label>
+                {item.autoInvoice && (<>
+                  <div style={{fontSize:11,color:C.mut,lineHeight:1.5,margin:'8px 0 10px'}}>Lege Kunde &amp; Kontaktdaten fest – dann kannst du daraus monatlich eine Rechnung erzeugen. Verlauf siehst du unten.</div>
+                  <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Kunde</div><CustomerSelect customers={custList||[]} value={item.invCustomerId} onPick={c=>onUpdate(item.id,'invCustomerId', c?c.id:'')}/></div>
+                  <button onClick={()=>{ setDrawer(false); onMakeInvoice(item); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:hexA(acc,0.18),border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:700,color:acc,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.brief} sz={15} col={acc}/> Rechnung erstellen</button>
+                  {(()=>{ const hist=recurInvFn?recurInvFn(item.id):[]; return hist.length ? (
+                    <div style={{marginTop:12}}>
+                      <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:7}}>Verlauf · {hist.length}</div>
+                      <div style={{display:'flex',flexDirection:'column',gap:6}}>{hist.map(iv=>(
+                        <div key={iv.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:C.surf3,borderRadius:8,padding:'8px 10px',fontSize:12.5}}>
+                          <span style={{color:C.sub}}>{iv.number} · {iv.sentDate||iv.date}</span>
+                          <span style={{color:C.txt,fontWeight:700,...NUM}}>{fmt(iv.total!=null?iv.total:0)}</span>
+                        </div>
+                      ))}</div>
+                    </div>
+                  ) : <div style={{fontSize:12,color:C.mut,marginTop:10}}>Noch keine Rechnung erzeugt.</div>; })()}
+                </>)}
+              </div>
             )}
 
             <button onClick={()=>{ const run=()=>{ if(item.filePath&&onDeleteFile) onDeleteFile(item.filePath); onDelete(item.id); setDrawer(false); }; askConfirm?askConfirm('Buchung „'+(item.name||'ohne Namen')+'" wirklich löschen?',run):run(); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.redL,border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:C.red,cursor:'pointer',fontFamily:'inherit',marginTop:6}}><Ic p={P.trash} sz={15} col={C.red}/> Buchung löschen</button>
@@ -614,11 +639,11 @@ function ItemRow({item, accent, kind, onExtract, onUpdate, onDelete, folderPath,
 }
 
 /* ══ Sortier-/Auswahl-Liste (Drag & Drop + Mehrfachauswahl) ══ */
-function ItemList({items, srcKey, accent, kind, onExtract, updFn, delFn, recurFn, rangeFn, editFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, curY, curM, hideRecur}) {
+function ItemList({items, srcKey, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, updFn, delFn, recurFn, rangeFn, editFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, curY, curM, hideRecur}) {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:10}}>
         {items.map((item,idx)=>(
-          <ItemRow key={item.id} item={item} accent={accent} kind={kind} onExtract={onExtract}
+          <ItemRow key={item.id} item={item} accent={accent} kind={kind} onExtract={onExtract} custList={custList} recurInvFn={recurInvFn} onMakeInvoice={onMakeInvoice}
             onUpdate={updFn} onDelete={delFn}
             folderPath={folderPath}
             onUploadFile={onUploadFile} onOpenFile={onOpenFile} onDeleteFile={onDeleteFile}
@@ -974,6 +999,7 @@ function App({session}) {
   const [assignOpen,setAssignOpen]= useState(false);
   const [importBusy,setImportBusy]= useState(false);
   const [dupPopup,setDupPopup]= useState(null);   // Dubletten-Hinweis {draft, match}
+  const [draftEdit,setDraftEdit]= useState(null); // Import: Entwurf im Detail-Overlay (id)
   const chat = data.chat || [];                   // KI-Berater Verlauf (gespeichert)
   const setChat = updater => setData(prev=>{ const cur=prev.chat||[]; const next=(typeof updater==='function'?updater(cur):updater).slice(-40); return {...prev, chat:next}; });
   const [chatInput,setChatInput]= useState('');
@@ -1658,6 +1684,9 @@ function App({session}) {
   const defMwstFor = (dom)=>{ const co=companyFor(dom||'unter'); return co&&co.defMwst!=null&&co.defMwst!=='' ? num(co.defMwst) : 7; };
   const newInvoice = (dom)=>({ id:uid(), number:nextInvNo(), domain:dom||'unter', customerId:'', custName:'', custAddress:'', custEmail:'', saveCust:true, account:(dom==='immo'?(PROPS[0]||'p1'):'unter'), date:new Date().toISOString().slice(0,10), due:'', items:[{desc:'',qty:1,price:0,mwst:defMwstFor(dom)}], note:'' });
   const invCustomer = (inv)=>{ const c=customers.find(x=>x.id===inv.customerId); if(c) return c; return {name:inv.custName||'', address:inv.custAddress||'', email:inv.custEmail||''}; };
+  // Aus einem wiederkehrenden Posten eine Rechnung vorbereiten (öffnet den Editor)
+  const makeRecurInvoice = (item, dom)=>{ const domain=dom||'unter'; const inv=newInvoice(domain); inv.fromRecurId=item.id; if(item.invCustomerId){ const c=customers.find(x=>x.id===item.invCustomerId); if(c){ inv.customerId=c.id; inv.custName=c.name||''; inv.custAddress=c.address||''; inv.custEmail=c.email||''; inv.saveCust=false; } } inv.items=[{desc:item.name||'Leistung', qty:1, price:num(item.amount), mwst:defMwstFor(domain)}]; setInvDomain(domain); setTab('rechnung'); setInvEdit(inv); setToast('Rechnung aus „'+(item.name||'Posten')+'" vorbereitet'); };
+  const recurInvoicesFor = (id)=> (data.invoices||[]).filter(iv=>iv.fromRecurId===id);
   // Standard-Kopf-/Footertext (pro Rechnung überschreibbar, Default bleibt erhalten)
   const defaultHeader = (co)=> (co&&co.invHeaderDefault!=null&&co.invHeaderDefault!=='') ? co.invHeaderDefault : DEF_INV_HEADER;
   const defaultFooter = (co)=> (co&&co.invFooterDefault!=null&&co.invFooterDefault!=='') ? co.invFooterDefault : (DEF_INV_FOOTER+'\n'+((co&&co.name)||''));
@@ -2009,7 +2038,7 @@ function App({session}) {
             </>)}
           </div>
         )}
-        <ItemList items={shown} srcKey={srcKey} accent={secAccent} kind={kindEff} onExtract={extractToItem}
+        <ItemList items={shown} srcKey={srcKey} accent={secAccent} kind={kindEff} onExtract={extractToItem} custList={customers} recurInvFn={recurInvoicesFor} onMakeInvoice={(it)=>makeRecurInvoice(it,(folderPath&&folderPath[0]==='Immobilien')?'immo':'unter')}
           updFn={updFn} delFn={delFn} recurFn={recurFn} rangeFn={rangeFn} editFn={editFn}
           folderPath={folderPath}
           moveTargets={srcKey?moveTargets:null} moveItemFn={srcKey?moveItem:null}
@@ -2672,27 +2701,23 @@ function App({session}) {
             const aus = drafts.filter(d=>d.kind==='aus');
             const allIds = drafts.map(d=>d.id);
             const allSel = allIds.length>0 && draftSel.length===allIds.length;
-            const draftRow = d => { const hasFile=!!d.fileData; const sel=draftSel.includes(d.id); return (
-              <div key={d.id} draggable onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id])} style={{display:'flex',gap:12,alignItems:'center',background:C.surf2,border:'1px solid '+(sel?C.pri:C.bdr),borderRadius:14,padding:'12px 14px',cursor:'grab'}}>
+            const draftRow = d => { const hasFile=!!d.fileData; const sel=draftSel.includes(d.id); const catTxt=[d.category, d.datum&&(toISO(d.datum)||d.datum)].filter(Boolean).join(' · ')||'Details ergänzen'; return (
+              <div key={d.id} draggable onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>setDraftEdit(d.id)} style={{display:'flex',gap:12,alignItems:'center',background:C.surf2,border:'1px solid '+(sel?C.pri:C.bdr),borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
+                <button onClick={e=>{e.stopPropagation();setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id]);}} title="Auswählen" style={{width:22,height:22,flexShrink:0,borderRadius:6,border:'1.5px solid '+(sel?C.pri:C.bdrM),background:sel?C.pri:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}>{sel&&<Ic p={P.check} sz={13} col={C.priTxt}/>}</button>
                 <label onClick={e=>e.stopPropagation()} title={hasFile?'Beleg ersetzen':'Beleg hochladen'} style={{position:'relative',width:44,height:44,flexShrink:0,borderRadius:13,background:hasFile?hexA(C.pri,0.16):C.surf3,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
                   <Ic p={hasFile?P.clip:P.upload} sz={17} col={hasFile?C.pri:C.sub}/>
                   {hasFile && <span style={{position:'absolute',right:-3,bottom:-3,width:14,height:14,borderRadius:'50%',background:C.grn,border:'2px solid '+C.surf2,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.check} sz={7} col={'#06281C'}/></span>}
                   <input type="file" accept="image/*,.pdf" onChange={e=>{const f=e.target.files[0];e.target.value='';draftFile(d.id,f);}} style={{display:'none'}}/>
                 </label>
-                <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:6}}>
-                  <input onClick={e=>e.stopPropagation()} value={d.name} onChange={e=>updateDraft(d.id,{name:e.target.value})} placeholder="Name…" style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:15,fontWeight:600,color:C.txt,width:'100%',padding:0}} />
-                  <div style={{display:'flex',alignItems:'center',gap:6}}>
-                    <select onClick={e=>e.stopPropagation()} value={d.category||''} onChange={e=>updateDraft(d.id,{category:e.target.value})} style={{background:'transparent',border:'none',color:d.category?C.sub:C.mut,padding:0,fontSize:11,outline:'none',fontFamily:'inherit',cursor:'pointer',maxWidth:110}}><option value="">Kategorie</option>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
-                    <span style={{color:C.mut,fontSize:11}}>·</span>
-                    <input className="nocal" onClick={e=>e.stopPropagation()} type="date" value={d.datum||''} onChange={e=>updateDraft(d.id,{datum:e.target.value})} style={{background:'transparent',border:'none',color:C.mut,padding:0,fontSize:11,outline:'none',fontFamily:'inherit',colorScheme:'dark'}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:15,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name||'—'}</div>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginTop:3,flexWrap:'wrap'}}>
+                    <span style={{fontSize:12,color:d.category?C.sub:C.mut}}>{catTxt}</span>
                     {d.dup && <button onClick={e=>{e.stopPropagation();setDupPopup({draft:d,match:d.dup});}} title="Bereits vorhanden – ansehen" style={{background:hexA('#FFB37A',0.16),border:'1px solid '+hexA('#FFB37A',0.4),color:'#FFB37A',borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>⚠ bereits vorhanden</button>}
                     {!d.dup && d.recur && <span title="Sieht nach wiederkehrender Buchung aus" style={{background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}>🔁 wiederkehrend?</span>}
                   </div>
                 </div>
-                <span style={{display:'inline-flex',alignItems:'baseline',flexShrink:0}}>
-                  <input onClick={e=>e.stopPropagation()} value={d.amount} onChange={e=>updateDraft(d.id,{amount:e.target.value})} inputMode="decimal" style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:15,fontWeight:700,color:C.txt,width:62,textAlign:'right',padding:0,...NUM}} />
-                  <span style={{fontSize:14,fontWeight:700,color:C.txt}}>€</span>
-                </span>
+                <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM,flexShrink:0,whiteSpace:'nowrap'}}>{(d.amount||'0')}€</span>
                 <button onClick={e=>{e.stopPropagation();delDraft(d.id);}} title="Entwurf entfernen" style={{background:'none',border:'none',color:C.mut,cursor:'pointer',flexShrink:0,fontSize:16,lineHeight:1,opacity:0.55}}>×</button>
               </div>
             ); };
@@ -2746,6 +2771,38 @@ function App({session}) {
                 ) : (
                   <div style={{...SC,textAlign:'center',color:C.mut,fontSize:14,padding:'30px 24px'}}>Noch keine Entwürfe. Lade oben einen Bankauszug als PDF hoch.</div>
                 )}
+
+                {/* Detail-Overlay für einen Entwurf (von rechts) */}
+                {draftEdit && (()=>{ const d=drafts.find(x=>x.id===draftEdit); if(!d){ return null; } const hasFile=!!d.fileData; const dInp={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const lbl=t=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}</div>); return (
+                  <div onClick={()=>setDraftEdit(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:130,display:'flex',justifyContent:'flex-end'}}>
+                    <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'min(520px,100%)',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,borderTopLeftRadius:22,borderBottomLeftRadius:22,boxShadow:'-30px 0 80px rgba(0,0,0,0.55)',overflowY:'auto',padding:'30px 30px 56px'}}>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+                        <div style={{fontSize:19,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>Beleg / Posten</div>
+                        <button onClick={()=>setDraftEdit(null)} title="Schließen" style={{background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:10,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
+                      </div>
+                      {d.dup && <button onClick={()=>setDupPopup({draft:d,match:d.dup})} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:hexA('#FFB37A',0.14),border:'1px solid '+hexA('#FFB37A',0.4),color:'#FFB37A',borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:16,textAlign:'left'}}>⚠ Dieser Beleg scheint bereits vorhanden – ansehen</button>}
+                      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+                        <div>{lbl('Name / Kunde')}<input value={d.name||''} onChange={e=>updateDraft(d.id,{name:e.target.value})} placeholder="Name…" style={dInp}/></div>
+                        <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                          <div style={{flex:1,minWidth:120}}>{lbl('Betrag €')}<input value={d.amount||''} onChange={e=>updateDraft(d.id,{amount:e.target.value})} inputMode="decimal" style={{...dInp,...NUM}}/></div>
+                          <div style={{flex:1,minWidth:160}}>{lbl('Art')}<div style={{display:'flex',gap:8}}>{[['ein','Einnahme','#8FD9BD'],['aus','Ausgabe','#E8A39E']].map(([k,l,c])=>{ const on=d.kind===k; return <button key={k} onClick={()=>updateDraft(d.id,{kind:k})} style={{flex:1,background:on?hexA(c,0.18):C.surf2,border:'1px solid '+(on?hexA(c,0.5):C.bdr),color:on?c:C.sub,borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>; })}</div></div>
+                        </div>
+                        <div>{lbl('Kategorie')}<select value={d.category||''} onChange={e=>updateDraft(d.id,{category:e.target.value})} style={{...dInp,cursor:'pointer'}}><option value="">— wählen —</option>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                        <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                          <div style={{flex:1,minWidth:140}}>{lbl('Datum')}<input type="date" value={d.datum||''} onChange={e=>updateDraft(d.id,{datum:e.target.value})} style={{...dInp,colorScheme:'dark'}}/></div>
+                          <div style={{flex:1,minWidth:140}}>{lbl('Beleg-/Rechnungsnr.')}<input value={d.belegnr||''} onChange={e=>updateDraft(d.id,{belegnr:e.target.value})} placeholder="Nr." style={dInp}/></div>
+                        </div>
+                        <div>{lbl('Beleg')}
+                          {hasFile
+                            ? <div style={{display:'flex',alignItems:'center',gap:8,background:C.surf2,borderRadius:10,padding:'10px 12px'}}><Ic p={P.clip} sz={15} col={C.pri}/><span style={{flex:1,fontSize:13,color:C.sub}}>Beleg angehängt</span><button onClick={()=>updateDraft(d.id,{fileData:null,fileName:''})} style={{background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:18,lineHeight:1}}>×</button></div>
+                            : <label style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:hexA(C.pri,0.14),borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:C.pri,cursor:'pointer'}}><Ic p={P.upload} sz={15} col={C.pri}/> Beleg hochladen<input type="file" accept="image/*,.pdf" onChange={e=>{const f=e.target.files[0];e.target.value='';draftFile(d.id,f);}} style={{display:'none'}}/></label>}
+                        </div>
+                        <button onClick={()=>{ setDraftSel([d.id]); setAssignOpen(true); setDraftEdit(null); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'13px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginTop:4}}>Diesem Konto zuordnen</button>
+                        <button onClick={()=>{ delDraft(d.id); setDraftEdit(null); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.redL,color:C.red,border:'none',borderRadius:11,padding:'11px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.trash} sz={15} col={C.red}/> Entwurf verwerfen</button>
+                      </div>
+                    </div>
+                  </div>
+                ); })()}
               </>
             );
           })()}
