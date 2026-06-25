@@ -1000,6 +1000,7 @@ function App({session}) {
   const [importBusy,setImportBusy]= useState(false);
   const [dupPopup,setDupPopup]= useState(null);   // Dubletten-Hinweis {draft, match}
   const [draftEdit,setDraftEdit]= useState(null); // Import: Entwurf im Detail-Overlay (id)
+  const [custTab,setCustTab]= useState('details'); // Kundenprofil: Details vs Rechnungen
   const chat = data.chat || [];                   // KI-Berater Verlauf (gespeichert)
   const setChat = updater => setData(prev=>{ const cur=prev.chat||[]; const next=(typeof updater==='function'?updater(cur):updater).slice(-40); return {...prev, chat:next}; });
   const [chatInput,setChatInput]= useState('');
@@ -3053,56 +3054,90 @@ function App({session}) {
             const domCustomers=customersFor(invDomain);
             const cDom=custEdit&&(custEdit.domain||'unter'); const cIsNew=custEdit&&!customers.some(c=>c.id===custEdit.id);
             const cDomLbl=cDom==='immo'?'Immobilienkunde':'Firmenkunde'; const cDomCol=KONTO_COLORS.unter.c;
-            return (
-              <>
-                {custEdit && (
-                  <div onClick={()=>setCustEdit(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:130,display:'flex',justifyContent:'flex-end'}}>
-                    <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'min(520px,100%)',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,borderTopLeftRadius:22,borderBottomLeftRadius:22,boxShadow:'-30px 0 80px rgba(0,0,0,0.55)',overflowY:'auto',padding:'30px 30px 56px'}}>
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                        <div style={{fontSize:19,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>{cIsNew?('Neuer '+cDomLbl):(cDomLbl+' bearbeiten')}</div>
-                        <button onClick={()=>setCustEdit(null)} title="Schließen" style={{background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:10,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
+            // ── Volles Kundenprofil (eigene Seite, am Startseiten-Stil orientiert) ──
+            if(custEdit){
+              const c=custEdit; const set=patch=>setCustEdit({...c,...patch}); const col=cDomCol;
+              const cn=normName(c.name); const invs=invoices.filter(iv=>iv.customerId===c.id);
+              const books=existingBookings().filter(b=> (b.it.invId && invs.find(iv=>iv.id===b.it.invId)) || (!b.it.invId && cn.length>2 && normName(b.it.name).includes(cn.slice(0,8))) );
+              const rows=[...invs.map(iv=>({key:'i'+iv.id,title:'Rechnung '+iv.number,date:iv.sentDate||iv.date,amount:(iv.total!=null?iv.total:0),tag:'Rechnung',pdf:iv.pdfPath,inv:iv})), ...books.map(b=>({key:'b'+b.it.id,title:b.it.name||'Buchung',date:b.it.datum,amount:num(b.it.amount)*(b.kind==='aus'?-1:1),tag:b.acct,pdf:b.it.filePath}))];
+              rows.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+              const init=(c.name||'?').trim().charAt(0).toUpperCase()||'?';
+              return (
+                <>
+                  <button onClick={()=>{setCustEdit(null);setCustTab('details');}} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontFamily:'inherit',fontSize:13,padding:0,marginBottom:14,display:'flex',alignItems:'center',gap:4}}>‹ Kunden</button>
+                  {/* Profil-Kopf (Karten-Stil wie Startseite) */}
+                  <div style={{...SC,display:'flex',alignItems:'center',gap:16,marginBottom:14,background:hexA(col,0.10),border:'1px solid '+hexA(col,0.3)}}>
+                    <div style={{width:60,height:60,flexShrink:0,borderRadius:16,background:col,display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:800,color:'#0A0A0A'}}>{init}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:24,fontWeight:800,color:C.txt,letterSpacing:'-0.02em',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.name||'Neuer Kunde'}</div>
+                      <div style={{display:'flex',alignItems:'center',gap:10,marginTop:5,flexWrap:'wrap'}}>
+                        <span style={{fontSize:12,fontWeight:600,color:col,background:hexA(col,0.16),border:'1px solid '+hexA(col,0.4),borderRadius:8,padding:'3px 10px'}}>{cDom==='immo'?'Immobilien':'Firma'}</span>
+                        {c.custNo && <span style={{fontSize:13,color:C.sub}}>Nr. {c.custNo}</span>}
                       </div>
-                      <div style={{marginBottom:18}}><span style={{fontSize:12,fontWeight:600,color:cDomCol,background:hexA(cDomCol,0.16),border:'1px solid '+hexA(cDomCol,0.4),borderRadius:8,padding:'4px 11px'}}>{cDom==='immo'?'Immobilien':'Firma'}</span></div>
-                      <div style={{display:'flex',flexDirection:'column',gap:12}}>
-                        <div style={{maxWidth:180}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Anrede</div><select value={custEdit.anrede||''} onChange={e=>setCustEdit({...custEdit,anrede:e.target.value})} style={fld}><option value="">— keine —</option><option value="herr">Herr</option><option value="frau">Frau</option></select></div>
-                        <div><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Name / Firma</div><input autoFocus value={custEdit.name||''} onChange={e=>setCustEdit({...custEdit,name:e.target.value})} style={fld}/></div>
-                        <div><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Adresse</div><textarea value={custEdit.address||''} onChange={e=>setCustEdit({...custEdit,address:e.target.value})} rows={3} style={{...fld,resize:'vertical'}}/></div>
-                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                          <div style={{flex:1,minWidth:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Telefon</div><input value={custEdit.phone||''} onChange={e=>setCustEdit({...custEdit,phone:e.target.value})} style={fld}/></div>
-                          <div style={{flex:1,minWidth:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>E-Mail</div><input value={custEdit.email||''} onChange={e=>setCustEdit({...custEdit,email:e.target.value})} style={fld}/></div>
-                        </div>
-                        <div><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Webseite</div><input value={custEdit.website||''} onChange={e=>setCustEdit({...custEdit,website:e.target.value})} placeholder="https://" style={fld}/></div>
-                        <div style={{maxWidth:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Kundennr.</div><input value={custEdit.custNo||''} onChange={e=>setCustEdit({...custEdit,custNo:e.target.value})} style={fld}/></div>
-                        <button onClick={()=>{ saveCustomer(custEdit); setCustEdit(null); setToast('Kunde gespeichert'); }} style={primBtn}>Speichern</button>
-                      </div>
-                      {/* Historie: Rechnungen & Belege dieses Kunden */}
-                      {!cIsNew && (()=>{ const cn=normName(custEdit.name); const invs=invoices.filter(iv=>iv.customerId===custEdit.id); const books=existingBookings().filter(b=> (b.it.invId && invs.find(iv=>iv.id===b.it.invId)) || (cn.length>2 && normName(b.it.name).includes(cn.slice(0,8))) ); const seen=new Set();
-                        const rows=[...invs.map(iv=>({key:'i'+iv.id,title:'Rechnung '+iv.number,date:iv.sentDate||iv.date,amount:(iv.total!=null?iv.total:0),tag:'Rechnung',pdf:iv.pdfPath,inv:iv})), ...books.filter(b=>{ if(b.it.invId){ if(seen.has(b.it.invId))return false; seen.add(b.it.invId);} return !b.it.invId; }).map(b=>({key:'b'+b.it.id,title:b.it.name||'Buchung',date:b.it.datum,amount:num(b.it.amount)*(b.kind==='aus'?-1:1),tag:b.acct,pdf:b.it.filePath,fileData:b.it.fileData}))];
-                        rows.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
-                        return (
-                        <div style={{marginTop:22}}>
-                          <div style={{fontSize:13,fontWeight:700,color:C.txt,marginBottom:10}}>Historie · {rows.length} {rows.length===1?'Vorgang':'Vorgänge'}</div>
-                          {rows.length? <div style={{display:'flex',flexDirection:'column',gap:8}}>{rows.map(r=>(
-                            <div key={r.key} style={{display:'flex',alignItems:'center',gap:10,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,padding:'10px 12px'}}>
-                              <div style={{flex:1,minWidth:0}}>
-                                <div style={{fontSize:14,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.title}</div>
-                                <div style={{fontSize:12,color:C.sub,marginTop:2}}>{[r.tag, r.date&&(toISO(r.date)||r.date)].filter(Boolean).join(' · ')}</div>
-                              </div>
-                              <div style={{fontSize:14,fontWeight:700,...NUM,color:r.amount<0?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{r.amount<0?'-':''}{fmt(Math.abs(r.amount))}</div>
-                              {r.inv && <button onClick={()=>{ setCustEdit(null); openInvoice(r.inv); setTab('rechnung'); }} title="Öffnen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:15,flexShrink:0}}>›</button>}
-                              {!r.inv && r.pdf && <button onClick={()=>openFile(r.pdf)} title="Beleg ansehen" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:8,padding:'5px 9px',fontSize:11,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Beleg</button>}
-                            </div>
-                          ))}</div> : <div style={{fontSize:13,color:C.mut}}>Noch keine Rechnungen oder Belege für diesen Kunden.</div>}
-                        </div>
-                        ); })()}
                     </div>
                   </div>
-                )}
+                  {/* Tabs */}
+                  <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
+                    {[['details','Details'],['rechnung','Rechnungen & Aktivität']].map(([k,label])=>{ const on=custTab===k; return (
+                      <button key={k} onClick={()=>setCustTab(k)} style={{background:on?hexA(col,0.16):C.surf,border:'1px solid '+(on?hexA(col,0.45):'transparent'),color:on?col:C.sub,borderRadius:10,padding:'8px 18px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{label}{k==='rechnung'&&rows.length?' · '+rows.length:''}</button>
+                    ); })}
+                  </div>
+
+                  {custTab==='details' && (<>
+                    <div style={{...SC,display:'flex',flexDirection:'column',gap:12,marginBottom:14}}>
+                      <div style={{fontSize:13,fontWeight:700,color:C.txt,marginBottom:2}}>Kontaktdaten</div>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                        <div style={{width:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Anrede</div><select value={c.anrede||''} onChange={e=>set({anrede:e.target.value})} style={fld}><option value="">— keine —</option><option value="herr">Herr</option><option value="frau">Frau</option></select></div>
+                        <div style={{flex:1,minWidth:180}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Name / Firma</div><input value={c.name||''} onChange={e=>set({name:e.target.value})} style={fld}/></div>
+                      </div>
+                      <div><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Adresse</div><textarea value={c.address||''} onChange={e=>set({address:e.target.value})} rows={3} style={{...fld,resize:'vertical'}}/></div>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                        <div style={{flex:1,minWidth:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Telefon</div><input value={c.phone||''} onChange={e=>set({phone:e.target.value})} style={fld}/></div>
+                        <div style={{flex:1,minWidth:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>E-Mail</div><input value={c.email||''} onChange={e=>set({email:e.target.value})} style={fld}/></div>
+                      </div>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                        <div style={{flex:1,minWidth:180}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Webseite</div><input value={c.website||''} onChange={e=>set({website:e.target.value})} placeholder="https://" style={fld}/></div>
+                        <div style={{width:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Kundennr.</div><input value={c.custNo||''} onChange={e=>set({custNo:e.target.value})} style={fld}/></div>
+                      </div>
+                    </div>
+                    <div style={{...SC,marginBottom:14}}>
+                      <div style={{fontSize:13,fontWeight:700,color:C.txt,marginBottom:10}}>Notizen</div>
+                      <textarea value={c.notes||''} onChange={e=>set({notes:e.target.value})} rows={5} placeholder="Interne Notizen zu diesem Kunden…" style={{...fld,resize:'vertical'}}/>
+                    </div>
+                    <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                      <button onClick={()=>{ saveCustomer(c); setToast('Kunde gespeichert'); }} style={{...primBtn,flex:2,minWidth:200}}>Speichern</button>
+                      {customers.some(x=>x.id===c.id) && <button onClick={()=>askConfirm('Kunde „'+(c.name||'')+'" löschen?',()=>{delCustomer(c.id);setCustEdit(null);})} style={{...primBtn,background:C.redL,color:C.red,flex:1,minWidth:130}}>Löschen</button>}
+                    </div>
+                  </>)}
+
+                  {custTab==='rechnung' && (<>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:10}}>
+                      <div style={{fontSize:13,fontWeight:700,color:C.txt}}>Rechnungen & Aktivität</div>
+                      <button onClick={()=>{ const nv=newInvoice(cDom); nv.customerId=c.id; nv.custName=c.name||''; nv.custAddress=c.address||''; nv.custEmail=c.email||''; nv.saveCust=false; setInvDomain(cDom); setCustEdit(null); setTab('rechnung'); setInvEdit(nv); }} style={{...primBtn,width:'auto',padding:'9px 15px',fontSize:13}}>+ Neue Rechnung</button>
+                    </div>
+                    {rows.length? <div style={{display:'flex',flexDirection:'column',gap:10}}>{rows.map(r=>(
+                      <div key={r.key} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'13px 15px'}}>
+                        <div style={{width:42,height:42,flexShrink:0,borderRadius:12,background:hexA(col,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={r.inv?P.doc:P.clip} sz={18} col={col}/></div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:15,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.title}</div>
+                          <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{[r.tag, r.date&&(toISO(r.date)||r.date)].filter(Boolean).join(' · ')}</div>
+                        </div>
+                        <div style={{fontSize:16,fontWeight:800,...NUM,color:r.amount<0?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{r.amount<0?'-':''}{fmt(Math.abs(r.amount))}</div>
+                        {r.inv && <button onClick={()=>{ setCustEdit(null); openInvoice(r.inv); setTab('rechnung'); }} title="Öffnen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:18,flexShrink:0}}>›</button>}
+                        {!r.inv && r.pdf && <button onClick={()=>openFile(r.pdf)} title="Beleg ansehen" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:8,padding:'6px 10px',fontSize:12,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Beleg</button>}
+                      </div>
+                    ))}</div> : <div style={{...SC,fontSize:13,color:C.mut,textAlign:'center',padding:'30px 24px'}}>Noch keine Rechnungen oder Belege für diesen Kunden.</div>}
+                  </>)}
+                </>
+              );
+            }
+            return (
+              <>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:10}}>
                   <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>Kunden</div>
                   <div style={{display:'flex',alignItems:'center',gap:10}}>
                     <span style={{fontSize:12,fontWeight:600,color:KONTO_COLORS.unter.c,background:hexA(KONTO_COLORS.unter.c,0.16),border:'1px solid '+hexA(KONTO_COLORS.unter.c,0.4),borderRadius:8,padding:'4px 11px'}}>{invDomain==='immo'?'Immobilien':'Firma'}</span>
-                    <button onClick={()=>setCustEdit({id:uid(),anrede:'',name:'',address:'',phone:'',email:'',website:'',custNo:nextCustNo(invDomain),domain:invDomain})} style={{...primBtn,width:'auto',padding:'10px 16px'}}>+ Neuer Kunde</button>
+                    <button onClick={()=>{setCustTab('details');setCustEdit({id:uid(),anrede:'',name:'',address:'',phone:'',email:'',website:'',custNo:nextCustNo(invDomain),domain:invDomain});}} style={{...primBtn,width:'auto',padding:'10px 16px'}}>+ Neuer Kunde</button>
                   </div>
                 </div>
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
