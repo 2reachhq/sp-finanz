@@ -1828,17 +1828,17 @@ function App({session}) {
                   </div>
                 </div>
                 {/* Konto-Slider (max. 3 sichtbar, Pfeile außerhalb) */}
-                <div style={{position:'relative'}}>
-                  <button onClick={()=>scrollBy(-1)} title="Zurück" style={{...arrowBtn,position:'absolute',left:-15,top:'50%',transform:'translateY(-50%)',zIndex:5}}>‹</button>
-                  <button onClick={()=>scrollBy(1)} title="Weiter" style={{...arrowBtn,position:'absolute',right:-15,top:'50%',transform:'translateY(-50%)',zIndex:5}}>›</button>
+                <div style={{position:'relative',margin:isMobile?'0':'0 52px'}}>
+                  <button onClick={()=>scrollBy(-1)} title="Zurück" style={{...arrowBtn,position:'absolute',left:isMobile?-4:-52,top:'50%',transform:'translateY(-50%)',zIndex:5}}>‹</button>
+                  <button onClick={()=>scrollBy(1)} title="Weiter" style={{...arrowBtn,position:'absolute',right:isMobile?-4:-52,top:'50%',transform:'translateY(-50%)',zIndex:5}}>›</button>
                   <div ref={quellenScrollRef} style={{display:'flex',gap:14,overflowX:'auto',scrollbarWidth:'none',scrollSnapType:'x mandatory',paddingBottom:4}}>
-                    {konten.map(k=>{ const erg=k.inc-k.exp; const c=PAL[k.ci], tint=TINT[k.ci], bd=BD[k.ci]; const open=openAcct===k.key; return (
-                      <div key={k.key} style={{flexShrink:0,width:isMobile?'80%':'calc((100% - 28px)/3)',scrollSnapAlign:'start',background:tint,border:'1px solid '+(open?c:bd),borderRadius:18,padding:'15px 16px'}}>
-                        <input value={k.name} onChange={k.onName} placeholder="Name" style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:20,fontWeight:800,color:C.txt,width:'100%',letterSpacing:'-0.02em',padding:0}} />
-                        <button onClick={()=>setIconPick(k.key)} title="Icon ändern" style={{width:40,height:40,borderRadius:12,background:c,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',margin:'10px 0'}}><Ic p={k.icon} sz={20} col={'#0A0A0A'}/></button>
-                        <div style={{fontSize:21,fontWeight:800,color:erg>=0?C.grn:C.txt,...NUM}}>{erg>=0?'+':''}{fmt(erg)}</div>
-                        <div style={{fontSize:11,color:C.sub,marginTop:3,lineHeight:1.6}}>Ein <b style={{color:C.grn,...NUM}}>{fmt(k.inc)}</b> · Aus <b style={{color:'#FFB37A',...NUM}}>{fmtN(k.exp)}</b></div>
-                        <button onClick={()=>{ if(open){ setOpenAcct(null); } else { if(k.kind==='prop')setSp(k.pid); setOpenAcct(k.key); } }} style={{marginTop:10,width:'100%',background:open?c:C.surf2,border:'none',color:open?'#0A0A0A':c,borderRadius:9,padding:'8px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{open?'schließen ▴':'öffnen ▾'}</button>
+                    {konten.map(k=>{ const erg=k.inc-k.exp; const c=PAL[k.ci], tint=TINT[k.ci], bd=BD[k.ci]; const open=openAcct===k.key; const toggle=()=>{ if(open){ setOpenAcct(null); } else { if(k.kind==='prop')setSp(k.pid); setOpenAcct(k.key); } }; return (
+                      <div key={k.key} onClick={toggle} style={{flexShrink:0,width:isMobile?'82%':'calc((100% - 28px)/3)',scrollSnapAlign:'start',background:open?tint:C.surf2,border:'1px solid '+(open?c:'transparent'),borderRadius:18,padding:'18px 20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <input value={k.name} onChange={k.onName} onClick={e=>e.stopPropagation()} placeholder="Name" style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:16,fontWeight:500,color:C.sub,width:'100%',padding:0,marginBottom:7}} />
+                          <div style={{fontSize:27,fontWeight:800,color:C.txt,...NUM,lineHeight:1}}>{fmt(erg)}</div>
+                        </div>
+                        <button onClick={e=>{e.stopPropagation(); setIconPick(k.key);}} title="Icon ändern" style={{width:46,height:46,borderRadius:13,background:c,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Ic p={k.icon} sz={22} col={'#0A0A0A'}/></button>
                       </div>
                     ); })}
                   </div>
