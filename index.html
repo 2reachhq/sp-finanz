@@ -156,7 +156,7 @@ const newItem = (name='') => ({id:uid(), name, amount:0, recurring:false, note:'
 const CATS = ['Allgemein','Miete','Nebenkosten','Versicherung','Material','Personal','Steuern','Software','Marketing','Reise','Bewirtung','Bank & Gebühren','Sonstiges'];
 const DEF_INV_BODY = 'vielen Dank für Ihr Vertrauen. Für die erbrachten Leistungen erlaube ich mir, Ihnen folgende Positionen in Rechnung zu stellen:';
 const DEF_INV_HEADER = 'Sehr geehrte Damen und Herren,\n\n'+DEF_INV_BODY;
-const greetingFor = (cust)=>{ const nm=String((cust&&cust.name)||'').trim(); const last=nm?nm.split(/\s+/).pop():''; if(cust&&cust.anrede==='herr'&&last) return 'Sehr geehrter Herr '+last+','; if(cust&&cust.anrede==='frau'&&last) return 'Sehr geehrte Frau '+last+','; return 'Sehr geehrte Damen und Herren,'; };
+const greetingFor = (cust)=>{ const nm=String((cust&&cust.name)||'').trim(); const isCompany=/\b(gmbh|ag|ug|kg|ohg|gbr|mbh|e\.?k\.?|e\.?v\.?|co\.?|ltd|inc|se)\b/i.test(nm); const last=(nm&&!isCompany)?nm.split(/\s+/).pop():''; if(cust&&cust.anrede==='herr'&&last) return 'Sehr geehrter Herr '+last+','; if(cust&&cust.anrede==='frau'&&last) return 'Sehr geehrte Frau '+last+','; return 'Sehr geehrte Damen und Herren,'; };
 const DEF_INV_FOOTER = 'Bitte überweisen Sie den Rechnungsbetrag innerhalb von 14 Tagen ohne Abzug auf das unten genannte Konto.\n\nMit freundlichen Grüßen';
 const mkItems  = names => names.map(n=>newItem(n));
 const safeName = s => {
@@ -1001,6 +1001,10 @@ function App({session}) {
   const [dupPopup,setDupPopup]= useState(null);   // Dubletten-Hinweis {draft, match}
   const [draftEdit,setDraftEdit]= useState(null); // Import: Entwurf im Detail-Overlay (id)
   const [custTab,setCustTab]= useState('details'); // Kundenprofil: Details vs Rechnungen
+  const [belBer,setBelBer]= useState('unter');     // Belege-DB: Bereich
+  const [belYr,setBelYr]= useState(now.getFullYear());
+  const [belMo,setBelMo]= useState(now.getMonth());
+  const [belKind,setBelKind]= useState('aus');     // Belege-DB: Ein/Aus
   const chat = data.chat || [];                   // KI-Berater Verlauf (gespeichert)
   const setChat = updater => setData(prev=>{ const cur=prev.chat||[]; const next=(typeof updater==='function'?updater(cur):updater).slice(-40); return {...prev, chat:next}; });
   const [chatInput,setChatInput]= useState('');
@@ -1029,7 +1033,7 @@ function App({session}) {
   const subSlug = (v)=> v==='wied' ? 'wiederkehrend' : v;
   const parseSub = (s)=> s==='wiederkehrend' ? 'wied' : s;
   useEffect(()=>{
-    const valid=new Set(['quellen','immo','unter','privat','import','berater','kal','yr','steuer','mehr','settings','rechnung','kunden']);
+    const valid=new Set(['quellen','immo','unter','privat','import','berater','kal','yr','steuer','mehr','settings','rechnung','kunden','belege']);
     const apply=()=>{ const raw=(window.location.hash||'').replace(/^#\/?/,''); if(!raw) return; const parts=raw.split('/'); const head=parts[0];
       if(valid.has(head)){ setTab(head); return; }
       // Konto-Slug → Konten-Akkordeon öffnen
@@ -1711,27 +1715,44 @@ function App({session}) {
   const buildInvoicePDF = async (inv)=>{
     await loadJsPDF(); const { jsPDF }=window.jspdf; const doc=new jsPDF({unit:'pt',format:'a4'});
     const co=companyFor(inv.domain||'unter')||{}; const cust=invCustomer(inv); const tot=invTotals(inv.items);
-    const W=595, L=40, R=W-40; let y=54;
-    if(co.logoData){ try{ doc.addImage(co.logoData,'JPEG',L,y-14,90,40); }catch(_){} }
-    doc.setFont('helvetica','bold'); doc.setFontSize(22); doc.setTextColor(20); doc.text('Rechnung',R,y,{align:'right'});
-    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120);
-    doc.text('Nr. '+(inv.number||''),R,y+16,{align:'right'}); doc.text('Datum: '+(inv.date||''),R,y+28,{align:'right'}); if(inv.due) doc.text('Fällig: '+inv.due,R,y+40,{align:'right'});
-    y+=64; doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(co.name||'',L,y);
-    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120); String(co.address||'').split('\n').forEach((ln,i)=>doc.text(ln,L,y+13+i*12));
-    y+=64; doc.setTextColor(120); doc.setFontSize(9); doc.text('Rechnung an',L,y); doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(cust.name||'—',L,y+15);
-    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120); String(cust.address||'').split('\n').forEach((ln,i)=>doc.text(ln,L,y+29+i*12));
-    y+=58; doc.setTextColor(60); doc.setFontSize(10); const hLines=doc.splitTextToSize(invHeader(inv), R-L); doc.text(hLines,L,y); y+=hLines.length*13+10;
-    doc.setDrawColor(225); doc.setFontSize(9); doc.setTextColor(120);
-    doc.text('Beschreibung',L,y); doc.text('Menge',360,y,{align:'right'}); doc.text('Einzelpreis',430,y,{align:'right'}); doc.text('MwSt',480,y,{align:'right'}); doc.text('Netto',R,y,{align:'right'});
-    y+=6; doc.line(L,y,R,y); y+=16; doc.setTextColor(30);
-    (inv.items||[]).forEach(it=>{ const n=num(it.qty||1)*num(it.price); const lines=doc.splitTextToSize(String(it.desc||''),300);
-      doc.text(lines,L,y); doc.text(String(num(it.qty)||1),360,y,{align:'right'}); doc.text(fmt(num(it.price)),430,y,{align:'right'}); doc.text((num(it.mwst!=null?it.mwst:19))+'%',480,y,{align:'right'}); doc.text(fmt(n),R,y,{align:'right'});
-      y+=Math.max(lines.length*12,16)+4; doc.setDrawColor(240); doc.line(L,y-8,R,y-8); if(y>740){ doc.addPage(); y=54; } });
-    y+=8; doc.setTextColor(120); doc.setFontSize(9); doc.text('Netto: '+fmt(tot.net),R,y,{align:'right'}); doc.text('MwSt: '+fmt(tot.tax),R,y+13,{align:'right'});
-    doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.text('Gesamt: '+fmt(tot.gross),R,y+32,{align:'right'});
-    y+=58; doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(70); const fLines=doc.splitTextToSize(invFooter(inv), R-L); if(y>770){doc.addPage();y=54;} doc.text(fLines,L,y); y+=fLines.length*13+10;
-    if(co.iban||co.taxId||co.ustId){ doc.setFontSize(8.5); doc.setTextColor(130); let fy=y; if(co.iban){ doc.text('Zahlbar an: '+co.iban+(co.bic?(' · '+co.bic):''),L,fy); fy+=12;} const tl=[co.taxId?('Steuernr.: '+co.taxId):'',co.ustId?('USt-IdNr.: '+co.ustId):''].filter(Boolean).join('   '); if(tl) doc.text(tl,L,fy); y=fy+14; }
-    if(inv.note){ doc.setFontSize(8.5); doc.setTextColor(130); doc.text(doc.splitTextToSize(String(inv.note),R-L),L,Math.min(y,800)); }
+    const m2=v=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
+    const W=595, L=44, R=W-44; let y=58;
+    // Logo oben rechts
+    if(co.logoData){ try{ doc.addImage(co.logoData,'JPEG',R-150,y-18,150,56,undefined,'FAST'); }catch(_){ try{doc.addImage(co.logoData,'PNG',R-150,y-18,150,56);}catch(__){} } }
+    else { doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(123,194,170); doc.text(co.name||'',R,y,{align:'right'}); }
+    y+=58;
+    // Absenderzeile + Empfänger links
+    const senderLine=[co.name, String(co.address||'').replace(/\n+/g,', ')].filter(Boolean).join(' · ');
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(140); if(senderLine){ doc.text(doc.splitTextToSize(senderLine,300),L,y); doc.setDrawColor(210); doc.line(L,y+4,L+300,y+4); }
+    let cy=y+18; doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(25); doc.text(cust.name||'—',L,cy); cy+=14;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(90); String(cust.address||'').split('\n').filter(Boolean).forEach(ln=>{doc.text(ln,L,cy); cy+=12;});
+    // Meta-Block rechts
+    let my=y; const mk=(k,v)=>{ doc.setTextColor(140); doc.setFontSize(9); doc.text(k,R-170,my); doc.setTextColor(30); doc.text(String(v||''),R,my,{align:'right'}); my+=15; };
+    mk('Rechnungs-Nr.',inv.number); mk('Rechnungsdatum',inv.date); if(inv.due) mk('Fällig am',inv.due); if(cust.custNo) mk('Kundennummer',cust.custNo);
+    y=Math.max(cy,my)+22;
+    doc.setFont('helvetica','bold'); doc.setFontSize(17); doc.setTextColor(20); doc.text('Rechnung Nr. '+(inv.number||''),L,y); y+=20;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(70); const hLines=doc.splitTextToSize(invHeader(inv), R-L); doc.text(hLines,L,y); y+=hLines.length*13+12;
+    // Tabellenkopf
+    const cMenge=348,cEinzel=420,cUst=476,cGes=R;
+    doc.setFontSize(8.5); doc.setTextColor(140); doc.text('POS.',L,y); doc.text('BESCHREIBUNG',L+26,y); doc.text('MENGE',cMenge,y,{align:'right'}); doc.text('EINZELPREIS',cEinzel,y,{align:'right'}); doc.text('UST',cUst,y,{align:'right'}); doc.text('GESAMT',cGes,y,{align:'right'});
+    y+=6; doc.setDrawColor(30); doc.setLineWidth(1.2); doc.line(L,y,R,y); doc.setLineWidth(0.5); y+=15; doc.setTextColor(40);
+    (inv.items||[]).forEach((it,i)=>{ const n=num(it.qty||1)*num(it.price); const lines=doc.splitTextToSize(String(it.desc||''),290); doc.setFontSize(10);
+      doc.setTextColor(170); doc.text(String(i+1),L,y); doc.setTextColor(40); doc.text(lines,L+26,y); doc.text(String(num(it.qty)||1),cMenge,y,{align:'right'}); doc.text(m2(num(it.price)),cEinzel,y,{align:'right'}); doc.text((num(it.mwst!=null?it.mwst:19))+' %',cUst,y,{align:'right'}); doc.text(m2(n),cGes,y,{align:'right'});
+      y+=Math.max(lines.length*12,15)+6; doc.setDrawColor(235); doc.line(L,y-9,R,y-9); if(y>720){ doc.addPage(); y=58; } });
+    // Summen rechts
+    y+=10; const tx=R-300; const trow=(k,v,bold)=>{ doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(bold?13:10); doc.setTextColor(bold?20:90); doc.text(k,tx,y); doc.text(v,R,y,{align:'right'}); };
+    trow('Gesamtbetrag netto',m2(tot.net)); y+=16;
+    const byRate={}; (inv.items||[]).forEach(it=>{ const r=num(it.mwst!=null?it.mwst:19); const n=num(it.qty||1)*num(it.price); byRate[r]=(byRate[r]||0)+n*r/100; });
+    Object.keys(byRate).sort((a,b)=>b-a).forEach(r=>{ trow('zzgl. '+r+' % USt',m2(byRate[r])); y+=16; });
+    y+=4; doc.setDrawColor(30); doc.setLineWidth(1.4); doc.line(tx,y,R,y); doc.setLineWidth(0.5); y+=18; trow('Gesamtbetrag',m2(tot.gross)); y+=26;
+    // Footertext
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(70); const fLines=doc.splitTextToSize(invFooter(inv), R-L); if(y>740){doc.addPage();y=58;} doc.text(fLines,L,y); y+=fLines.length*13+8;
+    // Fußzeile in 3 Spalten (unten)
+    let fy=Math.max(y+20,770); doc.setDrawColor(210); doc.line(L,fy-12,R,fy-12); doc.setFontSize(7.8); doc.setTextColor(140);
+    const c1=[co.name, co.address, co.phone&&('Tel. '+co.phone), co.email].filter(Boolean);
+    const c2=[(co.iban||co.bic)?'Bankverbindung':'', co.iban&&('IBAN '+co.iban), co.bic&&('BIC '+co.bic)].filter(Boolean);
+    const c3=[(co.taxId||co.ustId)?'Steuer':'', co.taxId&&('Steuernr. '+co.taxId), co.ustId&&('USt-IdNr. '+co.ustId)].filter(Boolean);
+    [[L,c1],[L+185,c2],[L+360,c3]].forEach(([x,arr])=>{ let yy=fy; arr.forEach(t=>{ String(t).split('\n').forEach(ln=>{ doc.text(ln,x,yy); yy+=10; }); }); });
     return doc.output('blob');
   };
   const downloadInvoicePDF = async (inv)=>{ try{ setToast('📄 Erzeuge PDF…'); const blob=await buildInvoicePDF(inv); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='Rechnung_'+(inv.number||'')+'.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); setToast('PDF heruntergeladen'); }catch(e){ setToast('PDF-Fehler: '+(e.message||e)); } };
@@ -1764,18 +1785,42 @@ function App({session}) {
   // Rechnungs-HTML (für Live-Vorschau & Druck/PDF)
   const invoiceHTML = (inv, forPrint)=>{ const cust=invCustomer(inv); const tot=invTotals(inv.items); const co=companyFor(inv.domain||'unter')||{};
     const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');
-    const rows=(inv.items||[]).map(it=>{ const n=num(it.qty||1)*num(it.price); return '<tr><td>'+esc(it.desc)+'</td><td class=r>'+(num(it.qty)||1)+'</td><td class=r>'+fmt(num(it.price))+'</td><td class=r>'+(num(it.mwst!=null?it.mwst:19))+'%</td><td class=r>'+fmt(n)+'</td></tr>'; }).join('');
-    return '<html><head><meta charset="utf-8"><title>Rechnung '+esc(inv.number)+'</title><style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:40px;max-width:820px;margin:0 auto;background:#fff}h1{font-size:26px;margin:0}table{width:100%;border-collapse:collapse;margin-top:22px}th,td{padding:8px;border-bottom:1px solid #e2e2e2;font-size:13px}th{text-align:left;color:#777}.r{text-align:right}.tot{margin-top:16px;text-align:right}.muted{color:#777;font-size:12px;line-height:1.5}</style></head><body>'
-      +'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-      +'<div>'+(co.logoData?'<img src="'+co.logoData+'" style="max-height:74px;margin-bottom:10px"><br>':'')+'<b>'+esc(co.name||'Dein Firmenname')+'</b><br><span class=muted>'+esc(co.address)+'</span></div>'
-      +'<div style="text-align:right"><h1>Rechnung</h1><div class=muted style="margin-top:6px">Nr. '+esc(inv.number)+'<br>Datum: '+esc(inv.date)+(inv.due?('<br>Fällig: '+esc(inv.due)):'')+'</div></div></div>'
-      +'<div style="margin-top:24px"><span class=muted>Rechnung an</span><br><b>'+esc(cust.name||'—')+'</b><br><span class=muted>'+esc(cust.address)+'</span></div>'
-      +'<div style="margin-top:22px;font-size:13px;line-height:1.6;color:#333">'+esc(invHeader(inv))+'</div>'
-      +'<table><thead><tr><th>Beschreibung</th><th class=r>Menge</th><th class=r>Einzelpreis</th><th class=r>MwSt</th><th class=r>Netto</th></tr></thead><tbody>'+rows+'</tbody></table>'
-      +'<div class=tot><div class=muted>Netto: '+fmt(tot.net)+'</div><div class=muted>MwSt: '+fmt(tot.tax)+'</div><div style="font-size:19px;font-weight:bold;margin-top:6px">Gesamt: '+fmt(tot.gross)+'</div></div>'
-      +'<div style="margin-top:22px;font-size:12.5px;line-height:1.6;color:#444">'+esc(invFooter(inv))+'</div>'
-      +((co.iban||co.taxId||co.ustId)?('<div class=muted style="margin-top:22px">'+(co.iban?('Zahlbar an: '+esc(co.iban)+(co.bic?(' · '+esc(co.bic)):'')+'<br>'):'')+(co.taxId?('Steuernr.: '+esc(co.taxId)+' '):'')+(co.ustId?('USt-IdNr.: '+esc(co.ustId)):'')+'</div>'):'')
-      +(inv.note?('<div class=muted style="margin-top:16px">'+esc(inv.note)+'</div>'):'')
+    const m2=v=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
+    const senderLine=[co.name, String(co.address||'').replace(/\n+/g,', ')].filter(Boolean).join(' · ');
+    const rows=(inv.items||[]).map((it,i)=>{ const n=num(it.qty||1)*num(it.price); return '<tr><td class=pos>'+(i+1)+'</td><td>'+esc(it.desc)+'</td><td class=r>'+(num(it.qty)||1)+'</td><td class=r>'+m2(num(it.price))+'</td><td class=r>'+(num(it.mwst!=null?it.mwst:19))+' %</td><td class=r>'+m2(n)+'</td></tr>'; }).join('');
+    // USt nach Satz gruppieren
+    const byRate={}; (inv.items||[]).forEach(it=>{ const r=num(it.mwst!=null?it.mwst:19); const n=num(it.qty||1)*num(it.price); byRate[r]=(byRate[r]||0)+n*r/100; });
+    const ustRows=Object.keys(byRate).sort((a,b)=>b-a).map(r=>'<div class=trow><span>zzgl. '+r+' % USt</span><span>'+m2(byRate[r])+'</span></div>').join('');
+    const A='#7BC2AA';
+    return '<html><head><meta charset="utf-8"><title>Rechnung '+esc(inv.number)+'</title><style>'
+      +'*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#1d1d1f;padding:48px 52px;max-width:860px;margin:0 auto;background:#fff;font-size:13px;line-height:1.5}'
+      +'h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}.r{text-align:right}.muted{color:#86868b}'
+      +'.sender{font-size:10px;color:#86868b;border-bottom:1px solid #d2d2d7;padding-bottom:4px;margin-bottom:14px}'
+      +'table.items{width:100%;border-collapse:collapse;margin-top:18px}table.items th{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:#86868b;text-align:left;padding:0 8px 8px;border-bottom:1.5px solid #1d1d1f}'
+      +'table.items td{padding:11px 8px;border-bottom:1px solid #ededed;font-size:12.5px;vertical-align:top}table.items td.pos{color:#aaa;width:26px}table.items th.r,table.items td.r{text-align:right;white-space:nowrap}'
+      +'.totbox{margin-top:18px;margin-left:auto;width:300px}.trow{display:flex;justify-content:space-between;padding:5px 0;font-size:12.5px;color:#515154}.tgrand{display:flex;justify-content:space-between;padding:11px 0 0;margin-top:6px;border-top:2px solid #1d1d1f;font-size:16px;font-weight:700;color:#1d1d1f}'
+      +'.meta{font-size:12px}.meta td{padding:2px 0}.meta td.k{color:#86868b;padding-right:18px}'
+      +'.pagefooter{margin-top:54px;border-top:1px solid #d2d2d7;padding-top:14px;display:flex;gap:28px;font-size:10px;color:#86868b;line-height:1.6}'
+      +'</style></head><body>'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:30px;min-height:80px">'
+        +'<div style="flex:1"></div>'
+        +'<div style="text-align:right">'+(co.logoData?'<img src="'+co.logoData+'" style="max-height:84px;max-width:230px">':'<div style="font-size:20px;font-weight:800;color:'+A+'">'+esc(co.name||'')+'</div>')+'</div>'
+      +'</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:40px;margin-top:24px">'
+        +'<div style="max-width:330px">'+(senderLine?'<div class=sender>'+esc(senderLine)+'</div>':'')+'<div><b>'+esc(cust.name||'—')+'</b>'+(cust.address?'<br>'+esc(cust.address):'')+'</div></div>'
+        +'<table class=meta><tr><td class=k>Rechnungs-Nr.</td><td>'+esc(inv.number)+'</td></tr><tr><td class=k>Rechnungsdatum</td><td>'+esc(inv.date)+'</td></tr>'+(inv.due?'<tr><td class=k>Fällig am</td><td>'+esc(inv.due)+'</td></tr>':'')+(cust.custNo?'<tr><td class=k>Kundennummer</td><td>'+esc(cust.custNo)+'</td></tr>':'')+'</table>'
+      +'</div>'
+      +'<h1 style="margin-top:34px">Rechnung Nr. '+esc(inv.number)+'</h1>'
+      +'<div style="margin-top:14px;font-size:12.5px;line-height:1.6;color:#3a3a3c;white-space:pre-line">'+esc(invHeader(inv))+'</div>'
+      +'<table class=items><thead><tr><th class=pos>Pos.</th><th>Beschreibung</th><th class=r>Menge</th><th class=r>Einzelpreis</th><th class=r>USt</th><th class=r>Gesamt</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      +'<div class=totbox><div class=trow><span>Gesamtbetrag netto</span><span>'+m2(tot.net)+'</span></div>'+ustRows+'<div class=tgrand><span>Gesamtbetrag</span><span>'+m2(tot.gross)+'</span></div></div>'
+      +'<div style="margin-top:26px;font-size:12.5px;line-height:1.6;color:#3a3a3c;white-space:pre-line">'+esc(invFooter(inv))+'</div>'
+      +(inv.note?('<div class=muted style="margin-top:14px;font-size:11.5px">'+esc(inv.note)+'</div>'):'')
+      +'<div class=pagefooter>'
+        +'<div>'+esc(co.name||'')+(co.address?'<br>'+esc(co.address):'')+(co.phone?'<br>Tel. '+esc(co.phone):'')+(co.email?'<br>'+esc(co.email):'')+'</div>'
+        +((co.iban||co.bic)?'<div>Bankverbindung<br>'+(co.iban?'IBAN '+esc(co.iban):'')+(co.bic?'<br>BIC '+esc(co.bic):'')+'</div>':'')
+        +((co.taxId||co.ustId)?'<div>Steuer<br>'+(co.taxId?'Steuernr. '+esc(co.taxId):'')+(co.ustId?'<br>USt-IdNr. '+esc(co.ustId):'')+'</div>':'')
+      +'</div>'
       +(forPrint?'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},250);}</scr'+'ipt>':'')+'</body></html>';
   };
   const printInvoice = (inv)=>{ const w=window.open('','_blank'); if(w){ w.document.write(invoiceHTML(inv,true)); w.document.close(); } else setToast('Bitte Pop-ups erlauben, um die Rechnung zu drucken.'); };
@@ -2000,6 +2045,7 @@ function App({session}) {
   ];
   const SONSTIGES = [
     {id:'kunden', label:'Kunden',       icon:P.prson},
+    {id:'belege', label:'Belege',       icon:P.clip},
     {id:'kal',    label:'Events',       icon:P.bed},
     {id:'yr',     label:'Jahresübersicht', icon:P.cal},
     {id:'steuer', label:'Steuer',       icon:P.doc},
@@ -3160,6 +3206,53 @@ function App({session}) {
                     <button onClick={e=>{e.stopPropagation();askConfirm('Kunde „'+(c.name||'')+'" löschen?',()=>delCustomer(c.id));}} title="Löschen" style={{background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:18,flexShrink:0,padding:'4px 6px'}}>×</button>
                   </div>
                 ))}</div> : <div style={{...SC,fontSize:13,color:C.mut}}>Noch keine Kunden. Lege oben deinen ersten Kunden an.</div>}
+              </>
+            );
+          })()}
+          {/* ══ BELEGE-DATENBANK ══ */}
+          {tab==='belege' && (()=>{
+            const bereiche=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}];
+            const years=[]; for(let yy=now.getFullYear()-4; yy<=now.getFullYear()+1; yy++) years.push(yy);
+            const md=getMD(belYr,belMo);
+            const list = belBer==='unter' ? (belKind==='ein'?(md.unternehmen?.clients||[]):(md.unternehmen?.items||[]))
+                       : belBer==='privat' ? (belKind==='ein'?(md.privat?.einnahmen||[]):(md.privat?.items||[]))
+                       : (belKind==='ein'?(md.props?.[belBer]?.einnahmen||[]):(md.props?.[belBer]?.expenses||[]));
+            const belege = (list||[]).filter(it=>it.filePath||it.fileData);
+            const dom = belBer==='unter'?'unter':(belBer==='privat'?null:'immo');
+            const invPdfs = (belKind==='ein' && dom) ? (data.invoices||[]).filter(iv=>iv.pdfPath && (iv.domain||'unter')===dom && iv.account===belBer && (()=>{const dt=new Date(iv.sentDate||iv.date); return !isNaN(dt)&&dt.getFullYear()===belYr&&dt.getMonth()===belMo;})()) : [];
+            const rows=[...belege.map(it=>({key:'b'+it.id,name:it.name||'Beleg',date:it.datum,amount:num(it.amount),recurring:it.recurring,filePath:it.filePath,fileData:it.fileData,fileName:it.fileName})), ...invPdfs.map(iv=>({key:'i'+iv.id,name:'Rechnung '+iv.number,date:iv.sentDate||iv.date,amount:(iv.total!=null?iv.total:0),filePath:iv.pdfPath}))];
+            rows.sort((a,b)=>String(toISO(b.date)||'').localeCompare(String(toISO(a.date)||'')));
+            const selSt={...SS,textAlign:'left'};
+            return (
+              <>
+                <div style={{marginBottom:18}}>
+                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>Belege</div>
+                  <div style={{fontSize:13,color:C.sub,marginTop:3}}>Alle Belege & Rechnungen strukturiert – automatisch im Cloud-Speicher abgelegt.</div>
+                </div>
+                {/* Auswahl: Bereich → Jahr → Monat → Ein/Aus */}
+                <div style={{...SC,marginBottom:14,display:'flex',flexDirection:'column',gap:12}}>
+                  <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                    <div style={{flex:1,minWidth:180}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Bereich</div><select value={belBer} onChange={e=>setBelBer(e.target.value)} style={selSt}>{bereiche.map(b=><option key={b.k} value={b.k}>{b.label}</option>)}</select></div>
+                    <div style={{width:130}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Jahr</div><select value={belYr} onChange={e=>setBelYr(+e.target.value)} style={selSt}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select></div>
+                    <div style={{width:160}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Monat</div><select value={belMo} onChange={e=>setBelMo(+e.target.value)} style={selSt}>{MONTHS.map((mn,i)=><option key={i} value={i}>{mn}</option>)}</select></div>
+                  </div>
+                  <div style={{display:'flex',gap:8}}>
+                    {[['ein','Einnahmen',C.grn],['aus','Ausgaben','#FFB37A']].map(([k,l,c])=>{ const on=belKind===k; return <button key={k} onClick={()=>setBelKind(k)} style={{flex:1,background:on?hexA(c,0.16):C.surf2,border:'1px solid '+(on?hexA(c,0.45):C.bdr),color:on?c:C.sub,borderRadius:10,padding:'10px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>; })}
+                  </div>
+                </div>
+                <div style={{fontSize:12,color:C.mut,marginBottom:10}}>{(bereiche.find(b=>b.k===belBer)||{}).label} · {belYr} · {MONTHS[belMo]} · {belKind==='ein'?'Einnahmen':'Ausgaben'} · {rows.length} {rows.length===1?'Beleg':'Belege'}</div>
+                {rows.length ? <div style={{display:'flex',flexDirection:'column',gap:10}}>{rows.map(r=>(
+                  <div key={r.key} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'12px 14px'}}>
+                    <div style={{width:44,height:44,flexShrink:0,borderRadius:12,background:hexA(C.pri,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={19} col={C.pri}/></div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:15,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}{r.recurring?' 🔁':''}</div>
+                      <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{[r.date&&(toISO(r.date)||r.date)].filter(Boolean).join(' · ')||'—'}</div>
+                    </div>
+                    <div style={{fontSize:15,fontWeight:700,...NUM,color:belKind==='ein'?C.grn:'#FFB37A',whiteSpace:'nowrap'}}>{belKind==='aus'?'-':''}{fmt(Math.abs(r.amount))}</div>
+                    {r.filePath ? <button onClick={()=>openFile(r.filePath)} title="Ansehen" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:9,padding:'8px 12px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Ansehen</button>
+                      : r.fileData ? <a href={r.fileData} download={r.fileName||'beleg'} style={{background:C.surf3,color:C.txt,borderRadius:9,padding:'8px 12px',fontSize:12,fontWeight:600,fontFamily:'inherit',flexShrink:0,textDecoration:'none'}}>Ansehen</a> : null}
+                  </div>
+                ))}</div> : <div style={{...SC,textAlign:'center',color:C.mut,fontSize:14,padding:'34px 24px'}}>Keine Belege in dieser Auswahl. Hänge Belege an Buchungen an – sie erscheinen hier automatisch.</div>}
               </>
             );
           })()}
