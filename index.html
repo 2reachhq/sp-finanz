@@ -1001,10 +1001,8 @@ function App({session}) {
   const [dupPopup,setDupPopup]= useState(null);   // Dubletten-Hinweis {draft, match}
   const [draftEdit,setDraftEdit]= useState(null); // Import: Entwurf im Detail-Overlay (id)
   const [custTab,setCustTab]= useState('details'); // Kundenprofil: Details vs Rechnungen
-  const [belBer,setBelBer]= useState('unter');     // Belege-DB: Bereich
-  const [belYr,setBelYr]= useState(now.getFullYear());
-  const [belMo,setBelMo]= useState(now.getMonth());
-  const [belKind,setBelKind]= useState('aus');     // Belege-DB: Ein/Aus
+  const [belPath,setBelPath]= useState([]);        // Belege-DB Ordnerpfad: [bereich, jahr, monat, kind]
+  const [zipBusy,setZipBusy]= useState(false);
   const chat = data.chat || [];                   // KI-Berater Verlauf (gespeichert)
   const setChat = updater => setData(prev=>{ const cur=prev.chat||[]; const next=(typeof updater==='function'?updater(cur):updater).slice(-40); return {...prev, chat:next}; });
   const [chatInput,setChatInput]= useState('');
@@ -1711,6 +1709,26 @@ function App({session}) {
   };
   // jsPDF nachladen (nur bei Bedarf)
   const loadJsPDF = ()=> new Promise((res,rej)=>{ if(window.jspdf&&window.jspdf.jsPDF) return res(); const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('PDF-Bibliothek konnte nicht geladen werden')); document.head.appendChild(s); });
+  const loadJSZip = ()=> new Promise((res,rej)=>{ if(window.JSZip) return res(); const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('ZIP-Bibliothek konnte nicht geladen werden')); document.head.appendChild(s); });
+  // ── Belege-Ordnerstruktur ──
+  const belBerKeys = ['unter', ...PROPS, 'privat'];
+  const belBerLabel = k => k==='unter' ? (names.unternehmen||'Firma') : k==='privat' ? (names.privatLabel||'Privat') : (names[k]||k);
+  const belYears = ()=>{ const ys=Object.keys(data).filter(k=>/^\d+$/.test(k)).map(Number); if(!ys.includes(yr)) ys.push(yr); return ys.sort((a,b)=>b-a); };
+  const belegesLeaf = (ber,y2,m2,kind)=>{ const md=getMD(y2,m2)||{}; const list = ber==='unter' ? (kind==='ein'?md.unternehmen?.clients:md.unternehmen?.items) : ber==='privat' ? (kind==='ein'?md.privat?.einnahmen:md.privat?.items) : (kind==='ein'?md.props?.[ber]?.einnahmen:md.props?.[ber]?.expenses);
+    const items=(list||[]).filter(it=>it.filePath||it.fileData).map(it=>({id:it.id,name:it.name||'Beleg',date:it.datum,amount:num(it.amount),recurring:it.recurring,filePath:it.filePath,fileData:it.fileData,fileName:it.fileName}));
+    const dom = ber==='unter'?'unter':(ber==='privat'?null:'immo');
+    if(kind==='ein' && dom){ (data.invoices||[]).forEach(iv=>{ if(iv.pdfPath && (iv.domain||'unter')===dom && iv.account===ber){ const dt=new Date(iv.sentDate||iv.date); if(!isNaN(dt)&&dt.getFullYear()===y2&&dt.getMonth()===m2) items.push({id:iv.id,name:'Rechnung '+iv.number,date:iv.sentDate||iv.date,amount:(iv.total||0),filePath:iv.pdfPath}); } }); }
+    return items; };
+  const belegesUnder = (p)=>{ const out=[]; const bers=p[0]?[p[0]]:belBerKeys; const yl=belYears(); bers.forEach(ber=>{ const yrs=p[1]!=null?[p[1]]:yl; yrs.forEach(y2=>{ const mos=p[2]!=null?[p[2]]:[0,1,2,3,4,5,6,7,8,9,10,11]; mos.forEach(m2=>{ const kinds=p[3]?[p[3]]:['ein','aus']; kinds.forEach(kind=>{ belegesLeaf(ber,y2,m2,kind).forEach(b=>out.push(b)); }); }); }); }); return out; };
+  const downloadBelegeZip = async (p, label)=>{ const items=belegesUnder(p); if(!items.length){ setToast('Keine Belege in diesem Ordner.'); return; } setZipBusy(true); setToast('📦 Belege werden gepackt…');
+    try{ await loadJSZip(); const zip=new window.JSZip(); const used={};
+      for(const b of items){ let payload=null, ext='pdf', isB64=false;
+        if(b.fileData){ const m=String(b.fileData).match(/^data:(.*?);base64,(.*)$/); if(m){ payload=m[2]; isB64=true; ext=(m[1].split('/')[1]||'bin').replace('jpeg','jpg'); } }
+        else if(b.filePath){ try{ const {data:dd}=await sb.storage.from('belege').createSignedUrl(b.filePath,3600); if(dd&&dd.signedUrl){ const r=await fetch(dd.signedUrl); payload=await r.arrayBuffer(); ext=(b.filePath.split('.').pop()||'pdf').toLowerCase(); } }catch(_){} }
+        if(payload!=null){ let fn=(String(b.name||'Beleg').replace(/[^A-Za-z0-9äöüÄÖÜ \-]/g,'_').trim()||'Beleg')+(b.date?'_'+toISO(b.date):'')+'.'+ext; if(used[fn]){ used[fn]++; fn=fn.replace('.'+ext,'_'+used[fn]+'.'+ext); } else used[fn]=1; zip.file(fn, payload, isB64?{base64:true}:undefined); } }
+      const blob=await zip.generateAsync({type:'blob'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=(String(label||'Belege').replace(/[^A-Za-z0-9äöüÄÖÜ \-]/g,'_'))+'.zip'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500); setToast(items.length+' Belege als ZIP geladen');
+    }catch(e){ setToast('ZIP-Fehler: '+(e.message||e)); }
+    setZipBusy(false); };
   // Echtes PDF aus den Rechnungsdaten bauen → Blob
   const buildInvoicePDF = async (inv)=>{
     await loadJsPDF(); const { jsPDF }=window.jspdf; const doc=new jsPDF({unit:'pt',format:'a4'});
@@ -3209,50 +3227,55 @@ function App({session}) {
               </>
             );
           })()}
-          {/* ══ BELEGE-DATENBANK ══ */}
+          {/* ══ BELEGE-DATENBANK (Ordnerstruktur) ══ */}
           {tab==='belege' && (()=>{
-            const bereiche=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}];
-            const years=[]; for(let yy=now.getFullYear()-4; yy<=now.getFullYear()+1; yy++) years.push(yy);
-            const md=getMD(belYr,belMo);
-            const list = belBer==='unter' ? (belKind==='ein'?(md.unternehmen?.clients||[]):(md.unternehmen?.items||[]))
-                       : belBer==='privat' ? (belKind==='ein'?(md.privat?.einnahmen||[]):(md.privat?.items||[]))
-                       : (belKind==='ein'?(md.props?.[belBer]?.einnahmen||[]):(md.props?.[belBer]?.expenses||[]));
-            const belege = (list||[]).filter(it=>it.filePath||it.fileData);
-            const dom = belBer==='unter'?'unter':(belBer==='privat'?null:'immo');
-            const invPdfs = (belKind==='ein' && dom) ? (data.invoices||[]).filter(iv=>iv.pdfPath && (iv.domain||'unter')===dom && iv.account===belBer && (()=>{const dt=new Date(iv.sentDate||iv.date); return !isNaN(dt)&&dt.getFullYear()===belYr&&dt.getMonth()===belMo;})()) : [];
-            const rows=[...belege.map(it=>({key:'b'+it.id,name:it.name||'Beleg',date:it.datum,amount:num(it.amount),recurring:it.recurring,filePath:it.filePath,fileData:it.fileData,fileName:it.fileName})), ...invPdfs.map(iv=>({key:'i'+iv.id,name:'Rechnung '+iv.number,date:iv.sentDate||iv.date,amount:(iv.total!=null?iv.total:0),filePath:iv.pdfPath}))];
-            rows.sort((a,b)=>String(toISO(b.date)||'').localeCompare(String(toISO(a.date)||'')));
-            const selSt={...SS,textAlign:'left'};
+            const depth=belPath.length; // 0=Bereiche 1=Jahre 2=Monate 3=Ein/Aus 4=Dateien
+            const folderRow=(icon,label,sub,count,onClick)=>(
+              <div onClick={onClick} style={{display:'flex',alignItems:'center',gap:13,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'14px 15px',cursor:'pointer'}}>
+                <div style={{width:46,height:46,flexShrink:0,borderRadius:12,background:hexA(C.pri,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={icon} sz={21} col={C.pri}/></div>
+                <div style={{flex:1,minWidth:0}}><div style={{fontSize:15.5,fontWeight:700,color:C.txt}}>{label}</div>{sub&&<div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{sub}</div>}</div>
+                {count!=null && <span style={{fontSize:12,color:C.mut,background:C.surf3,borderRadius:8,padding:'3px 9px',flexShrink:0}}>{count}</span>}
+                <span style={{color:C.mut,fontSize:18,flexShrink:0}}>›</span>
+              </div>
+            );
+            // Breadcrumb-Labels
+            const crumbLabel=(i)=>{ if(i===0) return belBerLabel(belPath[0]); if(i===1) return String(belPath[1]); if(i===2) return MONTHS[belPath[2]]; if(i===3) return belPath[3]==='ein'?'Einnahmen':'Ausgaben'; return ''; };
+            const zipLabel=()=> ['Belege',...belPath.map((_,i)=>crumbLabel(i))].join('_');
             return (
               <>
-                <div style={{marginBottom:18}}>
+                <div style={{marginBottom:16}}>
                   <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>Belege</div>
-                  <div style={{fontSize:13,color:C.sub,marginTop:3}}>Alle Belege & Rechnungen strukturiert – automatisch im Cloud-Speicher abgelegt.</div>
                 </div>
-                {/* Auswahl: Bereich → Jahr → Monat → Ein/Aus */}
-                <div style={{...SC,marginBottom:14,display:'flex',flexDirection:'column',gap:12}}>
-                  <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-                    <div style={{flex:1,minWidth:180}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Bereich</div><select value={belBer} onChange={e=>setBelBer(e.target.value)} style={selSt}>{bereiche.map(b=><option key={b.k} value={b.k}>{b.label}</option>)}</select></div>
-                    <div style={{width:130}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Jahr</div><select value={belYr} onChange={e=>setBelYr(+e.target.value)} style={selSt}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select></div>
-                    <div style={{width:160}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Monat</div><select value={belMo} onChange={e=>setBelMo(+e.target.value)} style={selSt}>{MONTHS.map((mn,i)=><option key={i} value={i}>{mn}</option>)}</select></div>
+                {/* Breadcrumb + ZIP */}
+                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:16}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',flex:1,minWidth:0}}>
+                    <button onClick={()=>setBelPath([])} style={{background:depth===0?hexA(C.pri,0.16):C.surf2,border:'1px solid '+C.bdr,color:depth===0?C.pri:C.sub,borderRadius:8,padding:'6px 11px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:5}}><Ic p={P.clip} sz={13} col={depth===0?C.pri:C.sub}/> Alle</button>
+                    {belPath.map((_,i)=>(<span key={i} style={{display:'flex',alignItems:'center',gap:6}}><span style={{color:C.mut}}>/</span><button onClick={()=>setBelPath(belPath.slice(0,i+1))} style={{background:i===depth-1?hexA(C.pri,0.16):C.surf2,border:'1px solid '+C.bdr,color:i===depth-1?C.pri:C.sub,borderRadius:8,padding:'6px 11px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{crumbLabel(i)}</button></span>))}
                   </div>
-                  <div style={{display:'flex',gap:8}}>
-                    {[['ein','Einnahmen',C.grn],['aus','Ausgaben','#FFB37A']].map(([k,l,c])=>{ const on=belKind===k; return <button key={k} onClick={()=>setBelKind(k)} style={{flex:1,background:on?hexA(c,0.16):C.surf2,border:'1px solid '+(on?hexA(c,0.45):C.bdr),color:on?c:C.sub,borderRadius:10,padding:'10px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>; })}
-                  </div>
+                  <button disabled={zipBusy} onClick={()=>downloadBelegeZip(belPath, zipLabel())} style={{display:'flex',alignItems:'center',gap:7,background:C.pri,color:C.priTxt,border:'none',borderRadius:9,padding:'8px 14px',fontSize:13,fontWeight:700,cursor:zipBusy?'default':'pointer',fontFamily:'inherit',opacity:zipBusy?0.6:1,flexShrink:0}}><Ic p={P.upload} sz={14} col={C.priTxt}/> {zipBusy?'Packt…':'Als ZIP'}</button>
                 </div>
-                <div style={{fontSize:12,color:C.mut,marginBottom:10}}>{(bereiche.find(b=>b.k===belBer)||{}).label} · {belYr} · {MONTHS[belMo]} · {belKind==='ein'?'Einnahmen':'Ausgaben'} · {rows.length} {rows.length===1?'Beleg':'Belege'}</div>
-                {rows.length ? <div style={{display:'flex',flexDirection:'column',gap:10}}>{rows.map(r=>(
-                  <div key={r.key} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'12px 14px'}}>
-                    <div style={{width:44,height:44,flexShrink:0,borderRadius:12,background:hexA(C.pri,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={19} col={C.pri}/></div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:15,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}{r.recurring?' 🔁':''}</div>
-                      <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{[r.date&&(toISO(r.date)||r.date)].filter(Boolean).join(' · ')||'—'}</div>
+
+                {depth<4 ? (
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {depth===0 && belBerKeys.map(k=>folderRow(P.brief, belBerLabel(k), null, belegesUnder([k]).length, ()=>setBelPath([k]))).filter((_,i)=>true)}
+                    {depth===0 && belBerKeys.every(k=>belegesUnder([k]).length===0) && <div style={{...SC,textAlign:'center',color:C.mut,fontSize:14,padding:'30px'}}>Noch keine Belege. Hänge Belege an Buchungen an – sie erscheinen hier automatisch.</div>}
+                    {depth===1 && belYears().map(y=>folderRow(P.cal, String(y), null, belegesUnder([belPath[0],y]).length, ()=>setBelPath([belPath[0],y])))}
+                    {depth===2 && MONTHS.map((mn,i)=>({mn,i,n:belegesUnder([belPath[0],belPath[1],i]).length})).filter(x=>x.n>0).map(x=>folderRow(P.cal, x.mn, null, x.n, ()=>setBelPath([belPath[0],belPath[1],x.i])))}
+                    {depth===2 && belegesUnder([belPath[0],belPath[1]]).length===0 && <div style={{...SC,textAlign:'center',color:C.mut,fontSize:14,padding:'30px'}}>Keine Belege in diesem Jahr.</div>}
+                    {depth===3 && [['ein','Einnahmen'],['aus','Ausgaben']].map(([k,l])=>folderRow(k==='ein'?P.down:P.up, l, null, belegesUnder([belPath[0],belPath[1],belPath[2],k]).length, ()=>setBelPath([belPath[0],belPath[1],belPath[2],k])))}
+                  </div>
+                ) : (()=>{ const rows=belegesLeaf(belPath[0],belPath[1],belPath[2],belPath[3]).slice().sort((a,b)=>String(toISO(b.date)||'').localeCompare(String(toISO(a.date)||''))); const aus=belPath[3]==='aus'; return rows.length? <div style={{display:'flex',flexDirection:'column',gap:10}}>{rows.map(r=>(
+                    <div key={r.id} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'12px 14px'}}>
+                      <div style={{width:44,height:44,flexShrink:0,borderRadius:12,background:hexA(C.pri,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={19} col={C.pri}/></div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:15,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}{r.recurring?' 🔁':''}</div>
+                        <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{(r.date&&(toISO(r.date)||r.date))||'—'}</div>
+                      </div>
+                      <div style={{fontSize:15,fontWeight:700,...NUM,color:aus?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{aus?'-':''}{fmt(Math.abs(r.amount))}</div>
+                      {r.filePath ? <button onClick={()=>openFile(r.filePath)} title="Ansehen" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:9,padding:'8px 12px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Ansehen</button>
+                        : r.fileData ? <a href={r.fileData} download={r.fileName||'beleg'} style={{background:C.surf3,color:C.txt,borderRadius:9,padding:'8px 12px',fontSize:12,fontWeight:600,fontFamily:'inherit',flexShrink:0,textDecoration:'none'}}>Ansehen</a> : null}
                     </div>
-                    <div style={{fontSize:15,fontWeight:700,...NUM,color:belKind==='ein'?C.grn:'#FFB37A',whiteSpace:'nowrap'}}>{belKind==='aus'?'-':''}{fmt(Math.abs(r.amount))}</div>
-                    {r.filePath ? <button onClick={()=>openFile(r.filePath)} title="Ansehen" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:9,padding:'8px 12px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Ansehen</button>
-                      : r.fileData ? <a href={r.fileData} download={r.fileName||'beleg'} style={{background:C.surf3,color:C.txt,borderRadius:9,padding:'8px 12px',fontSize:12,fontWeight:600,fontFamily:'inherit',flexShrink:0,textDecoration:'none'}}>Ansehen</a> : null}
-                  </div>
-                ))}</div> : <div style={{...SC,textAlign:'center',color:C.mut,fontSize:14,padding:'34px 24px'}}>Keine Belege in dieser Auswahl. Hänge Belege an Buchungen an – sie erscheinen hier automatisch.</div>}
+                  ))}</div> : <div style={{...SC,textAlign:'center',color:C.mut,fontSize:14,padding:'34px 24px'}}>Keine Belege in diesem Ordner.</div>; })()}
               </>
             );
           })()}
