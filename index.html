@@ -740,7 +740,7 @@ function App({session}) {
   const isFuture = (y,m) => y>nowY || (y===nowY && m>nowM);
   const [yr,   setYr]   = useState(now.getFullYear());
   const [mo,   setMo]   = useState(now.getMonth());
-  const [tab,  setTab]  = useState('dash');
+  const [tab,  setTab]  = useState('quellen');
   const [sp,   setSp]   = useState('p1');
   const [data, setData] = useState({});
   const [names,setNames]= useState({p1:'Immobilie 1',p2:'Immobilie 2',p3:'Immobilie 3',unternehmen:'Unternehmen'});
@@ -776,8 +776,20 @@ function App({session}) {
   const [belegM,setBelegM]= useState(now.getMonth());
   const belegBlobRef= useRef(null);
   const belegMetaRef= useRef({name:'beleg.jpg', isPdf:false, media:'image/jpeg'});
+  const [calOpen,setCalOpen]= useState(false);     // Monats-Kalender-Popover
+  const [calYr,setCalYr]= useState(now.getFullYear());
+  const [profOpen,setProfOpen]= useState(false);   // Profil-Menü
   const toggleSel = id => setSelIds(s=> s.includes(id)? s.filter(x=>x!==id) : [...s,id]);
   const exitSel = () => { setSelKey(null); setSelIds([]); };
+  /* Eigene URL pro Bereich (Hash-Routing) */
+  useEffect(()=>{
+    const valid=new Set(['quellen','immo','unter','privat','import','berater','kal','yr','steuer','mehr']);
+    const apply=()=>{ const h=(window.location.hash||'').replace(/^#\/?/,''); if(valid.has(h)) setTab(h); };
+    apply();
+    window.addEventListener('hashchange',apply);
+    return ()=>window.removeEventListener('hashchange',apply);
+  },[]);
+  useEffect(()=>{ try{ if((window.location.hash||'').replace(/^#\/?/,'')!==tab) window.history.replaceState(null,'','#/'+tab); }catch(e){} },[tab]);
   const askConfirm = (message, onConfirm, title) => setConfirmState({message, onConfirm, title: title||'Wirklich löschen?'});
   const savedRef  = useRef(true);
   const lastSigRef = useRef('');
@@ -1479,11 +1491,7 @@ function App({session}) {
 
   /* Sidebar nav */
   const NAV = [
-    {id:'dash',   label:'Übersicht',    icon:P.grid},
     {id:'quellen',label:'Konten',       icon:P.layers},
-    {id:'immo',   label:'Immobilien',   icon:P.house},
-    {id:'unter',  label:names.unternehmen, icon:P.brief},
-    {id:'privat', label:'Privat',       icon:P.prson},
     {id:'import', label:'Import',       icon:P.upload},
     {id:'berater',label:'KI-Berater',   icon:P.spark},
     {id:'kal',    label:'Events',       icon:P.bed},
@@ -1582,7 +1590,7 @@ function App({session}) {
 
         {isMobile && <div style={{flex:1}} />}
 
-        {/* Monats-Navigation (+ Undo/Status/Logout auf Desktop) */}
+        {/* Monats-Navigation (Kalender-Popover) + Profil */}
         <div style={{display:'flex',alignItems:'center',gap:isMobile?6:8,flexShrink:0}}>
           {!isMobile && canUndo && (
             <button onClick={undo} title="Rückgängig (⌘Z)" style={{
@@ -1592,14 +1600,11 @@ function App({session}) {
               fontSize:14,lineHeight:1,
             }}>↩︎</button>
           )}
-          <button onClick={()=>goMonth(-1)} title="Voriger Monat" style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:8,padding:isMobile?'8px 10px':'6px 11px',cursor:'pointer',fontFamily:'inherit',fontSize:15,lineHeight:1}}>‹</button>
-          <select value={mo} onChange={e=>setMo(+e.target.value)} style={{...SHd,padding:isMobile?'8px 8px':'6px 10px',fontSize:13}}>
-            {MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}
-          </select>
-          <select value={yr} onChange={e=>setYr(+e.target.value)} style={{...SHd,padding:isMobile?'8px 8px':'6px 10px',fontSize:13}}>
-            {[yr-1,yr,yr+1].map(y=><option key={y} value={y}>{y}</option>)}
-          </select>
-          <button onClick={()=>goMonth(1)} title="Nächster Monat" style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:8,padding:isMobile?'8px 10px':'6px 11px',cursor:'pointer',fontFamily:'inherit',fontSize:15,lineHeight:1}}>›</button>
+          <button onClick={()=>goMonth(-1)} title="Voriger Monat" style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:8,padding:'8px 11px',cursor:'pointer',fontFamily:'inherit',fontSize:15,lineHeight:1}}>‹</button>
+          <button onClick={()=>{ setCalYr(yr); setCalOpen(o=>!o); }} title="Monat wählen" style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:8,padding:'8px 12px',cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:6,whiteSpace:'nowrap'}}>
+            <Ic p={P.cal} sz={14} col={C.sub}/> {MONTHS[mo].slice(0,3)} {yr}
+          </button>
+          <button onClick={()=>goMonth(1)} title="Nächster Monat" style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:8,padding:'8px 11px',cursor:'pointer',fontFamily:'inherit',fontSize:15,lineHeight:1}}>›</button>
           {!isMobile && (
             <span title={saved?'Gespeichert':'Speichern…'} style={{
               fontSize:12,color:saved?C.mut:C.amb,fontWeight:500,
@@ -1609,20 +1614,46 @@ function App({session}) {
               {saved?'Gespeichert':'Speichern…'}
             </span>
           )}
-          {!isMobile && (
-            <button onClick={()=>sb.auth.signOut()}
-              title={(session&&session.user&&session.user.email?session.user.email+' — ':'')+'Abmelden'}
-              style={{
-                display:'flex',alignItems:'center',gap:6,
-                background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,
-                borderRadius:8,padding:'6px 11px',cursor:'pointer',fontFamily:'inherit',
-                fontSize:12,fontWeight:500,marginLeft:4,
-              }}>
-              <Ic p={P.out} sz={14}/>
-              <span>Abmelden</span>
-            </button>
-          )}
+          {/* Profil-Avatar */}
+          <button onClick={()=>setProfOpen(o=>!o)} title="Profil" style={{
+            marginLeft:4,width:36,height:36,borderRadius:'50%',flexShrink:0,cursor:'pointer',
+            background:C.act,color:C.actTxt,border:'none',fontFamily:'inherit',fontSize:15,fontWeight:700,
+            display:'flex',alignItems:'center',justifyContent:'center',
+          }}>{((session&&session.user&&session.user.email)||'?').slice(0,1).toUpperCase()}</button>
         </div>
+
+        {/* Kalender-Popover */}
+        {calOpen && (
+          <div onClick={()=>setCalOpen(false)} style={{position:'fixed',inset:0,zIndex:90}}>
+            <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:54,right:isMobile?12:64,width:260,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:14,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                <button onClick={()=>setCalYr(y=>y-1)} style={{background:C.surf2,border:'none',color:C.txt,borderRadius:8,padding:'6px 11px',cursor:'pointer',fontFamily:'inherit',fontSize:15}}>‹</button>
+                <div style={{fontSize:15,fontWeight:700}}>{calYr}</div>
+                <button onClick={()=>setCalYr(y=>y+1)} style={{background:C.surf2,border:'none',color:C.txt,borderRadius:8,padding:'6px 11px',cursor:'pointer',fontFamily:'inherit',fontSize:15}}>›</button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
+                {MONTHS.map((mn,i)=>{ const sel=(i===mo&&calYr===yr); return (
+                  <button key={i} onClick={()=>{ setMo(i); setYr(calYr); setCalOpen(false); }} style={{
+                    background:sel?C.pri:C.surf2, color:sel?C.priTxt:C.txt, border:'none', borderRadius:9,
+                    padding:'10px 0', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:sel?700:500,
+                  }}>{mn.slice(0,3)}</button>
+                ); })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Profil-Menü */}
+        {profOpen && (
+          <div onClick={()=>setProfOpen(false)} style={{position:'fixed',inset:0,zIndex:90}}>
+            <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:54,right:12,width:240,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:10,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
+              <div style={{fontSize:12,color:C.sub,padding:'6px 10px 10px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{(session&&session.user&&session.user.email)||'Angemeldet'}</div>
+              <button onClick={()=>{ setProfOpen(false); sb.auth.signOut(); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:10,padding:'11px 12px',fontSize:14,color:C.red,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+                <Ic p={P.out} sz={16} col={C.red}/> <span>Abmelden</span>
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ═══ MOBILE NAV-DRAWER ═══ */}
@@ -1680,94 +1711,6 @@ function App({session}) {
         <div style={{padding:isMobile?'18px 14px 96px':'28px 28px',maxWidth:1020,margin:'0 auto'}}>
 
           {/* ══ ÜBERSICHT ══ */}
-          {tab==='dash' && <>
-            <div style={{marginBottom:24}}>
-              <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:3}}>{MONTHS[mo]}</div>
-              <div style={{fontSize:13,color:C.sub}}>{yr}</div>
-            </div>
-            <div style={{display:'flex',flexDirection:isMobile?'column':'row',gap:12,flexWrap:'wrap',marginBottom:20}}>
-              <KPI label="Gesamteinnahmen" val={fmt(tot.totalInc)} color={C.grn}
-                sub={'Immobilien '+fmt(tot.immoInc)+' · '+names.unternehmen+' '+fmt(tot.unterInc)} />
-              <KPI label="Gesamtausgaben" val={fmtN(tot.totalExp)} color={C.txt}
-                sub={'Immobilien '+fmt(tot.immoExp)+' · Privat '+fmt(tot.privatExp)} />
-              <KPI label="Nettogewinn" val={(tot.net>=0?'+':'')+fmt(tot.net)}
-                color={tot.net>=0?C.grn:C.txt} sub={tot.net>=0?'Im Plus':'Im Minus'} />
-            </div>
-            <div style={{display:'flex',flexDirection:isMobile?'column':'row',gap:12,flexWrap:'wrap'}}>
-              <div style={{...SC,flex:2,minWidth:isMobile?'auto':280}}>
-                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:14}}>Immobilien</div>
-                {PROPS.map(p=>{
-                  const r=calcProp(md.props?.[p], yr, mo);
-                  return (
-                    <div key={p} style={{display:'flex',flexDirection:isMobile?'column':'row',justifyContent:'space-between',alignItems:isMobile?'stretch':'center',gap:isMobile?6:0,padding:'10px 0',borderBottom:'1px solid '+C.sep}}>
-                      <span style={{fontWeight:600}}>{names[p]}</span>
-                      <div style={{display:'flex',gap:isMobile?0:16,justifyContent:isMobile?'space-between':'flex-end',alignItems:'center'}}>
-                        <span style={{fontSize:12,color:C.sub}}>Ein <b style={{color:C.grn,...NUM}}>{fmt(r.netto)}</b></span>
-                        <span style={{fontSize:12,color:C.sub}}>Aus <b style={{color:C.txt,...NUM}}>{fmtN(r.exp)}</b></span>
-                        <b style={{color:r.gewinn>=0?C.grn:C.txt,...NUM,minWidth:68,textAlign:'right'}}>{r.gewinn>=0?'+':''}{fmt(r.gewinn)}</b>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div style={{display:'flex',justifyContent:'space-between',marginTop:12,fontWeight:700}}>
-                  <span style={{color:C.sub,fontSize:13}}>Gesamt</span>
-                  <span style={{color:(tot.immoInc-tot.immoExp)>=0?C.grn:C.txt,...NUM}}>{(tot.immoInc-tot.immoExp)>=0?'+':''}{fmt(tot.immoInc-tot.immoExp)}</span>
-                </div>
-              </div>
-              <div style={{display:'flex',flexDirection:'column',gap:12,flex:1,minWidth:190}}>
-                <div style={SC}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:12}}>{names.unternehmen}</div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:7}}>
-                    <span style={{color:C.sub}}>Einnahmen</span><span style={{color:C.grn,...NUM}}>{fmt(tot.unterInc)}</span>
-                  </div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
-                    <span style={{color:C.sub}}>Ausgaben</span><span style={{color:C.txt,...NUM}}>{fmtN(tot.unterExp)}</span>
-                  </div>
-                  <div style={{borderTop:'1px solid '+C.sep,marginTop:10,paddingTop:10,display:'flex',justifyContent:'space-between',fontWeight:700}}>
-                    <span style={{color:C.sub,fontSize:13}}>Ergebnis</span>
-                    <span style={{color:(tot.unterInc-tot.unterExp)>=0?C.grn:C.txt,...NUM}}>{(tot.unterInc-tot.unterExp)>=0?'+':''}{fmt(tot.unterInc-tot.unterExp)}</span>
-                  </div>
-                </div>
-                <div style={SC}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:10}}>Privat</div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontWeight:700}}>
-                    <span style={{color:C.sub,fontSize:13}}>Ausgaben</span><span style={{color:C.txt,...NUM}}>{fmtN(tot.privatExp)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Online-Speicher */}
-            <div style={{...SC,marginTop:12}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Online-Speicher · Belege & Verträge</div>
-                <button onClick={loadStorage} title="Neu berechnen" style={BVm}>↻</button>
-              </div>
-              {storageInfo ? (()=>{
-                const mb=storageInfo.total/1048576, limit=1024, pct=Math.min(100,mb/limit*100);
-                return (<>
-                  <div style={{height:8,background:C.surf3,borderRadius:99,overflow:'hidden',marginBottom:8}}>
-                    <div style={{height:'100%',width:pct+'%',background:pct>85?C.red:C.pri,borderRadius:99}} />
-                  </div>
-                  <div style={{fontSize:12,color:C.sub}}>{mb.toFixed(mb<10?2:1)} MB von 1.024 MB belegt · {storageInfo.files} {storageInfo.files===1?'Datei':'Dateien'}</div>
-                </>);
-              })() : (
-                <div style={{fontSize:12,color:C.mut}}>{storageLoading?'Wird berechnet…':'—'}</div>
-              )}
-            </div>
-
-            {/* Daten-Export (für Auswertung / Sicherung) */}
-            <div style={{...SC,marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
-              <div>
-                <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:2}}>Daten exportieren</div>
-                <div style={{fontSize:12,color:C.mut,lineHeight:1.5}}>Lädt alle deine Zahlen als Datei (.json) herunter – z.B. zur Auswertung oder als Sicherung.</div>
-              </div>
-              <button onClick={exportData} style={{display:'flex',alignItems:'center',gap:7,background:C.priL,border:'none',color:C.pri,borderRadius:10,padding:'9px 16px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>
-                <Ic p={P.upload} sz={15} col={C.pri}/> Exportieren
-              </button>
-            </div>
-          </>}
-
           {/* ══ QUELLEN (Konten-Karten, N26-Stil) ══ */}
           {tab==='quellen' && (()=>{
             const konten = [
@@ -1814,6 +1757,36 @@ function App({session}) {
                       </button>
                     );
                   })}
+                </div>
+
+                {/* Online-Speicher */}
+                <div style={{...SC,marginTop:18}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Online-Speicher · Belege & Verträge</div>
+                    <button onClick={loadStorage} title="Neu berechnen" style={BVm}>↻</button>
+                  </div>
+                  {storageInfo ? (()=>{
+                    const mb=storageInfo.total/1048576, limit=1024, pct=Math.min(100,mb/limit*100);
+                    return (<>
+                      <div style={{height:8,background:C.surf3,borderRadius:99,overflow:'hidden',marginBottom:8}}>
+                        <div style={{height:'100%',width:pct+'%',background:pct>85?C.red:C.pri,borderRadius:99}} />
+                      </div>
+                      <div style={{fontSize:12,color:C.sub}}>{mb.toFixed(mb<10?2:1)} MB von 1.024 MB belegt · {storageInfo.files} {storageInfo.files===1?'Datei':'Dateien'}</div>
+                    </>);
+                  })() : (
+                    <div style={{fontSize:12,color:C.mut}}>{storageLoading?'Wird berechnet…':'—'}</div>
+                  )}
+                </div>
+
+                {/* Daten-Export */}
+                <div style={{...SC,marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:2}}>Daten exportieren</div>
+                    <div style={{fontSize:12,color:C.mut,lineHeight:1.5}}>Alle Zahlen als Datei (.json) – z. B. zur Auswertung oder als Sicherung.</div>
+                  </div>
+                  <button onClick={exportData} style={{display:'flex',alignItems:'center',gap:7,background:C.priL,border:'none',color:C.pri,borderRadius:10,padding:'9px 16px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>
+                    <Ic p={P.upload} sz={15} col={C.pri}/> Exportieren
+                  </button>
                 </div>
               </>
             );
@@ -2435,15 +2408,15 @@ function App({session}) {
         ); };
         return (
           <div style={{position:'fixed',left:0,right:0,bottom:0,zIndex:60,background:C.surf,borderTop:'1px solid '+C.bdr,display:'flex',alignItems:'flex-end',justifyContent:'space-around',height:66,paddingBottom:'max(6px, env(safe-area-inset-bottom))'}}>
-            {cell('dash','Übersicht',P.grid,['dash'])}
             {cell('quellen','Konten',P.layers,['quellen','immo','unter','privat'])}
+            {cell('berater','Berater',P.spark,['berater'])}
             <div style={{flex:1,display:'flex',justifyContent:'center'}}>
               <button onClick={()=>setBelegOpen(true)} title="Beleg erfassen" style={{width:56,height:56,borderRadius:'50%',background:C.act,border:'4px solid '+C.bg,color:C.actTxt,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',marginTop:-22,boxShadow:'0 6px 18px rgba(0,0,0,0.45)'}}>
                 <Ic p={P.camera} sz={24} col={C.actTxt}/>
               </button>
             </div>
-            {cell('berater','Berater',P.spark,['berater'])}
-            {cell('mehr','Mehr',P.menu,['mehr','import','kal','yr','steuer'])}
+            {cell('yr','Jahr',P.cal,['yr'])}
+            {cell('mehr','Mehr',P.menu,['mehr','import','kal','steuer'])}
           </div>
         );
       })()}
