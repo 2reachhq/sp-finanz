@@ -1056,6 +1056,7 @@ function App({session}) {
   const [invPreview,setInvPreview]= useState(false); // große Rechnungsvorschau (Popup)
   const [invView,setInvView]= useState(null);        // gestellte Rechnung als PDF ansehen (read-only)
   const [invCtx,setInvCtx]= useState(null);          // Rechts-Klick-Menü auf Rechnung {x,y,inv}
+  const [recExpand,setRecExpand]= useState({});      // welche wiederkehrenden Rechnungen aufgeklappt sind
   const importDragRef = useRef(null);                // Import: Drag&Drop zwischen Ein/Aus
   const [taxOpen,setTaxOpen]= useState({});          // ausklappbare Steuer-Hinweise
   const [advOpen,setAdvOpen]= useState(true);        // Steuerberater-Bereich ein-/ausklappen
@@ -3364,11 +3365,12 @@ function App({session}) {
                           <button onClick={e=>{e.stopPropagation();askConfirm('Wiederkehrende Rechnung löschen? Bereits erzeugte Rechnungen bleiben erhalten.',()=>delRecInvoice(r.id));}} title="Löschen" style={{background:C.surf3,border:'1px solid '+C.bdr,color:C.mut,cursor:'pointer',flexShrink:0,width:32,height:32,borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.trash} sz={14} col={C.mut}/></button>
                         </div>
                         {gen.length>0 && (<div style={{borderTop:'1px solid '+C.sep,padding:'10px 15px'}}>
-                          <div style={{display:'flex',gap:14,flexWrap:'wrap',fontSize:12,marginBottom:8}}>
+                          <div style={{display:'flex',gap:14,flexWrap:'wrap',alignItems:'center',fontSize:12,marginBottom:recExpand[r.id]?8:0}}>
                             <span style={{color:C.sub}}><b style={{color:C.grn}}>{paidN}</b> bezahlt · <b style={{color:'#FFB37A'}}>{openN}</b> offen</span>
                             {limited && <><span style={{color:C.sub}}>Bereits bezahlt <b style={{...NUM,color:C.txt}}>{fmt(paidSum)}</b></span><span style={{color:C.sub}}>Noch offen <b style={{...NUM,color:C.txt}}>{fmt(openSum)}</b></span></>}
+                            <button onClick={()=>setRecExpand(o=>({...o,[r.id]:!o[r.id]}))} title={recExpand[r.id]?'Zuklappen':'Rechnungen anzeigen'} style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:5,background:C.surf3,border:'1px solid '+C.bdr,color:C.sub,borderRadius:8,padding:'4px 9px',fontSize:11.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{gen.length} Rechnung{gen.length!==1?'en':''} <span style={{display:'inline-flex',transition:'transform .16s',transform:recExpand[r.id]?'rotate(180deg)':'none'}}><Ic p={P.down} sz={13} col={C.sub}/></span></button>
                           </div>
-                          <div style={{display:'flex',flexDirection:'column',gap:6}}>{gen.slice().sort((a,b)=>String(b.sentDate||b.date).localeCompare(String(a.sentDate||a.date))).map(g=>(
+                          {recExpand[r.id] && <div style={{display:'flex',flexDirection:'column',gap:6}}>{gen.slice().sort((a,b)=>String(b.sentDate||b.date).localeCompare(String(a.sentDate||a.date))).map(g=>(
                             <div key={g.id} onClick={()=>setInvView(g)} onContextMenu={e=>{e.preventDefault();setInvCtx({x:e.clientX,y:e.clientY,inv:g});}} style={{display:'flex',alignItems:'center',gap:10,fontSize:12.5,background:C.surf3,borderRadius:9,padding:'8px 11px',cursor:'pointer'}}>
                               <span style={{color:C.txt,fontWeight:600}}>Rechnung {g.number}</span>
                               <span style={{color:C.mut}}>{toISO(g.sentDate||g.date)||'—'}</span>
@@ -3376,7 +3378,7 @@ function App({session}) {
                               {g.paid && g.paidDate && <span style={{color:C.mut,fontSize:11}}>am {toISO(g.paidDate)}</span>}
                               <span style={{...NUM,color:C.txt,fontWeight:700}}>{fmt(g.total||0)}</span>
                             </div>
-                          ))}</div>
+                          ))}</div>}
                         </div>)}
                       </div>
                     ); })}</div>; })()}
@@ -3601,7 +3603,7 @@ function App({session}) {
           {tab==='yr' && <>
             <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>{'Analyse '+yr}</div>
             <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
-              {[['jahr','Jahresübersicht'],['monat','Monatsübersicht']].map(([k,label])=>{ const on=yrView===k; return (
+              {[['monat','Monatsübersicht'],['jahr','Jahresübersicht']].map(([k,label])=>{ const on=yrView===k; return (
                 <button key={k} onClick={()=>setYrView(k)} style={{background:on?hexA(C.pri,0.16):C.surf,border:'1px solid '+(on?hexA(C.pri,0.45):'transparent'),color:on?C.pri:C.sub,borderRadius:10,padding:'8px 18px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{label}</button>
               ); })}
             </div>
@@ -3618,13 +3620,13 @@ function App({session}) {
               return (
                 <div style={{display:'flex',flexDirection:'column',gap:12}}>
                   <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-                    {card('Monatsergebnis', <div style={{fontSize:28,fontWeight:800,color:cur.net>=0?C.txt:C.txt,...NUM}}>{cur.net>=0?'+':'-'}{fmt(Math.abs(cur.net))}</div>, <>{delta(cur.net,prev.net,true)} <span>ggü. {MONTHS[pm].slice(0,3)} ({prev.net>=0?'+':'-'}{fmt(Math.abs(prev.net))})</span></>)}
+                    {card('Monatsergebnis', <div style={{fontSize:28,fontWeight:800,color:cur.net>=0?C.grn:C.red,...NUM}}>{cur.net>=0?'+':'-'}{fmt(Math.abs(cur.net))}</div>, <>{delta(cur.net,prev.net,true)} <span>ggü. {MONTHS[pm].slice(0,3)} ({prev.net>=0?'+':'-'}{fmt(Math.abs(prev.net))})</span></>)}
                     {card('Einnahmen', <div style={{fontSize:28,fontWeight:800,color:C.txt,...NUM}}>{fmt(cur.totalInc)}</div>, <>{delta(cur.totalInc,prev.totalInc,true)} <span>ggü. Vormonat</span></>)}
                     {card('Ausgaben', <div style={{fontSize:28,fontWeight:800,color:C.txt,...NUM}}>-{fmt(cur.totalExp)}</div>, <>{delta(cur.totalExp,prev.totalExp,false)} <span>ggü. Vormonat</span></>)}
                   </div>
                   <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
                     {card('Private Ausgaben', <div style={{fontSize:24,fontWeight:800,color:C.txt,...NUM}}>-{fmt(cur.privatExp)}</div>, <>{delta(cur.privatExp,prev.privatExp,false)} <span>ggü. {MONTHS[pm].slice(0,3)} (-{fmt(prev.privatExp)})</span></>)}
-                    {card('Firma Ergebnis', <div style={{fontSize:24,fontWeight:800,color:(cur.unterInc-cur.unterExp)>=0?C.txt:C.txt,...NUM}}>{(cur.unterInc-cur.unterExp)>=0?'+':'-'}{fmt(Math.abs(cur.unterInc-cur.unterExp))}</div>, <span style={{color:C.mut}}>{fmt(cur.unterInc)} Ein · -{fmt(cur.unterExp)} Aus</span>)}
+                    {card('Firma Ergebnis', <div style={{fontSize:24,fontWeight:800,color:(cur.unterInc-cur.unterExp)>=0?C.grn:C.red,...NUM}}>{(cur.unterInc-cur.unterExp)>=0?'+':'-'}{fmt(Math.abs(cur.unterInc-cur.unterExp))}</div>, <span style={{color:C.mut}}>{fmt(cur.unterInc)} Ein · -{fmt(cur.unterExp)} Aus</span>)}
                   </div>
                   {/* Alle Standorte mit Kennzahlen */}
                   <div style={{fontSize:13,fontWeight:700,color:C.sub,margin:'6px 2px 0'}}>Standorte</div>
@@ -3638,7 +3640,7 @@ function App({session}) {
                         {row('Einnahmen', <span style={{...NUM,color:C.txt,fontWeight:600}}>{fmt(st.inc)}</span>)}
                         {row('Ausgaben', <span style={{...NUM,color:C.txt,fontWeight:600}}>{fmtN(st.exp)}</span>)}
                         <div style={{height:1,background:C.sep,margin:'4px 0'}}/>
-                        {row('Gewinn', <span style={{...NUM,fontWeight:800,color:st.gewinn>=0?C.txt:C.txt,display:'inline-flex',alignItems:'center',gap:7}}>{st.gewinn>=0?'+':'-'}{fmt(Math.abs(st.gewinn))} {delta(st.gewinn,pr.gewinn,true)}</span>)}
+                        {row('Gewinn', <span style={{...NUM,fontWeight:800,color:st.gewinn>=0?C.grn:C.red,display:'inline-flex',alignItems:'center',gap:7}}>{st.gewinn>=0?'+':'-'}{fmt(Math.abs(st.gewinn))} {delta(st.gewinn,pr.gewinn,true)}</span>)}
                       </div>
                     ); })}
                   </div>
@@ -3688,7 +3690,7 @@ function App({session}) {
                         <td style={{padding:'10px',textAlign:'right',opacity:dim('privat'),color:(!fut&&s.privatExp>0)?C.txt:C.mut,...NUM}}>{cell(s.privatExp>0,fmtN(s.privatExp))}</td>
                         <td style={{padding:'10px',textAlign:'right',color:(!fut&&inc>0)?C.txt:C.mut,...NUM}}>{cell(inc>0,fmt(inc))}</td>
                         <td style={{padding:'10px',textAlign:'right',color:(!fut&&exp>0)?C.txt:C.mut,...NUM}}>{cell(exp>0,fmtN(exp))}</td>
-                        <td style={{padding:'10px',textAlign:'right',fontWeight:600,color:ok?(net>=0?C.txt:C.txt):C.mut,...NUM}}>
+                        <td style={{padding:'10px',textAlign:'right',fontWeight:600,color:ok?(net>=0?C.grn:C.red):C.mut,...NUM}}>
                           {cell(inc>0||exp>0,(net>=0?'+':'-')+fmt(Math.abs(net)))}
                         </td>
                       </tr>
@@ -3699,18 +3701,18 @@ function App({session}) {
                   <tr style={{borderTop:'1px solid '+C.bdrM}}>
                     <td style={{padding:'12px',fontWeight:600,color:C.sub}}>Jahresgesamt</td>
                     <td colSpan={4}></td>
-                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.txt,...NUM}}>{fmt(yrTotF.totalInc)}</td>
-                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.txt,...NUM}}>{fmtN(yrTotF.totalExp)}</td>
-                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:yrTotF.net>=0?C.txt:C.txt,...NUM}}>{yrTotF.net>=0?'+':'-'}{fmt(Math.abs(yrTotF.net))}</td>
+                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.grn,...NUM}}>{fmt(yrTotF.totalInc)}</td>
+                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.red,...NUM}}>{fmtN(yrTotF.totalExp)}</td>
+                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:yrTotF.net>=0?C.grn:C.red,...NUM}}>{yrTotF.net>=0?'+':'-'}{fmt(Math.abs(yrTotF.net))}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
             <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
               {[
-                {label:'Jahreseinnahmen',val:fmt(yrTotF.totalInc),col:C.txt},
-                {label:'Jahresausgaben', val:fmtN(yrTotF.totalExp),col:C.txt},
-                {label:'Jahresergebnis', val:(yrTotF.net>=0?'+':'-')+fmt(Math.abs(yrTotF.net)),col:yrTotF.net>=0?C.txt:C.txt},
+                {label:'Jahreseinnahmen',val:fmt(yrTotF.totalInc),col:C.grn},
+                {label:'Jahresausgaben', val:fmtN(yrTotF.totalExp),col:C.red},
+                {label:'Jahresergebnis', val:(yrTotF.net>=0?'+':'-')+fmt(Math.abs(yrTotF.net)),col:yrTotF.net>=0?C.grn:C.red},
               ].map(({label,val,col})=>(
                 <div key={label} style={{flex:1,minWidth:155,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:16,padding:'18px 22px'}}>
                   <div style={{fontSize:12,color:C.sub,marginBottom:8,fontWeight:500}}>{label}</div>
@@ -4127,7 +4129,8 @@ function App({session}) {
       {/* ── Rechts-Klick-Menü auf einer gestellten Rechnung ── */}
       {invCtx && (
         <div onClick={()=>setInvCtx(null)} onContextMenu={e=>{e.preventDefault();setInvCtx(null);}} style={{position:'fixed',inset:0,zIndex:155}}>
-          <div onClick={e=>e.stopPropagation()} style={{position:'fixed',left:Math.min(invCtx.x,window.innerWidth-210),top:Math.min(invCtx.y,window.innerHeight-110),width:200,background:C.surf,border:'1px solid '+C.bdr,borderRadius:12,padding:5,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
+          <div onClick={e=>e.stopPropagation()} style={{position:'fixed',left:Math.min(invCtx.x,window.innerWidth-210),top:Math.min(invCtx.y,window.innerHeight-150),width:200,background:C.surf,border:'1px solid '+C.bdr,borderRadius:12,padding:5,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
+            <button onClick={()=>{ setInvPaid(invCtx.inv.id, !invCtx.inv.paid); setInvCtx(null); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:invCtx.inv.paid?C.txt:C.grn,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.check} sz={15} col={invCtx.inv.paid?C.sub:C.grn}/> {invCtx.inv.paid?'Als offen markieren':'Als bezahlt markieren'}</button>
             <button onClick={()=>useInvoiceAsTemplate(invCtx.inv)} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.copy||P.doc} sz={15} col={C.sub}/> Als Vorlage nutzen</button>
             <button onClick={()=>{ const inv=invCtx.inv; setInvCtx(null); askConfirm('Rechnung '+inv.number+' wirklich löschen? Die zugehörige Buchung wird ebenfalls entfernt.',()=>delInvoice(inv)); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.red,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.trash} sz={15} col={C.red}/> Löschen</button>
           </div>
@@ -4144,7 +4147,7 @@ function App({session}) {
               <button onClick={()=>setInvView(null)} title="Schließen" style={{marginLeft:'auto',background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:9,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
             </div>
             <div style={{flex:1,overflow:'auto',background:'#fff'}}>
-              <iframe title="Rechnung" srcDoc={invoiceHTML(invView,true)} style={{width:'100%',height:isMobile?'58vh':'62vh',border:'none',display:'block'}}/>
+              <iframe title="Rechnung" srcDoc={invoiceHTML(invView,false)} style={{width:'100%',height:isMobile?'58vh':'62vh',border:'none',display:'block'}}/>
             </div>
             <div style={{display:'flex',gap:9,padding:'13px 18px',borderTop:'1px solid '+C.sep,flexWrap:'wrap'}}>
               <button onClick={()=>setInvPaid(invView.id,!invView.paid)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 150px',background:invView.paid?C.surf2:hexA(C.grn,0.16),border:'1px solid '+(invView.paid?C.bdr:hexA(C.grn,0.4)),color:invView.paid?C.txt:C.grn,borderRadius:11,padding:'11px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{invView.paid?'Als offen markieren':'Als bezahlt markieren'}</button>
