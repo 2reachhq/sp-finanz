@@ -169,6 +169,9 @@ const CAT_RULES = [
   ['Material', /material|baumarkt|\bobi\b|hornbach|bauhaus|\btoom\b|werkzeug|baustoff|\bikea\b|conrad|\breichelt\b/i],
 ];
 const guessCategory = (text)=>{ const t=String(text||''); if(!t.trim()) return ''; for(const [cat,re] of CAT_RULES){ if(re.test(t)) return cat; } return ''; };
+// Standard-Modellpreise (€ je 1 Mio. Tokens) – im Kosten-Dashboard anpassbar
+const AI_PRICE_DEFAULTS = { 'claude-haiku-4-5':{in:1, out:5}, 'claude-sonnet-4-6':{in:3, out:15}, 'claude-opus-4-8':{in:15, out:75} };
+const AI_MODEL_LABEL = { 'claude-haiku-4-5':'Claude Haiku 4.5', 'claude-sonnet-4-6':'Claude Sonnet 4.6', 'claude-opus-4-8':'Claude Opus 4.8' };
 const DEF_INV_BODY = 'vielen Dank für Ihr Vertrauen. Für die erbrachten Leistungen erlaube ich mir, Ihnen folgende Positionen in Rechnung zu stellen:';
 const DEF_INV_HEADER = 'Sehr geehrte Damen und Herren,\n\n'+DEF_INV_BODY;
 const greetingFor = (cust)=>{ let last=(cust&&cust.lastName)?String(cust.lastName).trim():''; if(!last){ const nm=String((cust&&cust.name)||'').trim(); const isCompany=/\b(gmbh|ag|ug|kg|ohg|gbr|mbh|e\.?k\.?|e\.?v\.?|co\.?|ltd|inc|se)\b/i.test(nm); last=(nm&&!isCompany)?nm.split(/\s+/).pop():''; } if(cust&&cust.anrede==='herr'&&last) return 'Sehr geehrter Herr '+last+','; if(cust&&cust.anrede==='frau'&&last) return 'Sehr geehrte Frau '+last+','; return 'Sehr geehrte Damen und Herren,'; };
@@ -1072,6 +1075,7 @@ function App({session}) {
   const [invView,setInvView]= useState(null);        // gestellte Rechnung als PDF ansehen (read-only)
   const [invCtx,setInvCtx]= useState(null);          // Rechts-Klick-Menü auf Rechnung {x,y,inv}
   const [recExpand,setRecExpand]= useState({});      // welche wiederkehrenden Rechnungen aufgeklappt sind
+  const [costYm,setCostYm]= useState(()=>{ try{ return new Date().toISOString().slice(0,7); }catch(e){ return yr+'-01'; } }); // Kosten-Dashboard Monat
   const importDragRef = useRef(null);                // Import: Drag&Drop zwischen Ein/Aus
   const [taxOpen,setTaxOpen]= useState({});          // ausklappbare Steuer-Hinweise
   const [advOpen,setAdvOpen]= useState(true);        // Steuerberater-Bereich ein-/ausklappen
@@ -1136,7 +1140,7 @@ function App({session}) {
   const subSlug = (v)=> v==='wied' ? 'wiederkehrend' : v;
   const parseSub = (s)=> s==='wiederkehrend' ? 'wied' : s;
   useEffect(()=>{
-    const valid=new Set(['quellen','immo','unter','privat','import','berater','kal','yr','steuer','mehr','settings','rechnung','kunden','belege']);
+    const valid=new Set(['quellen','immo','unter','privat','import','berater','kal','yr','steuer','mehr','settings','rechnung','kunden','belege','kosten']);
     const apply=()=>{ const raw=(window.location.hash||'').replace(/^#\/?/,''); if(!raw) return; const parts=raw.split('/'); const head=parts[0];
       if(head==='analyse'){ setTab('yr'); if(parts[1]) setYrView(parts[1]==='jahresuebersicht'?'jahr':'monat'); return; }
       if(valid.has(head)){ setTab(head); return; }
@@ -1622,6 +1626,10 @@ function App({session}) {
   };
   const flagDrafts = list => { const all=existingBookings(); return list.map(d=>flagDraft(d,all)); };
 
+  /* ── KI-Kosten: Token-Verbrauch je Monat & Modell mitschreiben ── */
+  const logAiUsage = (model, usage)=>{ try{ if(!usage) return; const inT=usage.input_tokens||usage.inputTokens||0, outT=usage.output_tokens||usage.outputTokens||0; if(!inT&&!outT) return; const ym=new Date().toISOString().slice(0,7); const md2=String(model||'unbekannt'); setData(prev=>{ const au={...(prev.aiUsage||{})}; const m={...(au[ym]||{})}; const cur=m[md2]||{in:0,out:0,calls:0}; m[md2]={in:cur.in+inT, out:cur.out+outT, calls:cur.calls+1}; au[ym]=m; return {...prev, aiUsage:au}; }); }catch(e){} };
+  const aiInvoke = async (opts)=>{ const r = await sb.functions.invoke('ai', opts); try{ const u = r && r.data && (r.data.usage || (r.data.message&&r.data.message.usage)); if(u) logAiUsage(opts&&opts.body&&opts.body.model, u); }catch(e){} return r; };
+
   const importPdf = async file => {
     setImportBusy(true);
     try{
@@ -1636,7 +1644,7 @@ function App({session}) {
         + '{"p":[{"b":"Kunde/Name/Titel","a":12.34,"k":"a","d":"TT.MM.JJJJ","r":"","c":"","z":"","nt":null,"mw":null}]}\n'
         + "Felder: b=Kunde bzw. Name/Titel (max 60 Zeichen, KEINE generische Bezeichnung), a=Bruttobetrag positiv mit Punkt als Dezimaltrennzeichen, k=\"e\" bei Einnahme/Gutschrift sonst \"a\", d=Datum (leer wenn keins), r=Rechnungs-/Belegnummer (leer wenn keine), c=Kategorie-Vorschlag aus [Allgemein,Miete,Nebenkosten,Versicherung,Material,Personal,Steuern,Software,Marketing,Reise,Bewirtung,Bank & Gebühren,Sonstiges] (leer wenn unklar), z=vollständiger Verwendungszweck/Buchungstext der Zeile (leer wenn keiner), nt=Nettobetrag falls auf Beleg ausgewiesen sonst null, mw=MwSt-Satz als Zahl 19/7/0 falls erkennbar sonst null. "
         + "Halte b kurz. Erfinde nichts.";
-      const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-haiku-4-5', max_tokens:8000, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
+      const { data:resp, error } = await aiInvoke({ body:{ model:'claude-haiku-4-5', max_tokens:8000, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
       if(error) throw error;
       if(resp && resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
       let txt = (resp && resp.content && resp.content[0] && resp.content[0].text) || '';
@@ -1697,7 +1705,7 @@ function App({session}) {
     const prompt = "Dies ist EIN einzelner Beleg/Rechnung/Quittung (Deutschland). Lies die Felder aus. AUSSCHLIESSLICH minifiziertes JSON:\n"
       + '{"b":"Kunde/Name/Titel","brutto":12.34,"netto":10.37,"mwst":19,"k":"a","d":"TT.MM.JJJJ","r":"Belegnummer","c":"Kategorie"}\n'
       + "b=Kunde bzw. Name/Titel (keine generische Bezeichnung), brutto=Gesamtbetrag (Punkt-Dezimal), netto=Netto, mwst=MwSt-% (19/7/0), k=\"e\" bei Einnahme sonst \"a\", d/r leer wenn nicht vorhanden, c=Kategorie aus ["+CATS.join(',')+"]. Erfinde nichts.";
-    const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-haiku-4-5', max_tokens:900, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
+    const { data:resp, error } = await aiInvoke({ body:{ model:'claude-haiku-4-5', max_tokens:900, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
     if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
     let txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; txt=txt.replace(/```json|```/g,'').trim(); const mm=txt.match(/\{[\s\S]*\}/); if(mm)txt=mm[0];
     const p=JSON.parse(txt);
@@ -1733,7 +1741,7 @@ function App({session}) {
         + '{"b":"Händler/Beschreibung","brutto":12.34,"netto":10.37,"mwst":19,"k":"a","d":"TT.MM.JJJJ","r":"Rechnungsnummer","unsicher":false}\n'
         + "brutto=Gesamtbetrag (Punkt als Dezimaltrennzeichen), netto=Nettobetrag, mwst=MwSt-Satz in % (meist 19 oder 7), k=\"e\" bei Einnahme/Gutschrift sonst \"a\", d/r leer lassen wenn nicht vorhanden. "
         + "Setze \"unsicher\":true, wenn das Bild unscharf/unvollständig ist oder du dir bei Beträgen nicht sicher bist. Erfinde nichts – fehlende Zahl = 0.";
-      const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-haiku-4-5', max_tokens:1000, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
+      const { data:resp, error } = await aiInvoke({ body:{ model:'claude-haiku-4-5', max_tokens:1000, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
       if(error) throw error;
       if(resp && resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
       let txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; txt=txt.replace(/```json|```/g,'').trim(); const mm=txt.match(/\{[\s\S]*\}/); if(mm)txt=mm[0];
@@ -1865,7 +1873,7 @@ function App({session}) {
   const aiInvoice = async ()=>{ const t=invAiText.trim(); if(!t||invAiBusy) return; setInvAiBusy(true);
     try{
       const prompt="Erzeuge Rechnungspositionen aus dieser Beschreibung (Deutschland). Antworte AUSSCHLIESSLICH mit minifiziertem JSON: {\"p\":[{\"d\":\"Beschreibung\",\"q\":1,\"e\":100,\"m\":19}]} . d=Leistung, q=Menge, e=Einzelpreis netto (Punkt als Dezimaltrennzeichen), m=MwSt-% (19 oder 7). Kein Text drumherum. Beschreibung: "+t;
-      const {data:resp,error}=await sb.functions.invoke('ai',{body:{model:'claude-haiku-4-5',max_tokens:1200,messages:[{role:'user',content:prompt}]}});
+      const {data:resp,error}=await aiInvoke({body:{model:'claude-haiku-4-5',max_tokens:1200,messages:[{role:'user',content:prompt}]}});
       if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
       let txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; txt=txt.replace(/```json|```/g,'').trim(); const mm=txt.match(/\{[\s\S]*\}/); if(mm)txt=mm[0];
       const p=JSON.parse(txt); const items=(p.p||[]).map(x=>({desc:String(x.d||''),qty:num(x.q)||1,price:Math.abs(parseFloat(String(x.e).replace(',','.'))||0),mwst:num(x.m)||19}));
@@ -2084,7 +2092,7 @@ function App({session}) {
         + "WICHTIG: Du bist KEIN zugelassener Steuerberater – weise bei verbindlichen Steuerfragen kurz darauf hin, dass ein echter Steuerberater das prüfen sollte. "
         + "Schreibe in normalem Fließtext mit kurzen Absätzen. KEIN Markdown: keine #-Überschriften, keine Sternchen, keine Tabellen-Pipes. Für Aufzählungen nutze einfache Bindestriche.\n\n"
         + "DATEN (Jahr "+yr+"):\n"+JSON.stringify(snapshot);
-      const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-sonnet-4-6', max_tokens:1800, system, messages: next.map(m=>({role:m.role,content:m.content})) } });
+      const { data:resp, error } = await aiInvoke({ body:{ model:'claude-sonnet-4-6', max_tokens:1800, system, messages: next.map(m=>({role:m.role,content:m.content})) } });
       if(error) throw error;
       if(resp && resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
       const txt = (resp && resp.content && resp.content[0] && resp.content[0].text) || 'Keine Antwort erhalten.';
@@ -2152,7 +2160,7 @@ function App({session}) {
         + "Stelle auch gezielte Rückfragen, wenn dir Infos fehlen (z. B. „Wofür wurde dieser Laptop genutzt?“, „Privat oder geschäftlich?“, „Unternehmen oder Immobilien?“). Berücksichtige bereits beantwortete Rückfragen. "
         + "Antworte AUSSCHLIESSLICH mit minifiziertem JSON: {\"hinweise\":[{\"typ\":\"tipp|achtung|sparen|frage\",\"titel\":\"...\",\"detail\":\"...\"}]} . "
         + "typ=frage nur für echte Rückfragen. 5-10 Hinweise. Erfinde keine Zahlen. Kein Text außerhalb des JSON.\n\nDATEN:\n"+JSON.stringify(snapshot);
-      const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-sonnet-4-6', max_tokens:2000, system, messages:[{role:'user',content:'Analysiere meine Daten für '+yr+' als persönlicher Steuerberater. Kurze Stichpunkte + Rückfragen.'}] } });
+      const { data:resp, error } = await aiInvoke({ body:{ model:'claude-sonnet-4-6', max_tokens:2000, system, messages:[{role:'user',content:'Analysiere meine Daten für '+yr+' als persönlicher Steuerberater. Kurze Stichpunkte + Rückfragen.'}] } });
       if(error) throw error;
       if(resp && resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
       let txt=(resp && resp.content && resp.content[0] && resp.content[0].text) || ''; txt=txt.replace(/```json|```/g,'').trim(); const mm=txt.match(/\{[\s\S]*\}/); if(mm)txt=mm[0];
@@ -2292,6 +2300,7 @@ function App({session}) {
     {id:'kal',    label:'Events',       icon:P.bed},
     {id:'yr',     label:'Analyse',      icon:P.cal},
     {id:'steuer', label:'Steuer',       icon:P.doc},
+    {id:'kosten', label:'Betriebskosten', icon:P.spark},
   ];
 
   /* Reusable items renderer */
@@ -2659,7 +2668,7 @@ function App({session}) {
                 <div style={{fontSize:13,color:C.sub}}>Weitere Bereiche</div>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                {[{id:'rechnung',label:'Rechnungen',icon:P.receipt},{id:'kal',label:'Events',icon:P.bed},{id:'yr',label:'Analyse',icon:P.cal},{id:'steuer',label:'Steuer',icon:P.doc},{id:'settings',label:'Einstellungen',icon:P.gear}].map(m=>(
+                {[{id:'rechnung',label:'Rechnungen',icon:P.receipt},{id:'kal',label:'Events',icon:P.bed},{id:'yr',label:'Analyse',icon:P.cal},{id:'steuer',label:'Steuer',icon:P.doc},{id:'kosten',label:'Betriebskosten',icon:P.spark},{id:'settings',label:'Einstellungen',icon:P.gear}].map(m=>(
                   <button key={m.id} onClick={()=>setTab(m.id)} style={{display:'flex',alignItems:'center',gap:13,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:'15px 16px',cursor:'pointer',fontFamily:'inherit',color:C.txt,fontSize:16,fontWeight:600,textAlign:'left'}}>
                     <Ic p={m.icon} sz={19} col={C.sub}/> <span style={{flex:1}}>{m.label}</span> <span style={{color:C.mut}}>›</span>
                   </button>
@@ -3631,6 +3640,83 @@ function App({session}) {
               </>
             );
           })()}
+          {/* ══ BETRIEBSKOSTEN (App-Kosten je Monat) ══ */}
+          {tab==='kosten' && (()=>{
+            const prices = {...AI_PRICE_DEFAULTS, ...(data.costPrices||{})};
+            const setPrice = (model,fld,val)=> setData(prev=>{ const cp={...(prev.costPrices||{})}; const base=cp[model]||{...(AI_PRICE_DEFAULTS[model]||{in:0,out:0})}; cp[model]={...base,[fld]:num(val)}; return {...prev, costPrices:cp}; });
+            const fixed = data.fixedCosts||[];
+            const setFixed = upd => setData(prev=>({...prev, fixedCosts: upd(prev.fixedCosts||[])}));
+            const usageAll = data.aiUsage||{};
+            const ymList = Array.from(new Set([costYm, ...Object.keys(usageAll)])).sort().reverse();
+            const [yY,yM] = costYm.split('-').map(Number);
+            const ymLabel = (MONTHS[(yM||1)-1]||'')+' '+yY;
+            const stepYm = (delta)=>{ let y=yY, m=(yM||1)+delta; while(m<1){m+=12;y--;} while(m>12){m-=12;y++;} setCostYm(y+'-'+String(m).padStart(2,'0')); };
+            const monthUsage = usageAll[costYm]||{};
+            const aiRows = Object.keys(monthUsage).map(model=>{ const u=monthUsage[model]; const p=prices[model]||AI_PRICE_DEFAULTS[model]||{in:0,out:0}; const cost=(u.in/1e6)*(p.in||0)+(u.out/1e6)*(p.out||0); return {model,label:AI_MODEL_LABEL[model]||model,inT:u.in,outT:u.out,calls:u.calls,cost}; }).sort((a,b)=>b.cost-a.cost);
+            const aiTotal = aiRows.reduce((s,r)=>s+r.cost,0);
+            const fixedTotal = fixed.reduce((s,f)=>s+num(f.amount),0);
+            const grand = aiTotal+fixedTotal;
+            const fmtTok = n => n>=1e6?(n/1e6).toFixed(2)+' Mio':n>=1e3?(n/1e3).toFixed(1)+'k':String(n);
+            const eur = v => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
+            return (
+              <>
+                <div style={{marginBottom:16}}>
+                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',display:'flex',alignItems:'center',gap:10}}><Ic p={P.spark} sz={24} col={C.pri}/> Betriebskosten</div>
+                  <div style={{fontSize:13,color:C.sub,marginTop:3}}>Was die App pro Monat kostet (KI automatisch erfasst · Fixkosten manuell).</div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16,flexWrap:'wrap'}}>
+                  <button onClick={()=>stepYm(-1)} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:9,width:36,height:36,cursor:'pointer',fontFamily:'inherit',fontSize:16}}>‹</button>
+                  <select value={costYm} onChange={e=>setCostYm(e.target.value)} style={{...SS,width:'auto',minWidth:150}}>{ymList.map(k=>{const [a,b]=k.split('-');return <option key={k} value={k}>{(MONTHS[(+b||1)-1]||'')+' '+a}</option>;})}</select>
+                  <button onClick={()=>stepYm(1)} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:9,width:36,height:36,cursor:'pointer',fontFamily:'inherit',fontSize:16}}>›</button>
+                </div>
+                {/* Gesamt-Karte */}
+                <div style={{...SC,marginBottom:14,background:hexA(C.pri,0.10),border:'1px solid '+hexA(C.pri,0.35)}}>
+                  <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Gesamtkosten {ymLabel}</div>
+                  <div style={{fontSize:34,fontWeight:800,color:C.txt,...NUM}}>{eur(grand)}</div>
+                  <div style={{fontSize:12.5,color:C.sub,marginTop:8,display:'flex',gap:16,flexWrap:'wrap'}}><span>KI/API <b style={{color:C.txt,...NUM}}>{eur(aiTotal)}</b></span><span>Fixkosten <b style={{color:C.txt,...NUM}}>{eur(fixedTotal)}</b></span></div>
+                </div>
+                {/* KI / API */}
+                <div style={{...SC,marginBottom:14}}>
+                  <div style={{fontSize:14,fontWeight:700,color:C.txt,marginBottom:12,display:'flex',alignItems:'center',gap:7}}><Ic p={P.spark} sz={15} col={C.pri}/> KI / API (Claude)</div>
+                  {aiRows.length? <div style={{display:'flex',flexDirection:'column',gap:8}}>{aiRows.map(r=>(
+                    <div key={r.model} style={{display:'flex',alignItems:'center',gap:10,background:C.surf2,borderRadius:11,padding:'11px 13px',flexWrap:'wrap'}}>
+                      <div style={{flex:1,minWidth:140}}><div style={{fontSize:14,fontWeight:600,color:C.txt}}>{r.label}</div><div style={{fontSize:11.5,color:C.mut,marginTop:2}}>{r.calls} Aufrufe · {fmtTok(r.inT)} in · {fmtTok(r.outT)} out Tokens</div></div>
+                      <div style={{fontSize:15,fontWeight:700,...NUM,color:C.txt}}>{eur(r.cost)}</div>
+                    </div>
+                  ))}</div> : <div style={{fontSize:13,color:C.mut}}>In diesem Monat noch keine KI-Nutzung erfasst.</div>}
+                  <details style={{marginTop:12}}>
+                    <summary style={{fontSize:12.5,color:C.sub,cursor:'pointer'}}>Modellpreise anpassen (€ je 1 Mio. Tokens)</summary>
+                    <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:8}}>
+                      {Object.keys(AI_PRICE_DEFAULTS).map(model=>{ const p=prices[model]||AI_PRICE_DEFAULTS[model]; return (
+                        <div key={model} style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                          <span style={{flex:1,minWidth:120,fontSize:12.5,color:C.sub}}>{AI_MODEL_LABEL[model]||model}</span>
+                          <label style={{fontSize:11,color:C.mut,display:'flex',alignItems:'center',gap:5}}>In<input value={p.in} onChange={e=>setPrice(model,'in',e.target.value)} inputMode="decimal" style={{...SS,width:70,...NUM}}/></label>
+                          <label style={{fontSize:11,color:C.mut,display:'flex',alignItems:'center',gap:5}}>Out<input value={p.out} onChange={e=>setPrice(model,'out',e.target.value)} inputMode="decimal" style={{...SS,width:70,...NUM}}/></label>
+                        </div>
+                      ); })}
+                      <div style={{fontSize:11,color:C.mut,lineHeight:1.5}}>Anthropic rechnet in USD ab – trag die Werte ein, die zu deiner Rechnung passen. Token-Mengen werden automatisch gezählt.</div>
+                    </div>
+                  </details>
+                </div>
+                {/* Fixkosten */}
+                <div style={{...SC,marginBottom:14}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,gap:10,flexWrap:'wrap'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:C.txt}}>Feste Kosten / Monat</div>
+                    <button onClick={()=>setFixed(f=>[...f,{id:uid(),name:'',amount:0}])} style={{...BVm}}>＋ Posten</button>
+                  </div>
+                  {fixed.length? <div style={{display:'flex',flexDirection:'column',gap:8}}>{fixed.map(f=>(
+                    <div key={f.id} style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                      <input value={f.name} onChange={e=>setFixed(arr=>arr.map(x=>x.id===f.id?{...x,name:e.target.value}:x))} placeholder="z. B. Supabase, Domain, Resend…" style={{...SS,flex:1,minWidth:140,textAlign:'left'}}/>
+                      <div style={{display:'flex',alignItems:'center',gap:4}}><input value={f.amount} onChange={e=>setFixed(arr=>arr.map(x=>x.id===f.id?{...x,amount:e.target.value}:x))} inputMode="decimal" placeholder="0" style={{...SS,width:90,...NUM}}/><span style={{fontSize:13,color:C.mut}}>€</span></div>
+                      <button onClick={()=>setFixed(arr=>arr.filter(x=>x.id!==f.id))} title="Entfernen" style={{background:C.surf3,border:'1px solid '+C.bdr,color:C.mut,width:34,height:34,borderRadius:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Ic p={P.trash} sz={14} col={C.mut}/></button>
+                    </div>
+                  ))}</div> : <div style={{fontSize:13,color:C.mut,lineHeight:1.5}}>Noch keine Fixkosten. Trag hier z. B. Supabase, Domain, Resend oder andere monatliche Abos ein – sie gelten für jeden Monat.</div>}
+                </div>
+                <div style={{fontSize:11.5,color:C.mut,lineHeight:1.5,padding:'0 2px'}}>Hinweis: KI-Kosten werden aus dem tatsächlichen Token-Verbrauch der App berechnet. Supabase, Domain & Co. haben keine automatische Abfrage – die trägst du als Fixkosten ein.</div>
+              </>
+            );
+          })()}
+
           {/* ══ JAHRESÜBERSICHT / MONATSÜBERSICHT ══ */}
           {tab==='yr' && <>
             <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>{'Analyse '+yr}</div>
