@@ -1563,7 +1563,13 @@ function App({session}) {
     }
     if(!dup && d.belegnr){ const inv=(data.invoices||[]).find(iv=>String(iv.number||'').toLowerCase()===String(d.belegnr).toLowerCase()); if(inv) dup={invoice:inv}; }
     let recur=false; if(!dup && dn.length>2 && da>0){ const months=new Set(); for(const b of all){ if(normName(b.it.name)===dn && Math.abs(num(b.it.amount)-da)<Math.max(2,da*0.12)){ months.add(b.y+'-'+b.m); } } if(months.size>=1) recur=true; }
-    return {...d, dup, recur};
+    // Zahlungseingang erkennen: Kunde + Rechnungsnummer + Betrag stimmen mit offener Rechnung überein
+    let payMatch=null;
+    for(const iv of (data.invoices||[])){ if(iv.paid) continue; const numOk=d.belegnr && String(iv.number||'').toLowerCase()===String(d.belegnr).toLowerCase(); const amtOk=da>0 && Math.abs(num(iv.total)-da)<0.01; const c=(data.customers||[]).find(x=>x.id===iv.customerId); const cn=c?normName(c.name):''; const nameOk = !cn || (dn.length>3 && (cn.includes(dn.slice(0,5))||dn.includes(cn.slice(0,5)))); if(numOk && amtOk && nameOk){ payMatch={invoiceId:iv.id, number:iv.number, customerId:iv.customerId, custName:(c?c.name:''), account:iv.account||'unter'}; break; } }
+    // Wiederkehrende Ausgabe erkennen: Name/Betrag passen zu einer bestehenden wiederkehrenden Buchung
+    let recurMatch=null;
+    if(da>0){ for(const b of all){ const it=b.it; if(!it.recurring) continue; const sameName = dn.length>2 && normName(it.name)===dn; const amtClose = Math.abs(num(it.amount)-da)<Math.max(2,da*0.12); const sameNote = d.note && it.note && normName(d.note)===normName(it.note); if((sameName&&amtClose) || (sameNote&&amtClose)){ recurMatch={name:it.name, account:b.key||'', amount:num(it.amount)}; break; } } }
+    return {...d, dup, recur, payMatch, recurMatch};
   };
   const flagDrafts = list => { const all=existingBookings(); return list.map(d=>flagDraft(d,all)); };
 
@@ -1729,6 +1735,14 @@ function App({session}) {
     setDraftSel([]);
     setToast(dlist.length+' → '+moveLabel(destKey)+' · '+MONTHS[tm]+' '+ty);
   };
+  // Konto-Label
+  const accLabel = (k)=> k==='unter'?(names.unternehmen||'Firma'):k==='privat'?(names.privatLabel||'Privat'):(names[k]||k||'—');
+  // Buchung kind-bewusst in einen Monat einsortieren (Einnahme/Ausgabe)
+  const _bookKind = (M, account, kind, item)=>{ const isExp=kind==='aus'; if(account==='unter'){ const s=M.unternehmen||{}; M.unternehmen=isExp?{...s,items:[...(s.items||[]),item]}:{...s,clients:[...(s.clients||[]),item]}; } else if(account==='privat'){ const s=M.privat||{}; M.privat=isExp?{...s,items:[...(s.items||[]),item]}:{...s,einnahmen:[...(s.einnahmen||[]),item]}; } else { if(!M.props)M.props={}; const s=M.props[account]||{}; M.props[account]=isExp?{...s,expenses:[...(s.expenses||[]),item]}:{...s,einnahmen:[...(s.einnahmen||[]),item]}; } };
+  // Import-Pflichtfelder eines Entwurfs
+  const draftMissing = (d)=>{ const m=[]; if(!d.account)m.push('Konto'); if(!String(d.name||'').trim())m.push('Name'); if(!(d.customerId||String(d.custName||'').trim()))m.push('Kunde'); if(!num(d.amount))m.push('Betrag'); if(!String(d.category||'').trim())m.push('Kategorie'); if(!(d.kind==='ein'||d.kind==='aus'))m.push('Art'); if(!d.datum)m.push('Datum'); if(!String(d.belegnr||'').trim())m.push('Beleg-Nr'); if(!(d.fileData||d.filePath))m.push('Beleg'); return m; };
+  // Entwurf endgültig übernehmen (nur wenn vollständig)
+  const commitDraft = (d)=>{ if(draftMissing(d).length) return; const dt=new Date(d.datum); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const cust=customers.find(c=>c.id===d.customerId); setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(d.name),amount:num(d.amount),note:(d.note||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',customerId:d.customerId||'',custName:(cust?cust.name:d.custName)||'',invId:d.invId||'',paid:!!d.invId,fileData:d.fileData||null,fileName:d.fileName||'',id:uid()}; _bookKind(nd[ty][tm], d.account, d.kind, item); if(d.invId){ nd.invoices=(nd.invoices||[]).map(iv=>iv.id===d.invId?{...iv,paid:true,paidDate:d.datum||''}:iv); } nd.drafts=(nd.drafts||[]).filter(x=>x.id!==d.id); return nd; }); setDraftEdit(null); setDraftSel(s=>s.filter(x=>x!==d.id)); setToast('Übernommen → '+accLabel(d.account)+' · '+MONTHS[tm]+' '+ty); };
 
   /* ── Rechnungen ── */
   const company = data.company || {};              // Unternehmen (bestehend)
@@ -2874,7 +2888,9 @@ function App({session}) {
                   <div style={{display:'flex',alignItems:'center',gap:8,marginTop:3,flexWrap:'wrap'}}>
                     <span style={{fontSize:12,color:d.category?C.sub:C.mut}}>{catTxt}</span>
                     {d.dup && <button onClick={e=>{e.stopPropagation();setDupPopup({draft:d,match:d.dup});}} title="Bereits vorhanden – ansehen" style={{background:hexA('#FFB37A',0.16),border:'1px solid '+hexA('#FFB37A',0.4),color:'#FFB37A',borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>⚠ bereits vorhanden</button>}
-                    {!d.dup && d.recur && <span title="Sieht nach wiederkehrender Buchung aus" style={{background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}>🔁 wiederkehrend?</span>}
+                    {d.payMatch && <span title={'Zahlungseingang zu Rechnung '+d.payMatch.number} style={{display:'inline-flex',alignItems:'center',gap:4,background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}><Ic p={P.spark} sz={10} col={C.pri}/> Zahlung erkannt</span>}
+                    {d.recurMatch && !d.payMatch && <span title="Passt zu wiederkehrender Ausgabe" style={{display:'inline-flex',alignItems:'center',gap:4,background:hexA('#ABC4FF',0.14),border:'1px solid '+hexA('#ABC4FF',0.35),color:'#ABC4FF',borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}><Ic p={P.repeat} sz={10} col={'#ABC4FF'}/> wiederkehrend</span>}
+                    {!d.dup && !d.payMatch && !d.recurMatch && d.recur && <span title="Sieht nach wiederkehrender Buchung aus" style={{background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}>🔁 wiederkehrend?</span>}
                   </div>
                 </div>
                 <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM,flexShrink:0,whiteSpace:'nowrap'}}>{(d.amount||'0')}€</span>
@@ -2941,25 +2957,45 @@ function App({session}) {
                         <button onClick={()=>setDraftEdit(null)} title="Schließen" style={{background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:10,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
                       </div>
                       {d.dup && <button onClick={()=>setDupPopup({draft:d,match:d.dup})} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:hexA('#FFB37A',0.14),border:'1px solid '+hexA('#FFB37A',0.4),color:'#FFB37A',borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:16,textAlign:'left'}}>⚠ Dieser Beleg scheint bereits vorhanden – ansehen</button>}
+                      {d.payMatch && (d.invId ? (
+                        <div style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:hexA(C.grn,0.14),border:'1px solid '+hexA(C.grn,0.4),color:C.grn,borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:600,marginBottom:16}}><Ic p={P.check} sz={15} col={C.grn}/> Rechnung {d.payMatch.number} verknüpft · wird auf „Bezahlt" gesetzt</div>
+                      ) : (
+                        <div style={{background:hexA(C.pri,0.12),border:'1px solid '+hexA(C.pri,0.4),borderRadius:11,padding:'12px 13px',marginBottom:16}}>
+                          <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:C.pri,marginBottom:8}}><Ic p={P.spark} sz={15} col={C.pri}/> Zahlungseingang zu Rechnung {d.payMatch.number} erkannt</div>
+                          <button onClick={()=>updateDraft(d.id,{invId:d.payMatch.invoiceId, customerId:d.payMatch.customerId, custName:d.payMatch.custName, account:d.payMatch.account})} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:9,padding:'10px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Zuordnen &amp; als bezahlt markieren</button>
+                        </div>
+                      ))}
+                      {d.recurMatch && !d.invId && (
+                        <div style={{background:hexA('#ABC4FF',0.10),border:'1px solid '+hexA('#ABC4FF',0.35),borderRadius:11,padding:'12px 13px',marginBottom:16}}>
+                          <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:C.txt,lineHeight:1.5,marginBottom:8}}><Ic p={P.repeat} sz={15} col={'#ABC4FF'}/> Diese Buchung scheint zu einer bestehenden wiederkehrenden Ausgabe zu gehören.</div>
+                          <button onClick={()=>updateDraft(d.id,{account:d.recurMatch.account||d.account, kind:'aus', name:d.recurMatch.name||d.name})} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,width:'100%',background:hexA('#ABC4FF',0.20),color:'#ABC4FF',border:'none',borderRadius:9,padding:'10px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Zuordnen</button>
+                        </div>
+                      )}
+                      {(()=>{ const miss=draftMissing(d); const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}]; const dDom=d.account==='immo'||PROPS.includes(d.account)?'immo':'unter'; const star=<span style={{color:C.red}}> *</span>; const reqLbl=(t)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{star}</div>); return (<>
+                      {miss.length>0 && <div style={{display:'flex',alignItems:'flex-start',gap:9,fontSize:12.5,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.25)',borderRadius:11,padding:'11px 13px',marginBottom:16,lineHeight:1.5}}><span style={{fontSize:14}}>⚠️</span><span><b>Unvollständig.</b> Bitte ausfüllen: {miss.join(', ')}.</span></div>}
                       <div style={{display:'flex',flexDirection:'column',gap:16}}>
-                        <div>{lbl('Name / Kunde')}<input value={d.name||''} onChange={e=>updateDraft(d.id,{name:e.target.value})} placeholder="Name…" style={dInp}/></div>
+                        <div>{reqLbl('Konto')}<select value={d.account||''} onChange={e=>updateDraft(d.id,{account:e.target.value,customerId:'',custName:''})} style={{...dInp,cursor:'pointer'}}><option value="">— Konto wählen —</option>{acctOpts.map(o=><option key={o.k} value={o.k}>{o.label}</option>)}</select></div>
+                        <div>{reqLbl('Name')}<input value={d.name||''} onChange={e=>updateDraft(d.id,{name:e.target.value})} placeholder="Name…" style={dInp}/></div>
+                        <div>{reqLbl('Kunde')}<CustomerSelect customers={customersFor(dDom)} value={d.customerId} onPick={c=>{ if(c) updateDraft(d.id,{customerId:c.id,custName:c.name||''}); else updateDraft(d.id,{customerId:'',custName:''}); }} /></div>
                         <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-                          <div style={{flex:1,minWidth:120}}>{lbl('Betrag €')}<input value={d.amount||''} onChange={e=>updateDraft(d.id,{amount:e.target.value})} inputMode="decimal" style={{...dInp,...NUM}}/></div>
-                          <div style={{flex:1,minWidth:160}}>{lbl('Art')}<div style={{display:'flex',gap:8}}>{[['ein','Einnahme','#8FD9BD'],['aus','Ausgabe','#E8A39E']].map(([k,l,c])=>{ const on=d.kind===k; return <button key={k} onClick={()=>updateDraft(d.id,{kind:k})} style={{flex:1,background:on?hexA(c,0.18):C.surf2,border:'1px solid '+(on?hexA(c,0.5):C.bdr),color:on?c:C.sub,borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>; })}</div></div>
+                          <div style={{flex:1,minWidth:120}}>{reqLbl('Betrag €')}<input value={d.amount||''} onChange={e=>updateDraft(d.id,{amount:e.target.value})} inputMode="decimal" style={{...dInp,...NUM}}/></div>
+                          <div style={{flex:1,minWidth:160}}>{reqLbl('Art')}<div style={{display:'flex',alignItems:'center',gap:8,...dInp,cursor:'default'}}><span style={{width:9,height:9,borderRadius:'50%',background:d.kind==='ein'?'#8FD9BD':'#E8A39E',display:'inline-block'}}/><span style={{fontWeight:600,color:d.kind==='ein'?'#8FD9BD':'#E8A39E'}}>{d.kind==='ein'?'Einnahme':'Ausgabe'}</span><span style={{marginLeft:'auto',fontSize:11,color:C.mut}}>autom. erkannt</span></div></div>
                         </div>
-                        <div>{lbl('Kategorie')}<select value={d.category||''} onChange={e=>updateDraft(d.id,{category:e.target.value})} style={{...dInp,cursor:'pointer'}}><option value="">— wählen —</option>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                        <div>{reqLbl('Kategorie')}<select value={d.category||''} onChange={e=>updateDraft(d.id,{category:e.target.value})} style={{...dInp,cursor:'pointer'}}><option value="">— wählen —</option>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                         <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-                          <div style={{flex:1,minWidth:140}}>{lbl('Datum')}<DateField value={d.datum||''} onChange={v=>updateDraft(d.id,{datum:v})} style={dInp}/></div>
-                          <div style={{flex:1,minWidth:140}}>{lbl('Beleg-/Rechnungsnr.')}<input value={d.belegnr||''} onChange={e=>updateDraft(d.id,{belegnr:e.target.value})} placeholder="Nr." style={dInp}/></div>
+                          <div style={{flex:1,minWidth:140}}>{reqLbl('Datum')}<DateField value={d.datum||''} onChange={v=>updateDraft(d.id,{datum:v})} style={dInp}/></div>
+                          <div style={{flex:1,minWidth:140}}>{reqLbl('Belegnummer')}<input value={d.belegnr||''} onChange={e=>updateDraft(d.id,{belegnr:e.target.value})} placeholder="Nr." style={dInp}/></div>
                         </div>
-                        <div>{lbl('Beleg')}
+                        {d.note ? <div>{lbl('Notizen (Verwendungszweck)')}<textarea value={d.note} onChange={e=>updateDraft(d.id,{note:e.target.value})} rows={2} style={{...dInp,resize:'vertical'}}/></div> : null}
+                        <div>{reqLbl('Beleg')}
                           {hasFile
                             ? <div style={{display:'flex',alignItems:'center',gap:8,background:C.surf2,borderRadius:10,padding:'10px 12px'}}><Ic p={P.clip} sz={15} col={C.pri}/><span style={{flex:1,fontSize:13,color:C.sub}}>Beleg angehängt</span><button onClick={()=>updateDraft(d.id,{fileData:null,fileName:''})} style={{background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:18,lineHeight:1}}>×</button></div>
                             : <label style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:hexA(C.pri,0.14),borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:C.pri,cursor:'pointer'}}><Ic p={P.upload} sz={15} col={C.pri}/> Beleg hochladen<input type="file" accept="image/*,.pdf" onChange={e=>{const f=e.target.files[0];e.target.value='';draftFile(d.id,f);}} style={{display:'none'}}/></label>}
                         </div>
-                        <button onClick={()=>{ setDraftSel([d.id]); setAssignOpen(true); setDraftEdit(null); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'13px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginTop:4}}>Diesem Konto zuordnen</button>
+                        <button disabled={miss.length>0} onClick={()=>commitDraft(d)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'13px',fontSize:14,fontWeight:700,cursor:miss.length?'default':'pointer',fontFamily:'inherit',marginTop:4,opacity:miss.length?0.5:1}}>{miss.length?('Noch '+miss.length+' Pflichtfeld'+(miss.length>1?'er':'')):'Endgültig übernehmen'}</button>
                         <button onClick={()=>{ delDraft(d.id); setDraftEdit(null); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.redL,color:C.red,border:'none',borderRadius:11,padding:'11px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.trash} sz={15} col={C.red}/> Entwurf verwerfen</button>
                       </div>
+                      </>); })()}
                     </div>
                   </div>
                 ); })()}
@@ -3339,7 +3375,7 @@ function App({session}) {
                       </div>
                       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                         <div style={{flex:1,minWidth:180}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Webseite</div><input value={c.website||''} onChange={e=>set({website:e.target.value})} placeholder="https://" style={fld}/></div>
-                        <div style={{width:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Kundennr.</div><input value={c.custNo||''} onChange={e=>set({custNo:e.target.value})} style={fld}/></div>
+                        <div style={{width:160}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Kundennr.{!cIsNew && <span style={{color:C.mut,fontWeight:400}}> · fest</span>}</div>{cIsNew ? <input value={c.custNo||''} onChange={e=>set({custNo:e.target.value})} style={fld}/> : <div style={{...fld,display:'flex',alignItems:'center',color:C.sub,background:C.surf3,cursor:'not-allowed'}}>{c.custNo||'—'}</div>}</div>
                       </div>
                     </div>
                     <div style={{...SC,marginBottom:14}}>
