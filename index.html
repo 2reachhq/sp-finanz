@@ -477,7 +477,9 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
   const money = new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(item.amount)||0);
   const fLbl=(t,req)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6,letterSpacing:'0.02em'}}>{t}{req&&<span style={{color:C.red}}> *</span>}</div>);
   // Pflichtfelder einer Buchung (Name, Beleg-Nr, Datum, Betrag, Kategorie)
-  const bookingMissing=(it)=>{ const m=[]; if(!String(it.name||'').trim())m.push('Name'); if(!String(it.belegnr||'').trim())m.push('Beleg-Nr'); if(!isoDate(it.datum))m.push(kind==='aus'?'Abbuchungsdatum':kind==='ein'?'Eingangsdatum':'Datum'); if(!num(it.amount))m.push('Betrag'); if(!String(it.category||'').trim())m.push('Kategorie'); return m; };
+  // Privat-Buchungen: keine Pflichtfelder (privat gedacht, kein Steuerberater-Zugriff)
+  const isPrivatItem = folderPath && folderPath[0]==='Privat';
+  const bookingMissing=(it)=>{ if(isPrivatItem) return []; const m=[]; if(!String(it.name||'').trim())m.push('Name'); if(!String(it.belegnr||'').trim())m.push('Beleg-Nr'); if(!isoDate(it.datum))m.push(kind==='aus'?'Abbuchungsdatum':kind==='ein'?'Eingangsdatum':'Datum'); if(!num(it.amount))m.push('Betrag'); if(!String(it.category||'').trim())m.push('Kategorie'); return m; };
 
   return (
     <div onClick={()=>{ if(!selMode) setDrawer(true); }} style={{background:C.surf2,border:'1px solid '+(drawer?acc:C.bdr),borderRadius:14,padding:'12px 14px',cursor:selMode?'default':'pointer',transition:'border-color .14s'}}>
@@ -541,21 +543,21 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
               </div>
             )}
 
-            {fLbl('Name',true)}
+            {fLbl('Name',!isPrivatItem)}
             <input value={item.name} placeholder="Name…" onChange={e=>onUpdate(item.id,'name',e.target.value)} style={{...dInput('100%'),fontSize:15,padding:'10px 12px',marginBottom:16}} />
 
-            {fLbl('Betrag (Brutto)',true)}
+            {fLbl('Betrag (Brutto)',!isPrivatItem)}
             <CalcField value={item.amount} onCommit={v=>onUpdate(item.id,'amount',v)} style={{...dInput('100%'),fontSize:18,fontWeight:700,padding:'10px 12px',...NUM,marginBottom:16}} />
 
-            {fLbl('Kategorie',true)}
+            {fLbl('Kategorie',!isPrivatItem)}
             <select value={item.category||''} onChange={e=>onUpdate(item.id,'category',e.target.value)} style={{...dInput('100%'),padding:'10px 12px',marginBottom:16,cursor:'pointer'}}>
               <option value="">— wählen —</option>
               {CATS.map(cat=><option key={cat} value={cat}>{cat}</option>)}
             </select>
 
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-              {dcell(dateLabel, <DateField value={item.datum} onChange={v=>onUpdate(item.id,'datum',v)} accent={acc} style={{...dInput('100%'),padding:'10px 12px'}} />, true)}
-              {dcell('Beleg-Nr', <input value={item.belegnr||''} onChange={e=>onUpdate(item.id,'belegnr',e.target.value)} placeholder="Beleg-Nr" style={{...dInput('100%'),padding:'10px 12px'}} />, true)}
+              {dcell(dateLabel, <DateField value={item.datum} onChange={v=>onUpdate(item.id,'datum',v)} accent={acc} style={{...dInput('100%'),padding:'10px 12px'}} />, !isPrivatItem)}
+              {dcell('Beleg-Nr', <input value={item.belegnr||''} onChange={e=>onUpdate(item.id,'belegnr',e.target.value)} placeholder="Beleg-Nr" style={{...dInput('100%'),padding:'10px 12px'}} />, !isPrivatItem)}
               {dcell('Netto €', <input value={item.netto||''} onChange={e=>onUpdate(item.id,'netto',e.target.value)} inputMode="decimal" placeholder="Netto" style={{...dInput('100%'),padding:'10px 12px',...NUM}} />)}
               {dcell('MwSt', <select value={(item.mwst!=null&&item.mwst!=='')?String(item.mwst):'19'} onChange={e=>onUpdate(item.id,'mwst',e.target.value)} style={{...dInput('100%'),padding:'10px 12px',cursor:'pointer'}}><option value="19">19%</option><option value="7">7%</option><option value="0">0%</option></select>)}
             </div>
@@ -1772,7 +1774,7 @@ function App({session}) {
   // Buchung kind-bewusst in einen Monat einsortieren (Einnahme/Ausgabe)
   const _bookKind = (M, account, kind, item)=>{ const isExp=kind==='aus'; if(account==='unter'){ const s=M.unternehmen||{}; M.unternehmen=isExp?{...s,items:[...(s.items||[]),item]}:{...s,clients:[...(s.clients||[]),item]}; } else if(account==='privat'){ const s=M.privat||{}; M.privat=isExp?{...s,items:[...(s.items||[]),item]}:{...s,einnahmen:[...(s.einnahmen||[]),item]}; } else { if(!M.props)M.props={}; const s=M.props[account]||{}; M.props[account]=isExp?{...s,expenses:[...(s.expenses||[]),item]}:{...s,einnahmen:[...(s.einnahmen||[]),item]}; } };
   // Import-Pflichtfelder eines Entwurfs
-  const draftMissing = (d)=>{ const m=[]; if(!d.account)m.push('Konto'); if(!String(d.name||'').trim())m.push('Name'); if(!num(d.amount))m.push('Betrag'); if(!String(d.category||'').trim())m.push('Kategorie'); if(!(d.kind==='ein'||d.kind==='aus'))m.push('Art'); if(!d.datum)m.push('Datum'); if(!String(d.belegnr||'').trim())m.push('Beleg-Nr'); if(!(d.fileData||d.filePath))m.push('Beleg'); return m; };
+  const draftMissing = (d)=>{ const m=[]; if(!d.account)m.push('Konto'); if(d.account==='privat') return m; /* Privat: keine weiteren Pflichtfelder */ if(!String(d.name||'').trim())m.push('Name'); if(!num(d.amount))m.push('Betrag'); if(!String(d.category||'').trim())m.push('Kategorie'); if(!(d.kind==='ein'||d.kind==='aus'))m.push('Art'); if(!d.datum)m.push('Datum'); if(!String(d.belegnr||'').trim())m.push('Beleg-Nr'); if(!(d.fileData||d.filePath))m.push('Beleg'); return m; };
   // Entwurf endgültig übernehmen (nur wenn vollständig)
   const commitDraft = (d)=>{ if(draftMissing(d).length) return; const dt=new Date(d.datum); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const cust=customers.find(c=>c.id===d.customerId); setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(d.name),amount:num(d.amount),netto:num(d.netto),mwst:(d.mwst!=null?d.mwst:''),note:(d.note||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',customerId:d.customerId||'',custName:(cust?cust.name:d.custName)||'',invId:d.invId||'',paid:!!d.invId,fileData:d.fileData||null,fileName:d.fileName||'',id:uid()}; _bookKind(nd[ty][tm], d.account, d.kind, item); if(d.invId){ nd.invoices=(nd.invoices||[]).map(iv=>iv.id===d.invId?{...iv,paid:true,paidDate:d.datum||''}:iv); } nd.drafts=(nd.drafts||[]).filter(x=>x.id!==d.id); return nd; }); setDraftEdit(null); setDraftSel(s=>s.filter(x=>x!==d.id)); setToast('Übernommen → '+accLabel(d.account)+' · '+MONTHS[tm]+' '+ty); };
 
@@ -2110,7 +2112,9 @@ function App({session}) {
     try{
       const monatswerte = Array.from({length:12},(_,i)=>{const t=calcTotals(getMD(yr,i),yr,i);return {monat:MONTHS[i],einnahmen:t.totalInc,ausgaben:t.totalExp,ergebnis:t.net};});
       const prevAnswers = (data.taxNotes||{})[yr]&&(data.taxNotes||{})[yr].answers || {};
-      const snapshot = { namen:names, jahr:yr, jahressumme:yrTot, monatswerte, jahresdaten:data[yr]||{}, beantworteteRueckfragen:prevAnswers };
+      // Privat-Daten NICHT an den Steuerberater übergeben (private Buchungen bleiben privat)
+      const jd={}; Object.keys(data[yr]||{}).forEach(m=>{ const mm={...((data[yr]||{})[m]||{})}; delete mm.privat; jd[m]=mm; });
+      const snapshot = { namen:names, jahr:yr, jahressumme:yrTot, monatswerte, jahresdaten:jd, hinweis:'Private Ausgaben/Einnahmen sind bewusst ausgeschlossen und nicht relevant.', beantworteteRueckfragen:prevAnswers };
       const system = "Du bist der persönliche Steuerberater-Assistent für einen Nutzer in Deutschland (Immobilien-Vermietung, ein Unternehmen, Privatausgaben). "
         + "Gib KURZE, konkrete Stichpunkt-Hinweise – KEINE langen Fließtexte. Jeder Hinweis: knapper Titel + 1-2 Sätze Detail. "
         + "Stelle auch gezielte Rückfragen, wenn dir Infos fehlen (z. B. „Wofür wurde dieser Laptop genutzt?“, „Privat oder geschäftlich?“, „Unternehmen oder Immobilien?“). Berücksichtige bereits beantwortete Rückfragen. "
@@ -3046,7 +3050,7 @@ function App({session}) {
                           <button onClick={()=>updateDraft(d.id,{account:d.recurMatch.account||d.account, kind:'aus', name:d.recurMatch.name||d.name})} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,width:'100%',background:hexA('#ABC4FF',0.20),color:'#ABC4FF',border:'none',borderRadius:9,padding:'10px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Zuordnen</button>
                         </div>
                       )}
-                      {(()=>{ const miss=draftMissing(d); const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}]; const dDom=d.account==='immo'||PROPS.includes(d.account)?'immo':'unter'; const star=<span style={{color:C.red}}> *</span>; const reqLbl=(t)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{star}</div>); return (<>
+                      {(()=>{ const miss=draftMissing(d); const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}]; const dDom=d.account==='immo'||PROPS.includes(d.account)?'immo':'unter'; const star=<span style={{color:C.red}}> *</span>; const reqLbl=(t)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{d.account!=='privat'&&star}</div>); return (<>
                       <div style={{display:'flex',flexDirection:'column',gap:16}}>
                         <div>{reqLbl('Konto')}<select value={d.account||''} onChange={e=>updateDraft(d.id,{account:e.target.value,customerId:'',custName:''})} style={{...dInp,cursor:'pointer'}}><option value="">— Konto wählen —</option>{acctOpts.map(o=><option key={o.k} value={o.k}>{o.label}</option>)}</select></div>
                         <div>{reqLbl('Name')}<input value={d.name||''} onChange={e=>updateDraft(d.id,{name:e.target.value})} placeholder="Name…" style={dInp}/></div>
