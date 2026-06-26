@@ -1150,7 +1150,10 @@ function App({session}) {
   const [aiBusy,setAiBusy]= useState(false);
   const [botOpen,setBotOpen]= useState(false);     // In-App-Assistent (Chatbot)
   const [botInput,setBotInput]= useState('');
-  const [botMsgs,setBotMsgs]= useState([{role:'assistant',content:'Hi! Ich bin dein Assistent in der App. Ich kann navigieren, Kunden & Rechnungen anlegen und deine Zahlen auswerten – alles lokal, ohne deine Daten extern zu senden. Frag z. B. „Ergebnis Juni" oder „Neue Rechnung".'}]);
+  const [botFile,setBotFile]= useState(null);        // an den Assistenten angehängte Datei
+  const [botBusy,setBotBusy]= useState(false);        // Assistent arbeitet (KI)
+  const [botFlow,setBotFlow]= useState(null);         // laufender Dialog-Flow (z. B. Rechnung erstellen)
+  const [botMsgs,setBotMsgs]= useState([{role:'assistant',content:'Hi! Ich bin dein Assistent. Ich kann navigieren, Zahlen auswerten, Kunden/Rechnungen anlegen – und du kannst mir eine Datei (z. B. Airbnb/Booking-Übersicht oder einen Beleg) anhängen, dann lese ich die Posten aus. Frag z. B. „Ergebnis Juni", „Neue Rechnung" oder häng eine Datei an.'}]);
   const [belegOpen,setBelegOpen]= useState(false); // Beleg-Erfassung
   const [belegBusy,setBelegBusy]= useState(false);
   const [belegRes,setBelegRes]= useState(null);    // {name,amount,kind,info}
@@ -2201,7 +2204,84 @@ function App({session}) {
     if(/konto|konten|home|start|übersicht/.test(q)) return go('quellen','die Konten');
     return 'Ich kann lokal in der App: zu Bereichen navigieren (Konten, Import, Rechnungen, Kunden, Analyse, Belege, Steuer, Einstellungen), Kunden & Rechnungen anlegen, Zahlen auswerten („Ergebnis Juni", „Bester Monat", „Jahresergebnis") und beim Import Buchungen auswählen (z. B. „Wähle alle Buchungen an, die mit Adobe anfangen"). Deine Daten verlassen die App dabei nicht.';
   };
-  const botSend = (text)=>{ const q=(text!=null?text:botInput).trim(); if(!q) return; setBotInput(''); const reply=botReply(q); setBotMsgs(m=>[...m,{role:'user',content:q},{role:'assistant',content:reply}]); };
+  // Datei (PDF/Bild/XML/CSV) per KI in Posten zerlegen
+  const aiExtractPosten = async (file)=>{
+    const isPdf = file.type==='application/pdf' || /\.pdf$/i.test(file.name);
+    const isImg = /^image\//.test(file.type) || /\.(png|jpe?g|webp|gif)$/i.test(file.name);
+    const prompt = "Dies ist ein Bankauszug, eine Abrechnung (z. B. Airbnb/Booking.com Auszahlung/Monatsübersicht) oder ein Beleg/eine Rechnung (Deutschland). Lies ALLE einzelnen Umsätze bzw. Positionen aus (keine Saldo-/Summen-/Kontostandzeilen). "
+      + "Antworte AUSSCHLIESSLICH mit minifiziertem JSON (keine Leerzeichen, keine Zeilenumbrüche, kein Markdown): "
+      + '{"quelle":"Airbnb|Booking|Bank|Beleg|Sonstiges","p":[{"b":"Name/Inserat/Kunde","a":12.34,"k":"e","d":"TT.MM.JJJJ","r":"","c":"","z":"","nt":null,"mw":null}]}\n'
+      + "Felder: b=Name bzw. Inserat-Name/ID/Kunde (max 60 Zeichen), a=Bruttobetrag positiv mit Punkt, k=\"e\" bei Einnahme/Auszahlung/Gutschrift sonst \"a\", d=Datum (leer wenn keins), r=Beleg-/Buchungsnummer, c=Kategorie aus [Allgemein,Miete,Nebenkosten,Versicherung,Material,Personal,Steuern,Software,Marketing,Reise,Bewirtung,Bank & Gebühren,Sonstiges] (leer wenn unklar), z=Verwendungszweck/Inserat, nt=Netto falls ausgewiesen sonst null, mw=MwSt-Satz 19/7/0 falls erkennbar sonst null. Erfinde nichts.";
+    let content;
+    if(isPdf){ const b64=await fileToB64(file); content=[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:prompt}]; }
+    else if(isImg){ const b64=await fileToB64(file); content=[{type:'image',source:{type:'base64',media_type:(file.type||'image/jpeg'),data:b64}},{type:'text',text:prompt}]; }
+    else { const txt=await file.text(); content=[{type:'text',text:'DATEIINHALT ('+file.name+'):\n'+String(txt).slice(0,40000)},{type:'text',text:prompt}]; }
+    const {data:resp,error}=await aiInvoke({body:{model:'claude-haiku-4-5',max_tokens:8000,messages:[{role:'user',content}]}});
+    if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
+    let t=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; t=t.replace(/```json|```/g,'').trim(); const mm=t.match(/\{[\s\S]*\}/); if(mm)t=mm[0];
+    let parsed; try{parsed=JSON.parse(t);}catch(_){ const lo=t.lastIndexOf('}'); if(lo>0){ try{parsed=JSON.parse(t.slice(0,lo+1)+']}');}catch(e){throw new Error('Antwort unlesbar (Datei evtl. zu lang).');} } else throw new Error('Antwort unlesbar.'); }
+    const list=(parsed.p||[]).map(p=>{ const belegnr=String(p.r||''); const datum=toISO(p.d||''); const name=String(p.b||'Posten').slice(0,70); const note=String(p.z||''); return { id:uid(), name, amount:Math.abs(parseFloat(String(p.a!=null?p.a:0).replace(',','.'))||0), kind:((p.k||'')==='e'?'ein':'aus'), belegnr, datum, category:(String(p.c||'')||guessCategory(name+' '+note)), note, netto:(p.nt!=null&&p.nt!=='')?Math.abs(parseFloat(String(p.nt).replace(',','.'))||0):'', mwst:(p.mw!=null&&p.mw!=='')?String(p.mw).replace('%','').trim():'', info:[belegnr&&('Nr. '+belegnr)].filter(Boolean).join(' · ') }; }).filter(p=>p.amount>0);
+    return { quelle:String(parsed.quelle||''), list };
+  };
+  const handleBotFile = async (file)=>{
+    setBotBusy(true); setBotMsgs(m=>[...m,{role:'assistant',content:'Lese „'+file.name+'" aus … einen Moment.'}]);
+    try{ const {quelle,list}=await aiExtractPosten(file);
+      if(!list.length){ setBotMsgs(m=>[...m,{role:'assistant',content:'Ich konnte in „'+file.name+'" keine Posten erkennen.'}]); }
+      else { const months=Array.from(new Set(list.map(p=>p.datum&&toISO(p.datum).slice(0,7)).filter(Boolean))); const monLbl=months.length?(' ('+months.map(k=>{const a=k.split('-');return (MONTHS[(+a[1])-1]||'')+' '+a[0];}).join(', ')+')'):''; const ein=list.filter(p=>p.kind==='ein').length, aus=list.length-ein;
+        setBotMsgs(m=>[...m,{role:'assistant',content:'In '+(quelle||'der Datei')+' habe ich '+list.length+' Posten erkannt'+monLbl+' – '+ein+' Einnahmen, '+aus+' Ausgaben. Soll ich sie in den Import übernehmen? Dort kannst du sie prüfen und dem passenden Monat/Konto zuordnen.', action:{type:'import', drafts:list}}]); }
+    }catch(e){ setBotMsgs(m=>[...m,{role:'assistant',content:'⚠️ Konnte die Datei nicht auslesen: '+(e.message||e)}]); }
+    setBotBusy(false); setBotFile(null);
+  };
+  const applyBotImport = (drafts)=>{ const flagged=flagDrafts(drafts||[]); setDrafts(ds=>[...flagged,...ds]); setBotMsgs(m=>[...m,{role:'assistant',content:(drafts||[]).length+' Posten in den Import übernommen – ich öffne den Import-Bereich.'}]); setTab('import'); };
+
+  // ── Rechnung per Chat erstellen (fragt Pflichtfelder ab) ──
+  const matchAccount=(q)=>{ const lc=String(q||'').toLowerCase(); if(/privat/.test(lc))return 'privat'; if(/firma|unternehm/.test(lc))return 'unter'; for(const p of PROPS){ const nm=(names[p]||'').toLowerCase(); if(nm && lc.includes(nm)) return p; } return null; };
+  const nextInvoiceNeed=(inv)=>{ if(!(inv.customerId||String(inv.custName||'').trim())) return 'kunde'; if(!String(inv.custAddress||'').trim()) return 'adresse'; const it=(inv.items||[])[0]; if(!it||!num(it.price)) return 'position'; if(!inv.account) return 'konto'; return 'confirm'; };
+  const askNextInvoiceField=(inv)=>{ const need=nextInvoiceNeed(inv); setBotFlow({type:'invoice', inv, step:need});
+    if(need==='confirm'){ const cust=invCustomer(inv); const tot=invTotals(inv.items); const posL=(inv.items||[]).map(i=>i.desc+' · '+fmt(num(i.price)*num(i.qty||1))).join(', '); setBotMsgs(m=>[...m,{role:'assistant',content:'Bitte prüfen:\n• Kunde: '+((cust.name||inv.custName)||'—')+'\n• Adresse: '+(inv.custAddress||'—')+'\n• Position: '+posL+'\n• Konto: '+accLabel(inv.account)+'\n• Gesamt: '+fmt(tot.gross)+'\n\nSoll ich die Rechnung erstellen und buchen?', action:{type:'confirmInvoice'}}]); return; }
+    const Q={ kunde:'An welchen Kunden soll die Rechnung gehen? (Name)', adresse:'Wie lautet die Anschrift des Kunden? (Straße, PLZ Ort)', position:'Was soll berechnet werden? Beschreibung + Betrag, z. B. „Webdesign 1500".', konto:'Auf welches Konto soll die Rechnung gebucht werden? (z. B. Firma, '+(names[PROPS[0]]||'Immobilie')+', Privat)' };
+    setBotMsgs(m=>[...m,{role:'assistant',content:Q[need]||'Bitte ergänzen.'}]);
+  };
+  const startInvoiceFlow=(q)=>{ const ql=String(q||'').toLowerCase(); const dom=/immobil|vermiet|\bmiete\b/.test(ql)?'immo':'unter'; const inv=newInvoice(dom);
+    let m=q.match(/(?:^|\s)(?:an|für)\s+(?:die\s+|herr[n]?\s+|frau\s+)?([A-Za-zÄÖÜäöüß][\wÄÖÜäöüß .\-&]{1,40}?)(?=\s+(?:über|betrag|für|mit|,|\.|$))/i) || q.match(/kunde[n]?\s+([A-Za-zÄÖÜäöüß][\wÄÖÜäöüß .\-&]{1,40})/i);
+    const custName=m?m[1].trim():'';
+    if(custName){ const c=customersFor(dom).find(x=>(x.name||'').toLowerCase().includes(custName.toLowerCase().split(' ')[0])); if(c){ inv.customerId=c.id; inv.custName=c.name||''; inv.custAddress=c.address||''; inv.custEmail=c.email||''; inv.saveCust=false; } else inv.custName=custName; }
+    let am=q.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euro|eur|€)/i)||q.match(/(?:über|betrag|von)\s+(\d+(?:[.,]\d{1,2})?)/i);
+    if(am){ const price=Math.abs(parseFloat(am[1].replace(',','.'))||0); if(price>0){ let dm=q.match(/(?:für|:)\s+([A-Za-zÄÖÜäöüß][\wÄÖÜäöüß .\-]{2,40})/i); inv.items=[{desc:(dm?dm[1].trim():'Leistung'),qty:1,price,mwst:defMwstFor(dom)}]; } }
+    setBotMsgs(m=>[...m,{role:'assistant',content:'Alles klar, ich erstelle eine '+(dom==='immo'?'Immobilien-':'')+'Rechnung. Ich frage die Pflichtangaben ab.'}]);
+    askNextInvoiceField(inv);
+  };
+  const advanceFlow = async (q)=>{ const flow=botFlow; if(!flow){ return; } if(/^(abbrechen|stop|abbruch|nein,? danke|cancel)\s*$/i.test(String(q||''))){ setBotFlow(null); setBotMsgs(m=>[...m,{role:'assistant',content:'Okay, abgebrochen.'}]); return; }
+    const inv={...flow.inv}; const step=flow.step;
+    if(step==='kunde'){ const name=q.trim(); const c=customersFor(inv.domain||'unter').find(x=>(x.name||'').toLowerCase().includes(name.toLowerCase().split(' ')[0])); if(c){ inv.customerId=c.id; inv.custName=c.name||''; inv.custAddress=c.address||''; inv.custEmail=c.email||''; inv.saveCust=false; } else { inv.custName=name; inv.customerId=''; } }
+    else if(step==='adresse'){ inv.custAddress=q.trim(); }
+    else if(step==='position'){ const am=q.match(/(\d+(?:[.,]\d{1,2})?)/); const price=am?Math.abs(parseFloat(am[1].replace(',','.'))||0):0; const desc=q.replace(/(\d+(?:[.,]\d{1,2})?)\s*(euro|eur|€)?/i,'').replace(/[,;]+\s*$/,'').trim()||'Leistung'; inv.items=[{desc,qty:1,price,mwst:defMwstFor(inv.domain)}]; }
+    else if(step==='konto'){ const acc=matchAccount(q); if(acc) inv.account=acc; else { setBotMsgs(m=>[...m,{role:'assistant',content:'Das Konto habe ich nicht erkannt. Sag z. B. „Firma", „'+(names[PROPS[0]]||'Immobilie')+'" oder „Privat".'}]); setBotFlow({...flow,inv}); return; } }
+    askNextInvoiceField(inv);
+  };
+  // Rechnung buchen (für Assistent) – wie saveInvoice, aber ohne Editor/Tab-Wechsel
+  const bookInvoiceObj = async (inv0)=>{ let inv={...inv0, number: inv0.number||nextInvNo()}; const tot=invTotals(inv.items); const dt=new Date(inv.date); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const account=inv.account||'unter'; const isExpense=tot.gross<0;
+    const cName=(inv.custName||inv.company||[inv.firstName,inv.lastName].filter(Boolean).join(' ')||'').trim();
+    if(!inv.customerId && inv.saveCust!==false && cName){ const newC={id:uid(),name:cName,firstName:inv.firstName||'',lastName:inv.lastName||'',company:inv.company||'',anrede:inv.anrede||'',address:inv.custAddress||'',email:inv.custEmail||'',custNo:nextCustNo(inv.domain||'unter'),domain:inv.domain||'unter'}; saveCustomer(newC); inv={...inv,customerId:newC.id}; }
+    const cust=invCustomer(inv); let pdfPath=inv.pdfPath||null;
+    try{ const blob=await buildInvoicePDF(inv); if(blob){ const path=['Rechnungen',String(ty),'Rechnung_'+safeName(inv.number)+'.pdf'].map(safeName).join('/'); const {error}=await sb.storage.from('belege').upload(path,blob,{upsert:true,contentType:'application/pdf'}); if(!error)pdfPath=path; } }catch(e){}
+    const sentDate=inv.sentDate||new Date().toISOString().slice(0,10); const saved={...inv,total:tot.gross,account,pdfPath,sentDate,booked:true};
+    setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); const list=[...(nd.invoices||[])]; const i=list.findIndex(x=>x.id===inv.id); if(i<0)list.push(saved); else list[i]=saved; nd.invoices=list; if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem('Rechnung '+inv.number+((cust&&cust.name)?(' · '+cust.name):'')),amount:Math.abs(tot.gross),belegnr:inv.number,datum:inv.date,netto:Math.abs(tot.net),category:'Allgemein',note:'Rechnung',invId:inv.id}; _bookKind(nd[ty][tm],account,isExpense?'aus':'ein',item); return nd; });
+    return saved;
+  };
+  const finalizeBotInvoice = async ()=>{ const flow=botFlow; if(!flow||botBusy) return; setBotBusy(true); setBotFlow(null); setBotMsgs(m=>[...m,{role:'assistant',content:'Erstelle und buche die Rechnung …'}]);
+    try{ const saved=await bookInvoiceObj(flow.inv); setBotMsgs(m=>[...m,{role:'assistant',content:'✅ Rechnung '+saved.number+' erstellt und auf „'+accLabel(saved.account)+'" gebucht.', action:{type:'showInvoice', invId:saved.id}}]); }
+    catch(e){ setBotMsgs(m=>[...m,{role:'assistant',content:'⚠️ Konnte die Rechnung nicht erstellen: '+(e.message||e)}]); }
+    setBotBusy(false);
+  };
+
+  const botSend = async (text)=>{ const q=(text!=null?text:botInput).trim(); const file=botFile; if(botBusy) return; if(!q && !file) return;
+    setBotMsgs(m=>[...m,{role:'user',content:(q||'')+(file?((q?' ':'')+'📎 '+file.name):'')}]); setBotInput('');
+    if(botFlow){ await advanceFlow(q); return; }
+    if(file){ await handleBotFile(file); return; }
+    if(/\brechnung/i.test(q) && /(erstell|erzeug|schreib|\bmach\b|stell|leg)/i.test(q)){ startInvoiceFlow(q); return; }
+    setBotMsgs(m=>[...m,{role:'assistant',content:botReply(q)}]);
+  };
   const analyzeTax = async () => {
     if(taxBusy) return;
     setTaxBusy(true);
@@ -4377,26 +4457,36 @@ function App({session}) {
         <div style={{position:'fixed',right:isMobile?12:24,bottom:isMobile?86:96,width:isMobile?'calc(100vw - 24px)':380,maxWidth:'calc(100vw - 24px)',height:isMobile?'62vh':480,maxHeight:'72vh',zIndex:120,background:C.surf,border:'1px solid '+C.bdr,borderRadius:20,boxShadow:'0 24px 60px rgba(0,0,0,0.55)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
           <div style={{display:'flex',alignItems:'center',gap:9,padding:'14px 16px',borderBottom:'1px solid '+C.sep,flexShrink:0}}>
             <span style={{width:30,height:30,borderRadius:9,background:hexA(C.pri,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.spark} sz={16} col={C.pri}/></span>
-            <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700,color:C.txt}}>Assistent</div><div style={{fontSize:11,color:C.mut}}>lokal · ohne Datenversand</div></div>
+            <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700,color:C.txt}}>Assistent</div><div style={{fontSize:11,color:C.mut}}>navigiert & rechnet lokal · liest Dateien per KI</div></div>
             <button onClick={()=>setBotOpen(false)} style={{background:C.surf2,border:'none',color:C.sub,width:30,height:30,borderRadius:9,cursor:'pointer',fontSize:18,lineHeight:1,fontFamily:'inherit'}}>×</button>
           </div>
           <div style={{flex:1,overflowY:'auto',padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
-            {botMsgs.map((m,i)=>(
-              <div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
+            {botMsgs.map((m,i)=>{ const primBot={background:C.pri,color:C.priTxt,border:'none',borderRadius:9,padding:'8px 13px',fontSize:12.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}; const ghostBot={background:C.surf3,border:'1px solid '+C.bdr,color:C.sub,borderRadius:9,padding:'8px 13px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}; const a=m.action; const isLast=i===botMsgs.length-1; return (
+              <div key={i} style={{display:'flex',flexDirection:'column',alignItems:m.role==='user'?'flex-end':'flex-start',gap:7}}>
                 <div style={{maxWidth:'85%',background:m.role==='user'?C.act:C.surf2,color:m.role==='user'?C.actTxt:C.txt,borderRadius:13,padding:'9px 12px',fontSize:13.5,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{m.content}</div>
+                {a && isLast && a.type==='import' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={()=>applyBotImport(a.drafts)} style={primBot}>In Import übernehmen</button><button onClick={()=>setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x))} style={ghostBot}>Abbrechen</button></div>}
+                {a && isLast && a.type==='confirmInvoice' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={finalizeBotInvoice} style={primBot}>Ja, erstellen</button><button onClick={()=>{ setBotFlow(null); setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x).concat([{role:'assistant',content:'Okay, abgebrochen.'}])); }} style={ghostBot}>Abbrechen</button></div>}
+                {a && a.type==='showInvoice' && (()=>{ const iv=(data.invoices||[]).find(x=>x.id===a.invId); if(!iv) return null; return <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={()=>setInvView(iv)} style={primBot}>Ansehen</button><button onClick={()=>openMailCompose(iv)} style={ghostBot}>Senden</button><button onClick={()=>downloadInvoicePDF(iv)} style={ghostBot}>PDF</button></div>; })()}
               </div>
-            ))}
+            ); })}
+            {botBusy && <div style={{display:'flex',justifyContent:'flex-start'}}><div style={{background:C.surf2,color:C.sub,borderRadius:13,padding:'9px 12px',fontSize:13.5}}>… einen Moment</div></div>}
             {botMsgs.length<=1 && (
               <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:2}}>
-                {['Jahresergebnis','Bester Monat','Ergebnis Juni','Neue Rechnung','Öffne Kunden'].map(s=>(
+                {['Jahresergebnis','Bester Monat','Rechnung erstellen','Datei auslesen…','Öffne Kunden'].map(s=>(s==='Datei auslesen…'?
+                  <button key={s} onClick={()=>{ const inp=document.querySelector('#botFileTrigger'); if(inp)inp.click(); }} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:9,padding:'7px 11px',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{s}</button>
+                  :
                   <button key={s} onClick={()=>botSend(s)} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:9,padding:'7px 11px',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{s}</button>
                 ))}
               </div>
             )}
           </div>
-          <div style={{display:'flex',gap:8,padding:'12px 14px',borderTop:'1px solid '+C.sep,flexShrink:0}}>
-            <input value={botInput} onChange={e=>setBotInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')botSend();}} placeholder="Frag oder befiehl etwas…" style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit'}}/>
-            <button onClick={()=>botSend()} style={{background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'0 16px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>›</button>
+          <div style={{padding:'10px 14px 12px',borderTop:'1px solid '+C.sep,flexShrink:0}}>
+            {botFile && <div style={{display:'flex',alignItems:'center',gap:8,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:9,padding:'7px 10px',marginBottom:8,fontSize:12.5,color:C.sub}}><Ic p={P.clip} sz={13} col={C.pri}/><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{botFile.name}</span><button onClick={()=>setBotFile(null)} style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1}}>×</button></div>}
+            <div style={{display:'flex',gap:8}}>
+              <label title="Datei anhängen" style={{display:'flex',alignItems:'center',justifyContent:'center',width:42,flexShrink:0,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,cursor:botBusy?'default':'pointer',opacity:botBusy?0.5:1}}><Ic p={P.clip} sz={17} col={C.sub}/><input id="botFileTrigger" type="file" accept="image/*,.pdf,.xml,.csv,.txt" disabled={botBusy} onChange={e=>{const f=e.target.files[0];e.target.value='';if(f)setBotFile(f);}} style={{display:'none'}}/></label>
+              <input value={botInput} onChange={e=>setBotInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!botBusy)botSend();}} placeholder={botFile?'Optional: Hinweis dazu…':'Frag, befiehl oder häng eine Datei an…'} style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit'}}/>
+              <button onClick={()=>!botBusy&&botSend()} disabled={botBusy} style={{background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'0 16px',fontSize:14,fontWeight:700,cursor:botBusy?'default':'pointer',fontFamily:'inherit',opacity:botBusy?0.5:1}}>›</button>
+            </div>
           </div>
         </div>
       )}
