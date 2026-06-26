@@ -273,6 +273,7 @@ const P = {
   grid:  'M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z',
   house: 'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z M9 22V12h6v10',
   brief: 'M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2m-8-3a2 2 0 00-2 2h4a2 2 0 00-2-2z',
+  receipt: 'M5 2h14v20l-3-2-3 2-3-2-3 2z M8 7h8 M8 11h8 M8 15h5',
   prson: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 11a4 4 0 100-8 4 4 0 000 8z',
   cal:   'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z',
   doc:   'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
@@ -408,7 +409,7 @@ function TargetPicker({title, moveTargets, curY, curM, confirmLabel, onClose, on
 }
 
 /* ══ Item row (Name + Betrag + kompaktes ⋮-Dropdown) ══ */
-function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, onUpdate, onDelete, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, askChoice, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur}) {
+function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, onUpdate, onDelete, onApplyAll, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, askChoice, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur}) {
   const acc = accent||C.pri;
   const dateLabel = kind==='aus' ? 'Abbuchungsdatum' : kind==='ein' ? 'Eingangsdatum' : 'Datum';
   // Löschen anfragen – bei wiederkehrenden Posten: Monat vs. alle Monate
@@ -527,6 +528,14 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
               <div style={{display:'flex',alignItems:'flex-start',gap:9,fontSize:12.5,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.25)',borderRadius:11,padding:'11px 13px',marginBottom:18,lineHeight:1.5}}>
                 <span style={{fontSize:14,lineHeight:1.2}}>⚠️</span>
                 <span><b>Unvollständig.</b> Bitte ausfüllen: {bookingMissing(item).join(', ')}.</span>
+              </div>
+            )}
+
+            {item.recurring && onApplyAll && (
+              <div style={{background:hexA(acc,0.10),border:'1px solid '+hexA(acc,0.30),borderRadius:11,padding:'12px 13px',marginBottom:18}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12.5,color:C.txt,fontWeight:600,marginBottom:4}}><Ic p={P.repeat} sz={14} col={acc}/> Wiederkehrender Posten</div>
+                <div style={{fontSize:12,color:C.sub,lineHeight:1.5,marginBottom:10}}>Änderungen gelten zunächst nur für diesen Monat. Sollen sie für alle Monate übernommen werden?</div>
+                <button onClick={()=>{ askChoice ? askChoice('Änderung übernehmen', 'Wie sollen die Änderungen an „'+(item.name||'Posten')+'" gespeichert werden?', [ {label:'Nur für diesen Monat'}, {label:'Für alle Monate übernehmen', fn:()=>onApplyAll(item), danger:false} ]) : onApplyAll(item); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,width:'100%',background:hexA(acc,0.18),border:'none',borderRadius:9,padding:'10px',fontSize:13,fontWeight:700,color:acc,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.repeat} sz={14} col={acc}/> Für alle Monate übernehmen</button>
               </div>
             )}
 
@@ -683,12 +692,13 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
 }
 
 /* ══ Sortier-/Auswahl-Liste (Drag & Drop + Mehrfachauswahl) ══ */
-function ItemList({items, srcKey, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, updFn, delFn, recurFn, rangeFn, editFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, askChoice, curY, curM, hideRecur}) {
+function ItemList({items, srcKey, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, updFn, delFn, recurFn, rangeFn, editFn, applyFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, askChoice, curY, curM, hideRecur}) {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:10}}>
         {items.map((item,idx)=>(
           <ItemRow key={item.id} item={item} accent={accent} kind={kind} onExtract={onExtract} custList={custList} recurInvFn={recurInvFn} onMakeInvoice={onMakeInvoice}
             onUpdate={updFn} onDelete={delFn}
+            onApplyAll={applyFn?((it)=>applyFn(it)):null}
             folderPath={folderPath}
             onUploadFile={onUploadFile} onOpenFile={onOpenFile} onDeleteFile={onDeleteFile}
             onToggleRecurring={()=>recurFn&&recurFn(item)}
@@ -1021,6 +1031,7 @@ function App({session}) {
   const [invPreview,setInvPreview]= useState(false); // große Rechnungsvorschau (Popup)
   const importDragRef = useRef(null);                // Import: Drag&Drop zwischen Ein/Aus
   const [taxOpen,setTaxOpen]= useState({});          // ausklappbare Steuer-Hinweise
+  const [advOpen,setAdvOpen]= useState(true);        // Steuerberater-Bereich ein-/ausklappen
   const [sp,   setSp]   = useState('p1');
   const [data, setData] = useState({});
   const [names,setNames]= useState({p1:'Immobilie 1',p2:'Immobilie 2',p3:'Immobilie 3',unternehmen:'Firma'});
@@ -1366,7 +1377,9 @@ function App({session}) {
   });
   /* Generische Listen-Handler pro Standort (einnahmen | expenses) */
   const addPropSub=(pid,sub,name,amount,recur)=>{ const item={...newItem(name),amount:num(amount),recurring:recur,id:uid()}; const fn=md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,[sub]:[...(p[sub]||[]),{...item}]}}};}; recur?updAll(fn):upd(fn); };
-  const updPropSub=(pid,sub,id,fld,val)=>{ const cur=(md.props?.[pid]?.[sub]||[]).find(i=>i.id===id); const prop=cur&&cur.recurring&&fld!=='__file__'; const fn=md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,[sub]:(p[sub]||[]).map(i=>i.id!==id?i:((fld==='__file__'||fld==='__merge__')?{...i,...val}:{...i,[fld]:fld==='amount'?num(val):val}))}}};}; prop?updAll(fn):upd(fn); };
+  const updPropSub=(pid,sub,id,fld,val)=>{ const fn=md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,[sub]:(p[sub]||[]).map(i=>i.id!==id?i:((fld==='__file__'||fld==='__merge__')?{...i,...val}:{...i,[fld]:fld==='amount'?num(val):val}))}}};}; upd(fn); };
+  // Wiederkehrenden Posten (mit allen Feldern) in ALLE Monate übernehmen
+  const applyRecurPropSub=(pid,sub,item)=>updAll(md=>{const p=md.props?.[pid]||emptyProp();const arr=(p[sub]||[]);const has=arr.some(i=>i.id===item.id);const na=has?arr.map(i=>i.id===item.id?{...item}:i):[...arr,{...item}];return{...md,props:{...md.props,[pid]:{...p,[sub]:na}}};});
   const delPropSub=(pid,sub,id,all)=>{const fn=md=>{const p=md.props?.[pid]||emptyProp();return{...md,props:{...md.props,[pid]:{...p,[sub]:(p[sub]||[]).filter(i=>i.id!==id)}}};}; all?updAll(fn):upd(fn);};
   const movePropSub=(pid,sub,id,dir)=>upd(md=>{const p=md.props?.[pid]||emptyProp();const arr=[...(p[sub]||[])];const idx=arr.findIndex(i=>i.id===id);const ni=idx+dir;if(ni<0||ni>=arr.length)return md;[arr[idx],arr[ni]]=[arr[ni],arr[idx]];return{...md,props:{...md.props,[pid]:{...p,[sub]:arr}}};});
   const setPropSubRange=(pid,sub,item,range)=>{ const hasRange=!!((range.from&&range.from.y!=null)||(range.until&&range.until.y!=null)); const recur=hasRange||!!item.recurring; updAll(md=>{const p=md.props?.[pid]||emptyProp();const arr=[...(p[sub]||[])];const idx=arr.findIndex(i=>i.id===item.id);const patch=base=>({...base,from:range.from||null,until:range.until||null,recurring:recur});if(idx>=0)arr[idx]=patch(arr[idx]);else if(recur)arr.push(patch({...item,filePath:null,fileName:'',fileData:null}));return{...md,props:{...md.props,[pid]:{...p,[sub]:arr}}};}); };
@@ -1379,8 +1392,6 @@ function App({session}) {
 
   /* Section items */
   const updSec=(sec,sub,id,fld,val)=>{
-    const cur=(md[sec]?.[sub]||[]).find(i=>i.id===id);
-    const propagate = cur && cur.recurring && fld!=='__file__';
     const fn=m=>{
       const s=m[sec]||{};
       return{...m,[sec]:{...s,[sub]:(s[sub]||[]).map(i=>{
@@ -1389,8 +1400,9 @@ function App({session}) {
         return{...i,[fld]:fld==='amount'?num(val):val};
       })}};
     };
-    propagate?updAll(fn):upd(fn);
+    upd(fn);
   };
+  const applyRecurSec=(sec,sub,item)=>updAll(md=>{const s=md[sec]||{};const arr=(s[sub]||[]);const has=arr.some(i=>i.id===item.id);const na=has?arr.map(i=>i.id===item.id?{...item}:i):[...arr,{...item}];return{...md,[sec]:{...s,[sub]:na}};});
   const delSec=(sec,sub,id,all)=>{const fn=md=>{const s=md[sec]||{};return{...md,[sec]:{...s,[sub]:(s[sub]||[]).filter(i=>i.id!==id)}};}; all?updAll(fn):upd(fn);};
   const addSec=(sec,sub,name,amount,recur)=>{
     const item={...newItem(name),amount:num(amount),recurring:recur,id:uid()};
@@ -1566,8 +1578,8 @@ function App({session}) {
         : { type:'image', source:{ type:'base64', media_type:(file.type||'image/jpeg'), data:b64 } };
       const prompt = "Dies ist ein Bankauszug oder ein Beleg/eine Rechnung (Deutschland). Lies ALLE einzelnen Umsätze bzw. Belegpositionen aus (keine Saldo-/Summen-/Kontostandzeilen). "
         + "Antworte AUSSCHLIESSLICH mit minifiziertem JSON (keine Leerzeichen, keine Zeilenumbrüche, kein Markdown) im Format:\n"
-        + '{"p":[{"b":"Kunde/Name/Titel","a":12.34,"k":"a","d":"TT.MM.JJJJ","r":"","c":""}]}\n'
-        + "Felder: b=Kunde bzw. Name/Titel (max 60 Zeichen, KEINE generische Bezeichnung), a=Betrag positiv mit Punkt als Dezimaltrennzeichen, k=\"e\" bei Einnahme/Gutschrift sonst \"a\", d=Datum (leer wenn keins), r=Rechnungs-/Belegnummer (leer wenn keine), c=Kategorie-Vorschlag aus [Allgemein,Miete,Nebenkosten,Versicherung,Material,Personal,Steuern,Software,Marketing,Reise,Bewirtung,Bank & Gebühren,Sonstiges] (leer wenn unklar). "
+        + '{"p":[{"b":"Kunde/Name/Titel","a":12.34,"k":"a","d":"TT.MM.JJJJ","r":"","c":"","z":""}]}\n'
+        + "Felder: b=Kunde bzw. Name/Titel (max 60 Zeichen, KEINE generische Bezeichnung), a=Betrag positiv mit Punkt als Dezimaltrennzeichen, k=\"e\" bei Einnahme/Gutschrift sonst \"a\", d=Datum (leer wenn keins), r=Rechnungs-/Belegnummer (leer wenn keine), c=Kategorie-Vorschlag aus [Allgemein,Miete,Nebenkosten,Versicherung,Material,Personal,Steuern,Software,Marketing,Reise,Bewirtung,Bank & Gebühren,Sonstiges] (leer wenn unklar), z=vollständiger Verwendungszweck/Buchungstext der Zeile (leer wenn keiner). "
         + "Halte b kurz. Erfinde nichts.";
       const { data:resp, error } = await sb.functions.invoke('ai', { body:{ model:'claude-haiku-4-5', max_tokens:8000, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
       if(error) throw error;
@@ -1589,6 +1601,7 @@ function App({session}) {
         amount:Math.abs(parseFloat(String(p.a!=null?p.a:p.betrag).replace(',','.'))||0),
         kind:((p.k||p.art)==='e'||(p.k||p.art)==='einnahme'?'ein':'aus'),
         belegnr, datum, category:String(p.c||''),
+        note:String(p.z||p.verwendungszweck||''),
         info:[belegnr&&('Nr. '+belegnr)].filter(Boolean).join(' · '),
       }; }).filter(p=>p.amount>0);
       if(!list.length) setToast('Keine Posten erkannt.');
@@ -1708,7 +1721,7 @@ function App({session}) {
       const nd=JSON.parse(JSON.stringify(prev));
       if(!nd[ty]) nd[ty]={};
       if(!nd[ty][tm]) nd[ty][tm]=emptyMonth();
-      const copies=dlist.map(d=>({...newItem(d.name),amount:num(d.amount),note:d.info||'',category:d.category||'',datum:d.datum||'',fileData:d.fileData||null,fileName:d.fileName||'',id:uid()}));
+      const copies=dlist.map(d=>({...newItem(d.name),amount:num(d.amount),note:(d.note||d.info||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',fileData:d.fileData||null,fileName:d.fileName||'',id:uid()}));
       setListAt(nd[ty][tm],dstLoc,[...getListAt(nd[ty][tm],dstLoc),...copies]);
       nd.drafts=(nd.drafts||[]).filter(d=>!ids.includes(d.id));
       return nd;
@@ -2151,14 +2164,13 @@ function App({session}) {
   const NAV = [
     {id:'quellen',label:'Konten',       icon:P.grid},
     {id:'import', label:'Import',       icon:P.upload},
-    {id:'rechnung',label:'Rechnungen',  icon:P.brief},
-    {id:'berater',label:'KI-Berater',   icon:P.spark},
+    {id:'rechnung',label:'Rechnungen',  icon:P.receipt},
   ];
   const SONSTIGES = [
     {id:'kunden', label:'Kunden',       icon:P.prson},
     {id:'belege', label:'Belege',       icon:P.clip},
     {id:'kal',    label:'Events',       icon:P.bed},
-    {id:'yr',     label:'Jahresübersicht', icon:P.cal},
+    {id:'yr',     label:'Analyse',      icon:P.cal},
     {id:'steuer', label:'Steuer',       icon:P.doc},
   ];
 
@@ -2168,7 +2180,7 @@ function App({session}) {
   const activeAcct = tab==='quellen' ? openAcct : (tab==='immo' ? sp : tab==='unter' ? 'unter' : tab==='privat' ? 'privat' : null);
   const secAccent = activeAcct ? acctColor(activeAcct) : C.pri;
 
-  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey, hideRecur, kind, sums) => {
+  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey, hideRecur, kind, sums, applyFn) => {
     const kindEff = kind || (folderPath && folderPath[folderPath.length-1]==='Einnahmen' ? 'ein' : 'aus');
     const shown = (items||[]).filter(it=>activeInMonth(it, yr, mo));
     const inSel = srcKey && selKey===srcKey;
@@ -2197,7 +2209,7 @@ function App({session}) {
           </div>
         )}
         <ItemList items={shown} srcKey={srcKey} accent={secAccent} kind={kindEff} onExtract={extractToItem} custList={customers} recurInvFn={recurInvoicesFor} onMakeInvoice={(it)=>makeRecurInvoice(it,(folderPath&&folderPath[0]==='Immobilien')?'immo':'unter')}
-          updFn={updFn} delFn={delFn} recurFn={recurFn} rangeFn={rangeFn} editFn={editFn}
+          updFn={updFn} delFn={delFn} recurFn={recurFn} rangeFn={rangeFn} editFn={editFn} applyFn={applyFn}
           folderPath={folderPath}
           moveTargets={srcKey?moveTargets:null} moveItemFn={srcKey?moveItem:null}
           moveFn={moveFn}
@@ -2527,7 +2539,7 @@ function App({session}) {
                 <div style={{fontSize:13,color:C.sub}}>Weitere Bereiche</div>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                {[{id:'rechnung',label:'Rechnungen',icon:P.brief},{id:'kal',label:'Events',icon:P.bed},{id:'yr',label:'Jahresübersicht',icon:P.cal},{id:'steuer',label:'Steuer',icon:P.doc},{id:'settings',label:'Einstellungen',icon:P.gear}].map(m=>(
+                {[{id:'rechnung',label:'Rechnungen',icon:P.receipt},{id:'kal',label:'Events',icon:P.bed},{id:'yr',label:'Analyse',icon:P.cal},{id:'steuer',label:'Steuer',icon:P.doc},{id:'settings',label:'Einstellungen',icon:P.gear}].map(m=>(
                   <button key={m.id} onClick={()=>setTab(m.id)} style={{display:'flex',alignItems:'center',gap:13,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:'15px 16px',cursor:'pointer',fontFamily:'inherit',color:C.txt,fontSize:16,fontWeight:600,textAlign:'left'}}>
                     <Ic p={m.icon} sz={19} col={C.sub}/> <span style={{flex:1}}>{m.label}</span> <span style={{color:C.mut}}>›</span>
                   </button>
@@ -2601,20 +2613,6 @@ function App({session}) {
                   <div style={{display:'flex',flexDirection:isMobile?'column':'row',gap:12}}>
                     <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
                       <div style={{fontSize:12,fontWeight:600,color:C.grn,marginBottom:10}}>Wiederkehrende Einnahmen</div>
-                      <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:12}}>
-                      {[['Mieteinnahmen','mieteinnahmen'],['Sonstige','sonstig']].map(([label,fld])=>{
-                        const m=(pd.income&&pd.income.meta&&pd.income.meta[fld])||{};
-                        const vit={id:'inc_'+fld, name:m.name||label, amount:incomeVal(pd.income,fld), category:m.category, datum:m.datum, netto:m.netto, mwst:m.mwst, note:m.note, belegnr:m.belegnr, filePath:m.filePath||null, fileName:m.fileName||'', recurring:true};
-                        return <ItemRow key={fld} item={vit} accent={secAccent} kind="ein"
-                          onUpdate={(id,field,value)=>{ if(field==='amount'){ setPropInc(sp,fld,value); } else if(field==='__file__'){ setPropIncMeta(sp,fld,value); } else { setPropIncMeta(sp,fld,{[field]:value}); } }}
-                          onDelete={()=>{ setPropInc(sp,fld,0); setPropIncMeta(sp,fld,{category:'',datum:'',netto:'',mwst:'',note:'',belegnr:'',filePath:null,fileName:'',name:''}); }}
-                          curY={yr} curM={mo} askConfirm={askConfirm}
-                          onUploadFile={uploadFile} onOpenFile={openFile} onDeleteFile={deleteFile}
-                          folderPath={['Immobilien',names[sp],'Einnahmen']}
-                          isFirst={true} isLast={true} hideRecur={true} />;
-                      })}
-                      </div>
-                      <div style={{fontSize:11,color:C.mut,margin:'12px 0 6px'}}>Weitere wiederkehrende Einnahmen</div>
                       {renderItems(
                         (pd.einnahmen||[]).filter(i=>i.recurring),
                         (id,fld,val)=>updPropSub(sp,'einnahmen',id,fld,val),
@@ -2623,7 +2621,7 @@ function App({session}) {
                         ['Immobilien',names[sp],'Einnahmen'],
                         undefined, undefined,
                         (it,range)=>setPropSubRange(sp,'einnahmen',it,range),
-                        null, true
+                        null, true, undefined, undefined, (it)=>applyRecurPropSub(sp,'einnahmen',it)
                       )}
                       <AddForm addLabel="Wiederkehrende Einnahme hinzufügen" onClickOverride={()=>startRecurInvoice('immo',sp)} onAdd={(n,a)=>addPropSub(sp,'einnahmen',n,a,true)} />
                     </div>
@@ -2637,7 +2635,7 @@ function App({session}) {
                         ['Immobilien',names[sp]],
                         undefined, undefined,
                         (it,range)=>setPropSubRange(sp,'expenses',it,range),
-                        null, true
+                        null, true, undefined, undefined, (it)=>applyRecurPropSub(sp,'expenses',it)
                       )}
                       <AddForm addLabel="Wiederkehrende Ausgabe hinzufügen" onAdd={(n,a)=>addPropSub(sp,'expenses',n,a,true)} />
                     </div>
@@ -2745,7 +2743,7 @@ function App({session}) {
                       ['Unternehmen','Einnahmen'],
                       undefined, undefined,
                       (it,range)=>setSecRange('unternehmen','clients',it,range),
-                      null, true
+                      null, true, undefined, undefined, (it)=>applyRecurSec('unternehmen','clients',it)
                     )}
                     <AddForm addLabel="Wiederkehrende Einnahme hinzufügen" onClickOverride={()=>startRecurInvoice('unter')} placeholder="Name" onAdd={(n,a)=>addSec('unternehmen','clients',n,a,true)} />
                   </div>
@@ -2759,7 +2757,7 @@ function App({session}) {
                       ['Unternehmen','Ausgaben'],
                       undefined, undefined,
                       (it,range)=>setSecRange('unternehmen','items',it,range),
-                      null, true
+                      null, true, undefined, undefined, (it)=>applyRecurSec('unternehmen','items',it)
                     )}
                     <AddForm addLabel="Wiederkehrende Ausgabe hinzufügen" onAdd={(n,a)=>addSec('unternehmen','items',n,a,true)} />
                   </div>
@@ -2834,7 +2832,7 @@ function App({session}) {
                       ['Privat','Einnahmen'],
                       undefined, undefined,
                       (it,range)=>setSecRange('privat','einnahmen',it,range),
-                      null, true
+                      null, true, undefined, undefined, (it)=>applyRecurSec('privat','einnahmen',it)
                     )}
                     <AddForm addLabel="Wiederkehrende Einnahme hinzufügen" onAdd={(n,a)=>addSec('privat','einnahmen',n,a,true)} />
                   </div>
@@ -2848,7 +2846,7 @@ function App({session}) {
                       ['Privat'],
                       undefined, undefined,
                       (it,range)=>setSecRange('privat','items',it,range),
-                      null, true
+                      null, true, undefined, undefined, (it)=>applyRecurSec('privat','items',it)
                     )}
                     <AddForm addLabel="Wiederkehrende Ausgabe hinzufügen" onAdd={(n,a)=>addSec('privat','items',n,a,true)} />
                   </div>
@@ -3106,11 +3104,11 @@ function App({session}) {
               return (
                 <>
                   <button onClick={()=>setInvEdit(null)} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontFamily:'inherit',fontSize:13,padding:0,marginBottom:10}}>‹ Rechnungen</button>
-                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16,flexWrap:'wrap'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexWrap:'wrap'}}>
                     <div style={{fontSize:28,fontWeight:800,letterSpacing:'-0.03em'}}>Rechnung {invEdit.number}</div>
                     <span style={{fontSize:12,fontWeight:600,color:A.c,background:hexA(A.c,0.16),border:'1px solid '+hexA(A.c,0.4),borderRadius:8,padding:'4px 11px'}}>{(invEdit.domain||'unter')==='immo'?'Immobilien':'Firma'}</span>
-                    <button onClick={()=>{ setRecText(''); setAiCap({parsed:null}); }} style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:7,background:hexA(A.c,0.16),border:'1px solid '+hexA(A.c,0.4),color:A.c,borderRadius:10,padding:'8px 14px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><span style={{fontSize:15}}>✨</span> Mit KI erfassen</button>
                   </div>
+                  <button onClick={()=>{ setRecText(''); setAiCap({parsed:null}); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',maxWidth:isMobile?'100%':520,background:hexA(A.c,0.16),border:'1px solid '+hexA(A.c,0.4),color:A.c,borderRadius:12,padding:'12px 14px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginBottom:16}}><span style={{fontSize:16}}>✨</span> Mit KI erfassen</button>
                   {(
                     <div style={{display:'flex',flexDirection:isMobile?'column':'row',gap:16,alignItems:'flex-start'}}>
                       {/* LINKS: Formular */}
@@ -3384,10 +3382,7 @@ function App({session}) {
               <>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:10}}>
                   <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>Kunden</div>
-                  <div style={{display:'flex',alignItems:'center',gap:10}}>
-                    <span style={{fontSize:12,fontWeight:600,color:KONTO_COLORS.unter.c,background:hexA(KONTO_COLORS.unter.c,0.16),border:'1px solid '+hexA(KONTO_COLORS.unter.c,0.4),borderRadius:8,padding:'4px 11px'}}>{invDomain==='immo'?'Immobilien':'Firma'}</span>
-                    <button onClick={()=>{setCustTab('details');setCustEdit({id:uid(),anrede:'',name:'',address:'',phone:'',email:'',website:'',custNo:nextCustNo(invDomain),domain:invDomain});}} style={{...primBtn,width:'auto',padding:'10px 16px'}}>+ Neuer Kunde</button>
-                  </div>
+                  <button onClick={()=>{setCustTab('details');setCustEdit({id:uid(),anrede:'',name:'',address:'',phone:'',email:'',website:'',custNo:nextCustNo(invDomain),domain:invDomain});}} style={{...primBtn,width:'auto',padding:'10px 16px'}}>+ Neuer Kunde</button>
                 </div>
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
                   {[['unter','Firma'],['immo','Immobilien']].map(([k,label])=>{ const on=invDomain===k; return (
@@ -3401,7 +3396,7 @@ function App({session}) {
                       <div style={{fontSize:15.5,fontWeight:700,color:C.txt}}>{c.name||'(ohne Name)'}</div>
                       <div style={{fontSize:13,color:C.sub,marginTop:2}}>{[c.custNo?('Nr. '+c.custNo):'',c.email].filter(Boolean).join(' · ')||'—'}</div>
                     </div>
-                    <button onClick={e=>{e.stopPropagation();askConfirm('Kunde „'+(c.name||'')+'" löschen?',()=>delCustomer(c.id));}} title="Löschen" style={{background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:18,flexShrink:0,padding:'4px 6px'}}>×</button>
+                    <button onClick={e=>{e.stopPropagation();askConfirm('Kunde „'+(c.name||'')+'" löschen?',()=>delCustomer(c.id));}} title="Löschen" style={{background:C.surf3,border:'1px solid '+C.bdr,color:C.mut,cursor:'pointer',flexShrink:0,width:34,height:34,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.trash} sz={15} col={C.mut}/></button>
                   </div>
                 ))}</div> : <div style={{...SC,fontSize:13,color:C.mut}}>Noch keine Kunden. Lege oben deinen ersten Kunden an.</div>}
               </>
@@ -3461,7 +3456,7 @@ function App({session}) {
           })()}
           {/* ══ JAHRESÜBERSICHT / MONATSÜBERSICHT ══ */}
           {tab==='yr' && <>
-            <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>{yrView==='jahr'?('Jahresübersicht '+yr):('Monatsübersicht · '+MONTHS[mo]+' '+yr)}</div>
+            <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>{'Analyse '+yr}</div>
             <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
               {[['jahr','Jahresübersicht'],['monat','Monatsübersicht']].map(([k,label])=>{ const on=yrView===k; return (
                 <button key={k} onClick={()=>setYrView(k)} style={{background:on?hexA(C.pri,0.16):C.surf,border:'1px solid '+(on?hexA(C.pri,0.45):'transparent'),color:on?C.pri:C.sub,borderRadius:10,padding:'8px 18px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{label}</button>
@@ -3475,18 +3470,18 @@ function App({session}) {
               const topInc=propStats.slice().sort((a,b)=>b.inc-a.inc)[0]||{name:'—',inc:0};
               const bestG=propStats.slice().sort((a,b)=>b.gewinn-a.gewinn)[0]||{name:'—',gewinn:0};
               const pct=(c,p)=> (p&&Math.abs(p)>0.5)? Math.round((c-p)/Math.abs(p)*100) : null;
-              const delta=(c,p,goodUp)=>{ const v=pct(c,p); if(v==null) return null; const up=v>=0; const good=goodUp?up:!up; return <span style={{fontSize:12,fontWeight:700,color:good?C.grn:'#FFB37A',display:'inline-flex',alignItems:'center',gap:3}}>{up?'▲':'▼'} {Math.abs(v)}%</span>; };
+              const delta=(c,p)=>{ const v=pct(c,p); if(v==null) return null; const up=v>=0; return <span style={{fontSize:12,fontWeight:700,color:v<0?C.red:C.txt,display:'inline-flex',alignItems:'center',gap:3}}>{up?'▲':'▼'} {Math.abs(v)}%</span>; };
               const card=(title,valNode,sub)=>(<div style={{...SC,flex:1,minWidth:200}}><div style={{fontSize:12,color:C.sub,marginBottom:8}}>{title}</div>{valNode}{sub&&<div style={{fontSize:12,color:C.mut,marginTop:7,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>{sub}</div>}</div>);
               return (
                 <div style={{display:'flex',flexDirection:'column',gap:12}}>
                   <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-                    {card('Monatsergebnis', <div style={{fontSize:28,fontWeight:800,color:cur.net>=0?C.grn:'#FFB37A',...NUM}}>{cur.net>=0?'+':'-'}{fmt(Math.abs(cur.net))}</div>, <>{delta(cur.net,prev.net,true)} <span>ggü. {MONTHS[pm].slice(0,3)} ({prev.net>=0?'+':'-'}{fmt(Math.abs(prev.net))})</span></>)}
-                    {card('Einnahmen', <div style={{fontSize:28,fontWeight:800,color:C.grn,...NUM}}>{fmt(cur.totalInc)}</div>, <>{delta(cur.totalInc,prev.totalInc,true)} <span>ggü. Vormonat</span></>)}
-                    {card('Ausgaben', <div style={{fontSize:28,fontWeight:800,color:'#FFB37A',...NUM}}>-{fmt(cur.totalExp)}</div>, <>{delta(cur.totalExp,prev.totalExp,false)} <span>ggü. Vormonat</span></>)}
+                    {card('Monatsergebnis', <div style={{fontSize:28,fontWeight:800,color:cur.net>=0?C.txt:C.txt,...NUM}}>{cur.net>=0?'+':'-'}{fmt(Math.abs(cur.net))}</div>, <>{delta(cur.net,prev.net,true)} <span>ggü. {MONTHS[pm].slice(0,3)} ({prev.net>=0?'+':'-'}{fmt(Math.abs(prev.net))})</span></>)}
+                    {card('Einnahmen', <div style={{fontSize:28,fontWeight:800,color:C.txt,...NUM}}>{fmt(cur.totalInc)}</div>, <>{delta(cur.totalInc,prev.totalInc,true)} <span>ggü. Vormonat</span></>)}
+                    {card('Ausgaben', <div style={{fontSize:28,fontWeight:800,color:C.txt,...NUM}}>-{fmt(cur.totalExp)}</div>, <>{delta(cur.totalExp,prev.totalExp,false)} <span>ggü. Vormonat</span></>)}
                   </div>
                   <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-                    {card('Private Ausgaben', <div style={{fontSize:24,fontWeight:800,color:'#FFB37A',...NUM}}>-{fmt(cur.privatExp)}</div>, <>{delta(cur.privatExp,prev.privatExp,false)} <span>ggü. {MONTHS[pm].slice(0,3)} (-{fmt(prev.privatExp)})</span></>)}
-                    {card('Firma Ergebnis', <div style={{fontSize:24,fontWeight:800,color:(cur.unterInc-cur.unterExp)>=0?C.grn:'#FFB37A',...NUM}}>{(cur.unterInc-cur.unterExp)>=0?'+':'-'}{fmt(Math.abs(cur.unterInc-cur.unterExp))}</div>, <span style={{color:C.mut}}>{fmt(cur.unterInc)} Ein · -{fmt(cur.unterExp)} Aus</span>)}
+                    {card('Private Ausgaben', <div style={{fontSize:24,fontWeight:800,color:C.txt,...NUM}}>-{fmt(cur.privatExp)}</div>, <>{delta(cur.privatExp,prev.privatExp,false)} <span>ggü. {MONTHS[pm].slice(0,3)} (-{fmt(prev.privatExp)})</span></>)}
+                    {card('Firma Ergebnis', <div style={{fontSize:24,fontWeight:800,color:(cur.unterInc-cur.unterExp)>=0?C.txt:C.txt,...NUM}}>{(cur.unterInc-cur.unterExp)>=0?'+':'-'}{fmt(Math.abs(cur.unterInc-cur.unterExp))}</div>, <span style={{color:C.mut}}>{fmt(cur.unterInc)} Ein · -{fmt(cur.unterExp)} Aus</span>)}
                   </div>
                   {/* Alle Standorte mit Kennzahlen */}
                   <div style={{fontSize:13,fontWeight:700,color:C.sub,margin:'6px 2px 0'}}>Standorte</div>
@@ -3497,10 +3492,10 @@ function App({session}) {
                           <div style={{width:34,height:34,borderRadius:10,background:c,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Ic p={P.house} sz={17} col={'#0A0A0A'}/></div>
                           <div style={{fontSize:16,fontWeight:800,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{st.name}</div>
                         </div>
-                        {row('Einnahmen', <span style={{...NUM,color:C.grn,fontWeight:600}}>{fmt(st.inc)}</span>)}
-                        {row('Ausgaben', <span style={{...NUM,color:'#FFB37A',fontWeight:600}}>{fmtN(st.exp)}</span>)}
+                        {row('Einnahmen', <span style={{...NUM,color:C.txt,fontWeight:600}}>{fmt(st.inc)}</span>)}
+                        {row('Ausgaben', <span style={{...NUM,color:C.txt,fontWeight:600}}>{fmtN(st.exp)}</span>)}
                         <div style={{height:1,background:C.sep,margin:'4px 0'}}/>
-                        {row('Gewinn', <span style={{...NUM,fontWeight:800,color:st.gewinn>=0?C.grn:'#FFB37A',display:'inline-flex',alignItems:'center',gap:7}}>{st.gewinn>=0?'+':'-'}{fmt(Math.abs(st.gewinn))} {delta(st.gewinn,pr.gewinn,true)}</span>)}
+                        {row('Gewinn', <span style={{...NUM,fontWeight:800,color:st.gewinn>=0?C.txt:C.txt,display:'inline-flex',alignItems:'center',gap:7}}>{st.gewinn>=0?'+':'-'}{fmt(Math.abs(st.gewinn))} {delta(st.gewinn,pr.gewinn,true)}</span>)}
                       </div>
                     ); })}
                   </div>
@@ -3542,15 +3537,15 @@ function App({session}) {
                         style={{cursor:fut?'default':'pointer',opacity:fut?0.4:1,background:s.m===mo?hexA(C.pri,0.12):'transparent'}}
                         title={fut?'Monat hat noch nicht begonnen':''}>
                         <td style={{padding:'10px',fontWeight:s.m===mo?600:400,color:s.m===mo?C.txt:C.sub}}>{MONTHS[s.m]}</td>
-                        <td style={{padding:'10px',textAlign:'right',opacity:dim('immo'),color:(!fut&&s.immoInc>0)?C.grn:C.mut,...NUM}}>{cell(s.immoInc>0,fmt(s.immoInc))}</td>
-                        <td style={{padding:'10px',textAlign:'right',opacity:dim('immo'),color:(!fut&&s.immoExp>0)?C.red:C.mut,...NUM}}>{cell(s.immoExp>0,fmtN(s.immoExp))}</td>
-                        <td style={{padding:'10px',textAlign:'right',opacity:dim('unter'),color:(!fut&&(s.unterInc>0||s.unterExp>0))?(ur>=0?C.grn:C.red):C.mut,...NUM}}>
+                        <td style={{padding:'10px',textAlign:'right',opacity:dim('immo'),color:(!fut&&s.immoInc>0)?C.txt:C.mut,...NUM}}>{cell(s.immoInc>0,fmt(s.immoInc))}</td>
+                        <td style={{padding:'10px',textAlign:'right',opacity:dim('immo'),color:(!fut&&s.immoExp>0)?C.txt:C.mut,...NUM}}>{cell(s.immoExp>0,fmtN(s.immoExp))}</td>
+                        <td style={{padding:'10px',textAlign:'right',opacity:dim('unter'),color:(!fut&&(s.unterInc>0||s.unterExp>0))?(ur>=0?C.txt:C.txt):C.mut,...NUM}}>
                           {cell(s.unterInc>0||s.unterExp>0,(ur>=0?'+':'-')+fmt(Math.abs(ur)))}
                         </td>
-                        <td style={{padding:'10px',textAlign:'right',opacity:dim('privat'),color:(!fut&&s.privatExp>0)?C.red:C.mut,...NUM}}>{cell(s.privatExp>0,fmtN(s.privatExp))}</td>
-                        <td style={{padding:'10px',textAlign:'right',color:(!fut&&inc>0)?C.grn:C.mut,...NUM}}>{cell(inc>0,fmt(inc))}</td>
-                        <td style={{padding:'10px',textAlign:'right',color:(!fut&&exp>0)?C.red:C.mut,...NUM}}>{cell(exp>0,fmtN(exp))}</td>
-                        <td style={{padding:'10px',textAlign:'right',fontWeight:600,color:ok?(net>=0?C.grn:C.red):C.mut,...NUM}}>
+                        <td style={{padding:'10px',textAlign:'right',opacity:dim('privat'),color:(!fut&&s.privatExp>0)?C.txt:C.mut,...NUM}}>{cell(s.privatExp>0,fmtN(s.privatExp))}</td>
+                        <td style={{padding:'10px',textAlign:'right',color:(!fut&&inc>0)?C.txt:C.mut,...NUM}}>{cell(inc>0,fmt(inc))}</td>
+                        <td style={{padding:'10px',textAlign:'right',color:(!fut&&exp>0)?C.txt:C.mut,...NUM}}>{cell(exp>0,fmtN(exp))}</td>
+                        <td style={{padding:'10px',textAlign:'right',fontWeight:600,color:ok?(net>=0?C.txt:C.txt):C.mut,...NUM}}>
                           {cell(inc>0||exp>0,(net>=0?'+':'-')+fmt(Math.abs(net)))}
                         </td>
                       </tr>
@@ -3561,18 +3556,18 @@ function App({session}) {
                   <tr style={{borderTop:'1px solid '+C.bdrM}}>
                     <td style={{padding:'12px',fontWeight:600,color:C.sub}}>Jahresgesamt</td>
                     <td colSpan={4}></td>
-                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.grn,...NUM}}>{fmt(yrTotF.totalInc)}</td>
-                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.red,...NUM}}>{fmtN(yrTotF.totalExp)}</td>
-                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:yrTotF.net>=0?C.grn:C.red,...NUM}}>{yrTotF.net>=0?'+':'-'}{fmt(Math.abs(yrTotF.net))}</td>
+                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.txt,...NUM}}>{fmt(yrTotF.totalInc)}</td>
+                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.txt,...NUM}}>{fmtN(yrTotF.totalExp)}</td>
+                    <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:yrTotF.net>=0?C.txt:C.txt,...NUM}}>{yrTotF.net>=0?'+':'-'}{fmt(Math.abs(yrTotF.net))}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
             <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
               {[
-                {label:'Jahreseinnahmen',val:fmt(yrTotF.totalInc),col:C.grn},
-                {label:'Jahresausgaben', val:fmtN(yrTotF.totalExp),col:C.red},
-                {label:'Jahresergebnis', val:(yrTotF.net>=0?'+':'-')+fmt(Math.abs(yrTotF.net)),col:yrTotF.net>=0?C.grn:C.red},
+                {label:'Jahreseinnahmen',val:fmt(yrTotF.totalInc),col:C.txt},
+                {label:'Jahresausgaben', val:fmtN(yrTotF.totalExp),col:C.txt},
+                {label:'Jahresergebnis', val:(yrTotF.net>=0?'+':'-')+fmt(Math.abs(yrTotF.net)),col:yrTotF.net>=0?C.txt:C.txt},
               ].map(({label,val,col})=>(
                 <div key={label} style={{flex:1,minWidth:155,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:16,padding:'18px 22px'}}>
                   <div style={{fontSize:12,color:C.sub,marginBottom:8,fontWeight:500}}>{label}</div>
@@ -3595,10 +3590,13 @@ function App({session}) {
               return (
               <div style={{marginBottom:20}}>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,marginBottom:12,flexWrap:'wrap'}}>
-                  <div style={{fontSize:14,fontWeight:700,display:'flex',alignItems:'center',gap:7}}><Ic p={P.spark} sz={16} col={KONTO_COLORS.unter.c}/> Persönlicher Steuerberater</div>
-                  <button onClick={analyzeTax} disabled={taxBusy} style={{background:KONTO_COLORS.unter.c,color:'#0A0A0A',border:'none',borderRadius:9,padding:'8px 14px',fontSize:13,fontWeight:600,cursor:taxBusy?'default':'pointer',fontFamily:'inherit',opacity:taxBusy?0.6:1}}>{taxBusy?'Analysiert…':(items.length?'Neu analysieren':'Analysieren')}</button>
+                  <button onClick={()=>setAdvOpen(o=>!o)} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:0}}>
+                    <Ic p={P.spark} sz={16} col={KONTO_COLORS.unter.c}/> <span style={{fontSize:14,fontWeight:700,color:C.txt}}>Persönlicher Steuerberater</span>
+                    <span style={{display:'inline-flex',transition:'transform .16s',transform:advOpen?'rotate(180deg)':'none'}}><Ic p={P.down} sz={14} col={C.sub}/></span>
+                  </button>
+                  {advOpen && <button onClick={analyzeTax} disabled={taxBusy} style={{background:KONTO_COLORS.unter.c,color:'#0A0A0A',border:'none',borderRadius:9,padding:'8px 14px',fontSize:13,fontWeight:600,cursor:taxBusy?'default':'pointer',fontFamily:'inherit',opacity:taxBusy?0.6:1}}>{taxBusy?'Analysiert…':(items.length?'Neu analysieren':'Analysieren')}</button>}
                 </div>
-                {items.length ? (
+                {advOpen && (items.length ? (
                   <div style={{display:'flex',flexDirection:'column',gap:8}}>
                     {items.map((h,i)=>{ const ty=TY[h.typ]||TY.tipp; const open=!!taxOpen[i]; const isQ=h.typ==='frage'; const ans=(tnote.answers||{})[h.titel]||''; return (
                       <div key={i} style={{background:C.surf2,border:'1px solid '+(open?hexA(ty.c,0.4):C.bdr),borderRadius:12,overflow:'hidden'}}>
@@ -3623,7 +3621,7 @@ function App({session}) {
                   </div>
                 ) : (
                   <div style={{...SC,border:'1px solid '+KONTO_COLORS.unter.bd,background:KONTO_COLORS.unter.tint,fontSize:13,color:C.sub,lineHeight:1.5}}>Dein persönlicher Steuerberater geht deine Zahlen für {yr} durch und gibt dir kurze Hinweise (worauf achten, was absetzbar ist, wo du sparen kannst) sowie gezielte Rückfragen. Tippe auf einen Hinweis zum Aufklappen.</div>
-                )}
+                ))}
               </div>
             ); })()}
             <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:20}}>
