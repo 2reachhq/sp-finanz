@@ -1074,6 +1074,7 @@ function App({session}) {
   const [invPreview,setInvPreview]= useState(false); // große Rechnungsvorschau (Popup)
   const [invView,setInvView]= useState(null);        // gestellte Rechnung als PDF ansehen (read-only)
   const [invCtx,setInvCtx]= useState(null);          // Rechts-Klick-Menü auf Rechnung {x,y,inv}
+  const [mailCompose,setMailCompose]= useState(null); // E-Mail-Versand Rechnung {inv,to,subject,body,sending}
   const [recExpand,setRecExpand]= useState({});      // welche wiederkehrenden Rechnungen aufgeklappt sind
   const [costYm,setCostYm]= useState(()=>{ try{ return new Date().toISOString().slice(0,7); }catch(e){ return yr+'-01'; } }); // Kosten-Dashboard Monat
   const [supaBusy,setSupaBusy]= useState(false);     // Supabase-Speicher wird gelesen
@@ -1869,6 +1870,25 @@ function App({session}) {
   const openInvoice = (inv)=>{ let v={...inv}; if(v.customerId && !v.custName){ const c=customers.find(x=>x.id===v.customerId); if(c){ v.custName=c.name||''; v.custAddress=c.address||''; v.custEmail=c.email||''; v.saveCust=false; } } if(v.account==null) v.account='unter'; setInvEdit(v); };
   // Zahlungsstatus einer gestellten Rechnung umschalten
   const setInvPaid = (id, paid)=> setData(prev=>({...prev, invoices:(prev.invoices||[]).map(iv=>iv.id===id?{...iv, paid, paidDate: paid?(iv.paidDate||new Date().toISOString().slice(0,10)):''}:iv)}));
+  /* ── Rechnung per E-Mail an den Kunden senden (Resend) ── */
+  const openMailCompose = (inv)=>{ const cust=invCustomer(inv); const co=companyFor(inv.domain||'unter')||{}; const subject='Rechnung '+inv.number+((co.name)?(' – '+co.name):''); const body=greetingFor(cust)+'\n\nanbei erhalten Sie die Rechnung '+inv.number+((co.name)?(' von '+co.name):'')+'.\n\nMit freundlichen Grüßen\n'+(co.contactName||co.senderName||co.name||''); setMailCompose({inv, to:(cust.email||''), subject, body, sending:false}); };
+  const sendInvoiceMail = async ()=>{ const mc=mailCompose; if(!mc||mc.sending) return; const inv=mc.inv; const co=companyFor(inv.domain||'unter')||{}; const to=(mc.to||'').trim();
+    if(!/.+@.+\..+/.test(to)){ setToast('Bitte eine gültige Empfänger-Adresse angeben.'); return; }
+    if(!String(co.senderEmail||'').trim()){ setToast('Bitte zuerst eine Absender-Adresse in den Einstellungen hinterlegen.'); return; }
+    setMailCompose(m=>m?{...m,sending:true}:m);
+    try{
+      const blob=await buildInvoicePDF(inv); const pdfBase64=await fileToB64(blob);
+      const fromName=String(co.senderName||co.name||'').replace(/[<>"]/g,'').trim(); const sender=String(co.senderEmail).trim();
+      const from=fromName?(fromName+' <'+sender+'>'):sender;
+      const escH=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const html='<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:1.6;white-space:pre-wrap">'+escH(mc.body)+'</div>';
+      const {data:resp,error}=await sb.functions.invoke('send-invoice',{body:{ to, from, replyTo:(co.email||undefined), subject:mc.subject, text:mc.body, html, pdfBase64, pdfName:'Rechnung_'+safeName(inv.number)+'.pdf' }});
+      if(error) throw error; if(resp&&resp.error) throw new Error(resp.error);
+      setData(prev=>({...prev, invoices:(prev.invoices||[]).map(iv=>iv.id===inv.id?{...iv, emailedAt:new Date().toISOString().slice(0,10), emailTo:to}:iv)}));
+      setMailCompose(null); setInvView(v=>v&&v.id===inv.id?{...v,emailedAt:new Date().toISOString().slice(0,10),emailTo:to}:v);
+      setToast('Rechnung '+inv.number+' an '+to+' gesendet.');
+    }catch(e){ setMailCompose(m=>m?{...m,sending:false}:m); setToast('Versand fehlgeschlagen: '+(e.message||e)); }
+  };
   // Gestellte Rechnung löschen (inkl. zugehöriger Buchung in allen Monaten)
   const delInvoice = (inv)=>{ setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); nd.invoices=(nd.invoices||[]).filter(iv=>iv.id!==inv.id); Object.keys(nd).forEach(y=>{ if(!/^\d+$/.test(y))return; Object.keys(nd[y]||{}).forEach(m=>{ const M=nd[y][m]; if(!M)return; const strip=arr=>(arr||[]).filter(it=>it.invId!==inv.id); if(M.unternehmen){M.unternehmen.clients=strip(M.unternehmen.clients);M.unternehmen.items=strip(M.unternehmen.items);} if(M.privat){M.privat.einnahmen=strip(M.privat.einnahmen);M.privat.items=strip(M.privat.items);} if(M.props)Object.keys(M.props).forEach(p=>{M.props[p].einnahmen=strip(M.props[p].einnahmen);M.props[p].expenses=strip(M.props[p].expenses);}); }); }); return nd; }); setToast('Rechnung '+inv.number+' gelöscht'); };
   // Rechnung als Vorlage für eine NEUE Rechnung übernehmen (alle Daten kopieren, neue Nr.)
@@ -2616,6 +2636,14 @@ function App({session}) {
                 <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                   <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>E-Mail</div><input value={co.email||''} onChange={e=>setCompanyFor(dom,{email:e.target.value})} style={{...SS,textAlign:'left'}}/></div>
                   <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Telefon</div><input value={co.phone||''} onChange={e=>setCompanyFor(dom,{phone:e.target.value})} style={{...SS,textAlign:'left'}}/></div>
+                </div>
+                <div style={{background:C.surf3,border:'1px solid '+C.bdr,borderRadius:11,padding:'12px 13px'}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.sub,marginBottom:8,display:'flex',alignItems:'center',gap:6}}><Ic p={P.receipt} sz={13} col={C.pri}/> Rechnungsversand per E-Mail</div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    <div style={{flex:2,minWidth:180}}><div style={{fontSize:11,color:C.sub,marginBottom:5}}>Absender-Adresse (verifizierte Domain)</div><input value={co.senderEmail||''} onChange={e=>setCompanyFor(dom,{senderEmail:e.target.value})} placeholder="rechnung@designpeak.io" style={{...SS,textAlign:'left'}}/></div>
+                    <div style={{flex:1,minWidth:140}}><div style={{fontSize:11,color:C.sub,marginBottom:5}}>Absender-Name</div><input value={co.senderName||''} onChange={e=>setCompanyFor(dom,{senderName:e.target.value})} placeholder={co.name||'Designpeak GmbH'} style={{...SS,textAlign:'left'}}/></div>
+                  </div>
+                  <div style={{fontSize:11,color:C.mut,marginTop:7,lineHeight:1.5}}>Die Adresse muss zu einer in Resend verifizierten Domain gehören. Antworten gehen an deine normale E-Mail oben.</div>
                 </div>
                 <div style={{height:1,background:C.sep,margin:'4px 0'}}/>
                 <div style={{fontSize:12,fontWeight:600,color:C.sub}}>Ansprechpartner</div>
@@ -3454,7 +3482,7 @@ function App({session}) {
                             <div key={inv.id} onClick={()=>setInvView(inv)} onContextMenu={e=>{e.preventDefault();setInvCtx({x:e.clientX,y:e.clientY,inv});}} title="Ansehen · Rechtsklick für Optionen" style={{display:'flex',alignItems:'center',gap:13,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'13px 15px',cursor:'pointer'}}>
                               <div style={{width:46,height:46,flexShrink:0,borderRadius:12,background:hexA(KONTO_COLORS.unter.c,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.prson} sz={20} col={KONTO_COLORS.unter.c}/></div>
                               <div style={{flex:1,minWidth:0}}>
-                                <div style={{fontSize:15.5,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:9}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</span><span style={{flexShrink:0,fontSize:11,fontWeight:700,color:inv.paid?C.grn:'#FFB37A',background:hexA(inv.paid?C.grn:'#FFB37A',0.14),borderRadius:6,padding:'2px 8px'}}>{inv.paid?'Bezahlt':'Offen'}</span></div>
+                                <div style={{fontSize:15.5,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:9}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</span><span style={{flexShrink:0,fontSize:11,fontWeight:700,color:inv.paid?C.grn:'#FFB37A',background:hexA(inv.paid?C.grn:'#FFB37A',0.14),borderRadius:6,padding:'2px 8px'}}>{inv.paid?'Bezahlt':'Offen'}</span>{inv.emailedAt && <span title={'Per E-Mail gesendet am '+toISO(inv.emailedAt)} style={{flexShrink:0,fontSize:12,color:C.pri}}>✉</span>}</div>
                                 <div style={{fontSize:12.5,color:C.sub,display:'flex',alignItems:'center',gap:13,marginTop:3,flexWrap:'wrap'}}>
                                   <span style={{display:'flex',alignItems:'center',gap:4}}><Ic p={P.doc} sz={12} col={C.mut}/>{inv.number}</span>
                                   <span style={{display:'flex',alignItems:'center',gap:4}}><Ic p={P.cal} sz={12} col={C.mut}/>{sent}</span>
@@ -4296,15 +4324,17 @@ function App({session}) {
               <div style={{fontSize:16,fontWeight:800,color:C.txt}}>Rechnung {invView.number}</div>
               <span style={{fontSize:11,fontWeight:700,color:invView.paid?C.grn:'#FFB37A',background:hexA(invView.paid?C.grn:'#FFB37A',0.14),borderRadius:6,padding:'3px 9px'}}>{invView.paid?'Bezahlt':'Offen'}</span>
               <span style={{fontSize:11,color:C.mut,display:'flex',alignItems:'center',gap:5}}><Ic p={P.lock||P.doc} sz={12} col={C.mut}/> nur Ansicht</span>
+              {invView.emailedAt && <span style={{fontSize:11,fontWeight:600,color:C.pri,display:'flex',alignItems:'center',gap:5}}>✉ Gesendet am {toISO(invView.emailedAt)}</span>}
               <button onClick={()=>setInvView(null)} title="Schließen" style={{marginLeft:'auto',background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:9,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
             </div>
             <div style={{flex:1,overflow:'auto',background:'#fff'}}>
-              <iframe title="Rechnung" srcDoc={invoiceHTML(invView,false)} style={{width:'100%',height:isMobile?'58vh':'62vh',border:'none',display:'block'}}/>
+              <iframe title="Rechnung" srcDoc={invoiceHTML(invView,false)} style={{width:'100%',height:isMobile?'52vh':'58vh',border:'none',display:'block'}}/>
             </div>
             <div style={{display:'flex',gap:9,padding:'13px 18px',borderTop:'1px solid '+C.sep,flexWrap:'wrap'}}>
+              <button onClick={()=>openMailCompose(invView)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 100%',background:C.act,color:C.actTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.receipt} sz={16} col={C.actTxt}/> {invView.emailedAt?'Erneut per E-Mail senden':'Per E-Mail an Kunden senden'}</button>
               <button onClick={()=>setInvPaid(invView.id,!invView.paid)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 150px',background:invView.paid?C.surf2:hexA(C.grn,0.16),border:'1px solid '+(invView.paid?C.bdr:hexA(C.grn,0.4)),color:invView.paid?C.txt:C.grn,borderRadius:11,padding:'11px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{invView.paid?'Als offen markieren':'Als bezahlt markieren'}</button>
-              <button onClick={()=>downloadInvoicePDF(invView)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 130px',background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:11,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.upload} sz={15} col={C.txt}/> PDF herunterladen</button>
-              <button onClick={()=>useInvoiceAsTemplate(invView)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 130px',background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:11,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.copy||P.doc} sz={15} col={C.txt}/> Als Vorlage nutzen</button>
+              <button onClick={()=>downloadInvoicePDF(invView)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 130px',background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:11,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.upload} sz={15} col={C.txt}/> PDF</button>
+              <button onClick={()=>useInvoiceAsTemplate(invView)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 130px',background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:11,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.copy||P.doc} sz={15} col={C.txt}/> Vorlage</button>
             </div>
           </div>
         </div>
@@ -4343,6 +4373,30 @@ function App({session}) {
           <Ic p={botOpen?P.down:P.spark} sz={24} col={C.priTxt}/>
         </button>
       )}
+
+      {/* ── Rechnung per E-Mail senden (Compose) ── */}
+      {mailCompose && (()=>{ const mc=mailCompose; const co=companyFor(mc.inv.domain||'unter')||{}; const noSender=!String(co.senderEmail||'').trim(); const fromName=String(co.senderName||co.name||'').trim(); return (
+        <div onClick={()=>{ if(!mc.sending) setMailCompose(null); }} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:170,display:'flex',alignItems:'center',justifyContent:'center',padding:isMobile?12:24}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,width:'min(560px,100%)',maxHeight:'92vh',overflowY:'auto',padding:'20px 22px',boxShadow:'0 24px 60px rgba(0,0,0,0.6)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+              <div style={{fontSize:17,fontWeight:800,color:C.txt}}>Rechnung {mc.inv.number} senden</div>
+              <button onClick={()=>!mc.sending&&setMailCompose(null)} style={{marginLeft:'auto',background:C.surf2,border:'none',color:C.sub,width:32,height:32,borderRadius:9,cursor:'pointer',fontSize:19,lineHeight:1,fontFamily:'inherit'}}>×</button>
+            </div>
+            {noSender && <div style={{fontSize:12.5,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.25)',borderRadius:10,padding:'10px 12px',marginBottom:14,lineHeight:1.5}}>Noch keine Absender-Adresse hinterlegt. Trag sie unter <b>Einstellungen → Rechnungsversand per E-Mail</b> ein (verifizierte Resend-Domain).</div>}
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:5}}>Von</div><div style={{...SS,textAlign:'left',color:noSender?C.mut:C.txt,background:C.surf3}}>{noSender?'(in Einstellungen festlegen)':((fromName?fromName+' ':'')+'<'+co.senderEmail+'>')}</div></div>
+              <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:5}}>An <span style={{color:C.red}}>*</span></div><input value={mc.to} onChange={e=>setMailCompose(m=>({...m,to:e.target.value}))} placeholder="kunde@beispiel.de" style={{...SS,textAlign:'left'}}/></div>
+              <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:5}}>Betreff</div><input value={mc.subject} onChange={e=>setMailCompose(m=>({...m,subject:e.target.value}))} style={{...SS,textAlign:'left'}}/></div>
+              <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:5}}>Nachricht</div><textarea value={mc.body} onChange={e=>setMailCompose(m=>({...m,body:e.target.value}))} rows={6} style={{...SS,textAlign:'left',resize:'vertical'}}/></div>
+              <div style={{display:'flex',alignItems:'center',gap:8,background:C.surf3,borderRadius:10,padding:'10px 12px',fontSize:13,color:C.sub}}><Ic p={P.clip} sz={15} col={C.pri}/> Anhang: Rechnung_{mc.inv.number}.pdf</div>
+            </div>
+            <div style={{display:'flex',gap:10,marginTop:16}}>
+              <button onClick={()=>!mc.sending&&setMailCompose(null)} style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:11,padding:'12px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Abbrechen</button>
+              <button onClick={sendInvoiceMail} disabled={mc.sending||noSender} style={{flex:2,background:C.act,color:C.actTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:(mc.sending||noSender)?'default':'pointer',fontFamily:'inherit',opacity:(mc.sending||noSender)?0.55:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>{mc.sending?'Sendet…':<><Ic p={P.receipt} sz={16} col={C.actTxt}/> Jetzt senden</>}</button>
+            </div>
+          </div>
+        </div>
+      );})()}
 
       {toast && (
         <div style={{position:'fixed',bottom:20,right:20,maxWidth:340,zIndex:130,
