@@ -768,11 +768,11 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
             <div style={{flex:'1 1 240px',minWidth:220}}>
               <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:8}}>Zielkonto</div>
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                {moveTargets.map(t=>{ const on=mvDest===t.key; const isImmo=t.key==='p1'||t.key==='p2'||t.key==='p3'; return (
-                  <button key={t.key} onClick={()=>setMvDest(t.key)} style={{display:'flex',alignItems:'center',gap:11,width:'100%',background:on?hexA(acc,0.14):C.surf2,border:'1px solid '+(on?acc:C.bdr),borderRadius:13,padding:'12px 13px',cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
-                    <span style={{width:36,height:36,flexShrink:0,borderRadius:10,background:on?acc:C.surf3,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={isImmo?P.house:P.brief} sz={17} col={on?'#0A0A0A':C.sub}/></span>
+                {moveTargets.map(t=>{ const on=mvDest===t.key; const isImmo=t.key==='p1'||t.key==='p2'||t.key==='p3'; const tcol=acctColor(t.key); const ticon=isImmo?P.house:t.key==='privat'?P.prson:P.brief; return (
+                  <button key={t.key} onClick={()=>setMvDest(t.key)} style={{display:'flex',alignItems:'center',gap:11,width:'100%',background:on?hexA(tcol,0.16):C.surf2,border:'1px solid '+(on?tcol:C.bdr),borderRadius:13,padding:'12px 13px',cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+                    <span style={{width:36,height:36,flexShrink:0,borderRadius:10,background:on?tcol:hexA(tcol,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={ticon} sz={17} col={on?'#0A0A0A':tcol}/></span>
                     <span style={{flex:1,fontSize:14,fontWeight:600,color:on?C.txt:C.sub,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.label}</span>
-                    {on && <Ic p={P.check} sz={16} col={acc}/>}
+                    {on && <Ic p={P.check} sz={16} col={tcol}/>}
                   </button>
                 ); })}
               </div>
@@ -2622,9 +2622,14 @@ function App({session}) {
 
   /* Reusable items renderer */
   const toolBtn = {background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:8,padding:'5px 11px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'};
+  // Konto-Helfer: eigene Farbe (Override) + Name generisch lesen/setzen
+  const acol = (key)=> (names.acctColors&&names.acctColors[key]) || acctColor(key);
+  const acctNameOf = (key)=> key==='unter' ? (names.unternehmen||'Firma') : key==='privat' ? (names.privatLabel||'Privat') : (names[key]||key);
+  const setAcctName = (key,val)=> setNames(n=> key==='unter' ? ({...n,unternehmen:val}) : key==='privat' ? ({...n,privatLabel:val}) : ({...n,[key]:val}));
+  const ACCT_COLOR_CHOICES=['#7BC2AA','#E8A39E','#ABC4FF','#FFC7A6','#C9B6FF','#8FE3C6','#F4C77B','#7FB3F2','#E59CC4','#9CD67F'];
   // Akzentfarbe des aktuell geöffneten/aktiven Kontos (Zahlen bleiben grün)
   const activeAcct = tab==='quellen' ? openAcct : (tab==='immo' ? sp : tab==='unter' ? 'unter' : tab==='privat' ? 'privat' : null);
-  const secAccent = activeAcct ? acctColor(activeAcct) : C.pri;
+  const secAccent = activeAcct ? acol(activeAcct) : C.pri;
 
   const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey, hideRecur, kind, sums, applyFn, addCtx, addLabel, addHeading) => {
     const kindEff = kind || (folderPath && folderPath[folderPath.length-1]==='Einnahmen' ? 'ein' : 'aus');
@@ -2884,13 +2889,13 @@ function App({session}) {
                   <button onClick={()=>scrollBy(-1)} title="Zurück" style={{...arrowBtn,position:'absolute',left:-46,top:'50%',transform:'translateY(-50%)',zIndex:5}}>‹</button>
                   <button onClick={()=>scrollBy(1)} title="Weiter" style={{...arrowBtn,position:'absolute',right:-46,top:'50%',transform:'translateY(-50%)',zIndex:5}}>›</button>
                   <div ref={quellenScrollRef} style={{display:'flex',gap:14,overflowX:'auto',scrollbarWidth:'none',scrollSnapType:'x mandatory',paddingBottom:4}}>
-                    {konten.map(k=>{ const erg=k.inc-k.exp; const c=acctColor(k.key), tint=hexA(c,0.13), bd=hexA(c,0.4); const open=openAcct===k.key; const toggle=()=>{ if(open){ setOpenAcct(null); } else { if(k.kind==='prop')setSp(k.pid); setOpenAcct(k.key); } }; return (
+                    {konten.map(k=>{ const erg=k.inc-k.exp; const c=acol(k.key), tint=hexA(c,0.13), bd=hexA(c,0.4); const open=openAcct===k.key; const toggle=()=>{ if(open){ setOpenAcct(null); } else { if(k.kind==='prop')setSp(k.pid); setOpenAcct(k.key); } }; return (
                       <div key={k.key} onClick={toggle} style={{flexShrink:0,width:isMobile?'82%':'calc((100% - 28px)/3)',scrollSnapAlign:'start',background:open?tint:C.surf2,border:'1px solid '+(open?c:'transparent'),borderRadius:18,padding:'18px 20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
                         <div style={{flex:1,minWidth:0}}>
-                          <input value={k.name} onChange={k.onName} onClick={e=>e.stopPropagation()} placeholder="Name" style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:16,fontWeight:500,color:C.sub,width:'100%',padding:0,marginBottom:7}} />
+                          <div style={{fontSize:16,fontWeight:500,color:C.sub,marginBottom:7,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.name}</div>
                           <div style={{fontSize:27,fontWeight:800,color:C.txt,...NUM,lineHeight:1}}>{fmt(erg)}</div>
                         </div>
-                        <button onClick={e=>{e.stopPropagation(); setIconPick(k.key);}} title="Icon ändern" style={{width:46,height:46,borderRadius:13,background:c,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Ic p={k.icon} sz={22} col={'#0A0A0A'}/></button>
+                        <button onClick={e=>{e.stopPropagation(); setIconPick(k.key);}} title="Konto bearbeiten" style={{width:46,height:46,borderRadius:13,background:c,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Ic p={k.icon} sz={22} col={'#0A0A0A'}/></button>
                       </div>
                     ); })}
                   </div>
@@ -4588,20 +4593,27 @@ function App({session}) {
         </Sheet>
       )}
 
-      {iconPick && (
-        <Sheet title="Icon wählen" onClose={()=>setIconPick(null)}>
-          <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
-            {[['house',P.house],['bed',P.bed],['brief',P.brief],['prson',P.prson],['grid',P.grid],['cal',P.cal],['doc',P.doc]].map(([key,icon])=>{
-              const cur=((names.propIcon&&names.propIcon[iconPick])||'house')===key;
-              return (
-                <button key={key} onClick={()=>{ setNames(n=>({...n,propIcon:{...(n.propIcon||{}),[iconPick]:key}})); setIconPick(null); }} style={{width:54,height:54,borderRadius:14,border:'2px solid '+(cur?C.pri:C.bdr),background:cur?C.priL:C.surf2,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                  <Ic p={icon} sz={22} col={cur?C.pri:C.txt}/>
-                </button>
-              );
-            })}
+      {iconPick && (()=>{ const ak=iconPick; const defIcon=ak==='unter'?'brief':ak==='privat'?'prson':'house'; const curIcon=(names.propIcon&&names.propIcon[ak])||defIcon; const curCol=acol(ak); return (
+        <Sheet title="Konto bearbeiten" onClose={()=>setIconPick(null)}>
+          <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Kontoname</div>
+          <input value={acctNameOf(ak)} onChange={e=>setAcctName(ak,e.target.value)} placeholder="Kontoname" style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,color:C.txt,padding:'12px 14px',fontSize:14.5,outline:'none',fontFamily:'inherit',boxSizing:'border-box',marginBottom:18}}/>
+          <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:8}}>Icon</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:10,marginBottom:18}}>
+            {[['house',P.house],['bed',P.bed],['brief',P.brief],['prson',P.prson],['grid',P.grid],['cal',P.cal],['doc',P.doc]].map(([key,icon])=>{ const cur=curIcon===key; return (
+              <button key={key} onClick={()=>setNames(n=>({...n,propIcon:{...(n.propIcon||{}),[ak]:key}}))} style={{width:54,height:54,borderRadius:14,border:'2px solid '+(cur?curCol:C.bdr),background:cur?hexA(curCol,0.16):C.surf2,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <Ic p={icon} sz={22} col={cur?curCol:C.txt}/>
+              </button>
+            ); })}
           </div>
+          <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:8}}>Kontofarbe</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:10,marginBottom:6}}>
+            {ACCT_COLOR_CHOICES.map(col=>{ const cur=curCol.toLowerCase()===col.toLowerCase(); return (
+              <button key={col} onClick={()=>setNames(n=>({...n,acctColors:{...(n.acctColors||{}),[ak]:col}}))} title={col} style={{width:42,height:42,borderRadius:'50%',background:col,border:cur?'3px solid '+C.txt:'2px solid '+C.bdr,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{cur&&<Ic p={P.check} sz={17} col={'#0A0A0A'}/>}</button>
+            ); })}
+          </div>
+          <button onClick={()=>setIconPick(null)} style={{width:'100%',background:curCol,color:'#0A0A0A',border:'none',borderRadius:12,padding:'13px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginTop:18}}>Fertig</button>
         </Sheet>
-      )}
+      ); })()}
 
       {filePreview && (()=>{ const fp=filePreview; return (
         <div onClick={()=>setFilePreview(null)} style={{position:'fixed',inset:0,background:'rgba(8,8,10,0.92)',zIndex:170,display:'flex',flexDirection:'column'}}>
