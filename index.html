@@ -1183,6 +1183,10 @@ function App({session}) {
   const [capProg,setCapProg]= useState(0);         // Erfassung: Beleg-Upload-Fortschritt
   const [importTab,setImportTab]= useState('beleg'); // Import-Umschalter: 'beleg' | 'bank'
   const [confirmMatch,setConfirmMatch]= useState(null); // Bankauszug: Beleg-Treffer bestätigen {draftId, match}
+  const [assignFor,setAssignFor]= useState(null);  // Bankauszug: Entwurf im „Beleg zuordnen"-Modus (draftId)
+  const [assignSel,setAssignSel]= useState(null);  // gewählter offener Beleg {ty,tm,account,kind,itemId,name,amount,datum,belegnr,fileData,filePath,fileName}
+  const [assignName,setAssignName]= useState(true);// Name vom Bankauszug übernehmen (default an)
+  const [assignAcc,setAssignAcc]= useState('');    // Konto-Filter in der Beleg-Zuordnung ('' = alle)
   const [filePreview,setFilePreview]= useState(null);   // Beleg-Vorschau (dunkel, nur PDF/Bild) {src,name,isPdf,replace,remove}
   const [custTab,setCustTab]= useState('details'); // Kundenprofil: Details vs Rechnungen
   const [belPath,setBelPath]= useState([]);        // Belege-DB Ordnerpfad: [bereich, jahr, monat, kind]
@@ -1936,7 +1940,9 @@ function App({session}) {
       if(M.privat){ visit(M.privat.einnahmen,'privat','ein'); visit(M.privat.items,'privat','aus'); }
     }); }); return best;
   };
-  const confirmBankMatch = (draftId, match)=>{ if(!match) return; setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); const dft=(nd.drafts||[]).find(x=>x.id===draftId); const bankDate=dft?dft.datum:''; const M=nd[match.ty]&&nd[match.ty][match.tm]; if(M){ const sub = match.account==='unter'?(match.kind==='aus'?'items':'clients') : match.account==='privat'?(match.kind==='aus'?'items':'einnahmen') : (match.kind==='aus'?'expenses':'einnahmen'); const cont = match.account==='unter'?M.unternehmen : match.account==='privat'?M.privat : (M.props&&M.props[match.account]); if(cont&&cont[sub]){ cont[sub]=cont[sub].map(it=>it.id===match.itemId?{...it,status:(match.kind==='ein'?'bezahlt':'abgebucht'),bankConfirmed:true,bankDate:bankDate||it.datum}:it); } } nd.drafts=(nd.drafts||[]).map(x=>x.id===draftId?{...x,confirmed:true,linkedTo:{ty:match.ty,tm:match.tm,account:match.account,itemId:match.itemId}}:x); return nd; }); setConfirmMatch(null); setToast('Bestätigt → Status: '+(match.kind==='ein'?'Bezahlt':'Abgebucht')); };
+  const confirmBankMatch = (draftId, match, bankName)=>{ if(!match) return; setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); const dft=(nd.drafts||[]).find(x=>x.id===draftId); const bankDate=dft?dft.datum:''; const M=nd[match.ty]&&nd[match.ty][match.tm]; if(M){ const sub = match.account==='unter'?(match.kind==='aus'?'items':'clients') : match.account==='privat'?(match.kind==='aus'?'items':'einnahmen') : (match.kind==='aus'?'expenses':'einnahmen'); const cont = match.account==='unter'?M.unternehmen : match.account==='privat'?M.privat : (M.props&&M.props[match.account]); if(cont&&cont[sub]){ cont[sub]=cont[sub].map(it=>it.id===match.itemId?{...it,status:(match.kind==='ein'?'bezahlt':'abgebucht'),bankConfirmed:true,bankDate:bankDate||it.datum,name:(bankName&&String(bankName).trim())?bankName:it.name}:it); } } nd.drafts=(nd.drafts||[]).map(x=>x.id===draftId?{...x,confirmed:true,linkedTo:{ty:match.ty,tm:match.tm,account:match.account,itemId:match.itemId}}:x); return nd; }); setConfirmMatch(null); setAssignFor(null); setAssignSel(null); setDraftEdit(null); setToast('Beleg zugeordnet → Status: '+(match.kind==='ein'?'Bezahlt':'Abgebucht')); };
+  // Liste offener Belege (Status „offen") – optional nach Art (ein/aus) gefiltert
+  const openBelegeList = (kindFilter)=>{ const out=[]; Object.keys(data||{}).forEach(yk=>{ if(isNaN(+yk))return; const Y=data[yk]; if(!Y||typeof Y!=='object')return; Object.keys(Y).forEach(mk=>{ if(isNaN(+mk))return; const M=Y[mk]; if(!M)return; const grab=(arr,acc,kd)=>{ (arr||[]).forEach(it=>{ if(it.status==='offen' && (!kindFilter||kd===kindFilter)) out.push({it,account:acc,kind:kd,ty:+yk,tm:+mk}); }); }; if(M.props)Object.keys(M.props).forEach(pid=>{ const p=M.props[pid]||{}; grab(p.einnahmen,pid,'ein'); grab(p.expenses,pid,'aus'); }); if(M.unternehmen){ grab(M.unternehmen.clients,'unter','ein'); grab(M.unternehmen.items,'unter','aus'); } if(M.privat){ grab(M.privat.einnahmen,'privat','ein'); grab(M.privat.items,'privat','aus'); } }); }); out.sort((a,b)=>(b.ty-a.ty)||(b.tm-a.tm)); return out; };
 
   /* ── Rechnungen ── */
   const company = data.company || {};              // Unternehmen (bestehend)
@@ -2521,9 +2527,9 @@ function App({session}) {
 
   /* Sidebar nav */
   const NAV = [
+    {id:'quellen',label:'Konten',       icon:P.grid},
     {id:'import', label:'Import',       icon:P.upload},
     {id:'rechnung',label:'Rechnungen',  icon:P.receipt},
-    {id:'berater',label:'KI-Berater',   icon:P.spark},
   ];
   const SONSTIGES = [
     {id:'kunden', label:'Kunden',       icon:P.prson},
@@ -3218,7 +3224,7 @@ function App({session}) {
             const allIds = drafts.map(d=>d.id);
             const allSel = allIds.length>0 && draftSel.length===allIds.length;
             const draftRow = d => { const hasFile=!!d.fileData; const sel=draftSel.includes(d.id); const matched=d.openMatch && !d.confirmed; const done=!!d.confirmed; const catTxt=[d.category, d.datum&&(toISO(d.datum)||d.datum)].filter(Boolean).join(' · ')||'Details ergänzen'; return (
-              <div key={d.id} draggable onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>{ if(done) return; if(matched){ setConfirmMatch({draftId:d.id,match:d.openMatch}); } else { setDraftEdit(d.id); } }} onContextMenu={e=>{e.preventDefault();setDraftCtx({x:e.clientX,y:e.clientY,id:d.id});}} style={{display:'flex',gap:12,alignItems:'center',background:matched?hexA(C.pri,0.08):(done?hexA(C.grn,0.06):C.surf2),border:'1px solid '+(done?hexA(C.grn,0.5):(matched?C.pri:(sel?C.pri:C.bdr))),borderRadius:14,padding:'12px 14px',cursor:done?'default':'pointer'}}>
+              <div key={d.id} draggable onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>{ if(done) return; setAssignFor(null); setAssignSel(null); setDraftEdit(d.id); }} onContextMenu={e=>{e.preventDefault();setDraftCtx({x:e.clientX,y:e.clientY,id:d.id});}} style={{display:'flex',gap:12,alignItems:'center',background:matched?hexA(C.pri,0.08):(done?hexA(C.grn,0.06):C.surf2),border:'1px solid '+(done?hexA(C.grn,0.5):(matched?C.pri:(sel?C.pri:C.bdr))),borderRadius:14,padding:'12px 14px',cursor:done?'default':'pointer'}}>
                 <button onClick={e=>{e.stopPropagation();setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id]);}} title="Auswählen" style={{width:22,height:22,flexShrink:0,borderRadius:6,border:'1.5px solid '+(sel?C.pri:C.bdrM),background:sel?C.pri:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}>{sel&&<Ic p={P.check} sz={13} col={C.priTxt}/>}</button>
                 <label onClick={e=>e.stopPropagation()} title={hasFile?'Beleg ersetzen':'Beleg hochladen'} style={{position:'relative',width:44,height:44,flexShrink:0,borderRadius:13,background:hasFile?hexA(C.pri,0.16):C.surf3,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
                   <Ic p={hasFile?P.clip:P.upload} sz={17} col={hasFile?C.pri:C.sub}/>
@@ -3333,26 +3339,90 @@ function App({session}) {
                   <div style={{position:'fixed',inset:0,background:C.bg,zIndex:130,display:'flex',flexDirection:'column'}}>
                     {/* Kopfzeile */}
                     <div style={{display:'flex',alignItems:'center',gap:14,padding:'16px 26px',borderBottom:'1px solid '+C.bdr,flexShrink:0}}>
-                      <button onClick={()=>setDraftEdit(null)} title="Zurück zum Import" style={{display:'flex',alignItems:'center',gap:7,background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:10,padding:'8px 14px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><span style={{fontSize:16,lineHeight:1}}>←</span> Zurück</button>
-                      <div style={{fontSize:17,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>{hasFile?'Beleg erfassen':'Beleg hochladen'}</div>
+                      <button onClick={()=>{ if(assignFor===d.id){ setAssignFor(null); setAssignSel(null); } else setDraftEdit(null); }} title="Zurück" style={{display:'flex',alignItems:'center',gap:7,background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:10,padding:'8px 14px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><span style={{fontSize:16,lineHeight:1}}>←</span> Zurück</button>
+                      <div style={{fontSize:17,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>{assignFor===d.id?'Beleg zuordnen':hasFile?'Beleg erfassen':'Beleg hochladen'}</div>
                       <div style={{marginLeft:'auto',fontSize:13,color:C.mut}}>{d.name||'Neuer Posten'}{num(d.amount)?(' · '+fmt(num(d.amount))):''}</div>
                     </div>
-                    {!hasFile ? (
-                    /* Schritt 1: Beleg zuerst hochladen (kein Pop-up, eigene Seite) */
+                    {assignFor===d.id ? (()=>{
+                    /* Beleg zuordnen: vorhandenen offenen Beleg dieser Bankbewegung zuordnen */
+                    const list=openBelegeList(d.kind); const accs=[...new Set(list.map(x=>x.account))]; const shownList=assignAcc?list.filter(x=>x.account===assignAcc):list; const sel=assignSel;
+                    const _iso=s=>toISO(s)||''; const amountOk=sel&&Math.abs(num(d.amount)-num(sel.amount))<0.02; const dDt=sel&&d.datum&&sel.datum?Math.abs((new Date(_iso(d.datum))-new Date(_iso(sel.datum)))/86400000):null; const dateOk=dDt!=null&&dDt<=12; const nrOk=sel&&d.belegnr&&sel.belegnr&&String(d.belegnr).toLowerCase()===String(sel.belegnr).toLowerCase(); const nameDiff=sel&&normName(d.name||'')!==normName(sel.name||'');
+                    return (
+                    <div style={{flex:1,display:'flex',minHeight:0,flexDirection:isMobile?'column':'row'}}>
+                      <div style={{flex:isMobile?'none':1,height:isMobile?240:'auto',background:C.surf2,borderRight:isMobile?'none':'1px solid '+C.bdr,borderBottom:isMobile?'1px solid '+C.bdr:'none',display:'flex',alignItems:'center',justifyContent:'center',padding:isMobile?14:24}}>
+                        {sel ? ((/pdf/i.test(sel.fileName||'')||/^data:application\/pdf/i.test(sel.fileData||''))
+                          ? <iframe src={sel.fileData||''} title="Beleg" style={{width:'100%',height:'100%',border:'none',borderRadius:12,background:'#fff'}}/>
+                          : (sel.fileData? <img src={sel.fileData} alt="Beleg" style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:12,boxShadow:'0 10px 40px rgba(0,0,0,0.4)'}}/>
+                             : (sel.filePath? <button onClick={()=>openFile(sel.filePath,sel.fileName)} style={{display:'inline-flex',alignItems:'center',gap:8,background:hexA(C.pri,0.16),border:'none',color:C.pri,borderRadius:11,padding:'12px 18px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.doc} sz={16} col={C.pri}/> Beleg ansehen</button>
+                                : <div style={{color:C.mut,fontSize:13}}>Kein Vorschaubild</div>)))
+                          : <div style={{textAlign:'center',color:C.mut,maxWidth:280}}><Ic p={P.clip} sz={30} col={C.mut}/><div style={{marginTop:12,fontSize:13.5,lineHeight:1.5}}>Wähle rechts einen offenen Beleg – die Vorschau erscheint hier.</div></div>}
+                      </div>
+                      <div style={{width:isMobile?'auto':'min(480px,46%)',flexShrink:0,overflowY:'auto',padding:isMobile?'18px 18px 40px':'24px 26px 48px'}}>
+                        <div style={{fontSize:12.5,color:C.sub,lineHeight:1.5,marginBottom:14}}>Bankbewegung <b style={{color:C.txt}}>{d.name||'—'}</b> · {fmt(num(d.amount))}{d.datum?(' · '+(toISO(d.datum)||d.datum)):''} — wähle den passenden offenen Beleg.</div>
+                        {sel && (
+                          <div style={{background:amountOk?hexA(C.grn,0.10):hexA('#FFB37A',0.10),border:'1px solid '+(amountOk?hexA(C.grn,0.4):hexA('#FFB37A',0.4)),borderRadius:11,padding:'11px 13px',marginBottom:14}}>
+                            <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13.5,fontWeight:700,color:amountOk?C.grn:'#FFB37A'}}><Ic p={amountOk?P.check:P.spark} sz={15} col={amountOk?C.grn:'#FFB37A'}/> {amountOk?'Passt – Betrag stimmt überein':'Betrag weicht ab – bitte prüfen'}</div>
+                            <div style={{fontSize:11.5,color:C.sub,marginTop:6,lineHeight:1.5}}>{[amountOk?'Betrag ✓':'Betrag ≠ ('+fmt(num(sel.amount))+')', dateOk?'Datum ✓':(dDt!=null?'Datum '+Math.round(dDt)+' T entfernt':'kein Datum'), nrOk?'Beleg-Nr ✓':(d.belegnr&&sel.belegnr?'Beleg-Nr ≠':'')].filter(Boolean).join(' · ')}</div>
+                          </div>
+                        )}
+                        {accs.length>1 && (
+                          <div style={{display:'flex',gap:7,flexWrap:'wrap',marginBottom:12}}>
+                            <button onClick={()=>setAssignAcc('')} style={{background:assignAcc===''?C.pri:C.surf2,color:assignAcc===''?C.priTxt:C.sub,border:'1px solid '+(assignAcc===''?C.pri:C.bdr),borderRadius:8,padding:'5px 11px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Alle Konten</button>
+                            {accs.map(a=>(<button key={a} onClick={()=>setAssignAcc(a)} style={{background:assignAcc===a?C.pri:C.surf2,color:assignAcc===a?C.priTxt:C.sub,border:'1px solid '+(assignAcc===a?C.pri:C.bdr),borderRadius:8,padding:'5px 11px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{captureAccLabel(a)}</button>))}
+                          </div>
+                        )}
+                        <div style={{fontSize:11,fontWeight:700,color:C.sub,letterSpacing:'0.03em',marginBottom:9}}>OFFENE {d.kind==='ein'?'EINNAHMEN':'AUSGABEN'} ({shownList.length})</div>
+                        {shownList.length? (<div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:16}}>{shownList.map(b=>{ const on=sel&&sel.itemId===b.it.id; return (
+                          <button key={b.it.id} onClick={()=>setAssignSel({ty:b.ty,tm:b.tm,account:b.account,kind:b.kind,itemId:b.it.id,name:b.it.name,amount:b.it.amount,datum:b.it.datum,belegnr:b.it.belegnr,fileData:b.it.fileData,filePath:b.it.filePath,fileName:b.it.fileName})} style={{display:'flex',gap:11,alignItems:'center',background:on?hexA(C.pri,0.12):C.surf2,border:'1px solid '+(on?C.pri:C.bdr),borderRadius:12,padding:'10px 12px',cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+                            <div style={{width:34,height:34,flexShrink:0,borderRadius:9,background:b.it.fileData||b.it.filePath?hexA(C.pri,0.16):C.surf3,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={b.it.fileData||b.it.filePath?P.clip:P.receipt} sz={15} col={b.it.fileData||b.it.filePath?C.pri:C.sub}/></div>
+                            <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.it.name||'—'}</div><div style={{fontSize:11.5,color:C.sub,marginTop:2}}>{captureAccLabel(b.account)} · {MONTHS[b.tm]} {b.ty}{b.it.belegnr?(' · '+b.it.belegnr):''}</div></div>
+                            <div style={{fontSize:13.5,fontWeight:700,color:C.txt,...NUM,flexShrink:0}}>{fmt(num(b.it.amount))}</div>
+                            {on&&<Ic p={P.check} sz={16} col={C.pri}/>}
+                          </button>
+                        ); })}</div>) : (<div style={{fontSize:13,color:C.mut,textAlign:'center',padding:'22px 14px',lineHeight:1.6,marginBottom:16}}>Keine offenen {d.kind==='ein'?'Einnahmen':'Ausgaben'} vorhanden.<br/>Erfasse Belege unter Import → Beleg.</div>)}
+                        {sel && (<>
+                          <div style={{background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,padding:'12px 13px',marginBottom:14}}>
+                            <div style={{fontSize:11,fontWeight:700,color:C.sub,letterSpacing:'0.02em',marginBottom:8}}>NAME PRÜFEN</div>
+                            <div style={{display:'flex',justifyContent:'space-between',gap:10,fontSize:13,marginBottom:4}}><span style={{color:C.mut}}>Bankauszug</span><span style={{color:C.txt,fontWeight:600,textAlign:'right'}}>{d.name||'—'}</span></div>
+                            <div style={{display:'flex',justifyContent:'space-between',gap:10,fontSize:13}}><span style={{color:C.mut}}>Beleg</span><span style={{color:nameDiff?'#FFB37A':C.txt,fontWeight:600,textAlign:'right'}}>{sel.name||'—'}</span></div>
+                            <label style={{display:'flex',alignItems:'center',gap:9,marginTop:11,cursor:'pointer',fontSize:13,color:C.txt}}>
+                              <span onClick={()=>setAssignName(v=>!v)} style={{width:38,height:22,flexShrink:0,borderRadius:99,background:assignName?C.pri:C.surf3,position:'relative',transition:'background .15s'}}><span style={{position:'absolute',top:2,left:assignName?18:2,width:18,height:18,borderRadius:'50%',background:'#fff',transition:'left .15s'}}/></span>
+                              <span>Namen vom Bankauszug übernehmen{nameDiff?'':' (identisch)'}</span>
+                            </label>
+                          </div>
+                          <button onClick={()=>confirmBankMatch(d.id, {ty:sel.ty,tm:sel.tm,account:sel.account,kind:sel.kind,itemId:sel.itemId}, assignName?(d.name||''):'')} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'13px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.check} sz={15} col={C.priTxt}/> Zuordnen &amp; bestätigen</button>
+                        </>)}
+                      </div>
+                    </div>
+                    ); })() : !hasFile ? (
+                    /* Schritt 1: zwei Wege – Beleg hochladen ODER vorhandenen zuordnen */
                     <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'30px'}}>
-                      <div style={{width:'min(560px,100%)',textAlign:'center'}}>
-                        <div style={{width:64,height:64,borderRadius:18,background:hexA(C.pri,0.14),display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 18px'}}><Ic p={P.upload} sz={28} col={C.pri}/></div>
-                        <div style={{fontSize:20,fontWeight:800,color:C.txt,letterSpacing:'-0.02em',marginBottom:8}}>Zuerst den Beleg hochladen</div>
-                        <div style={{fontSize:14,color:C.sub,lineHeight:1.5,marginBottom:24}}>Lade Foto, Scan oder PDF dieser Buchung hoch. Danach erfasst du rechts alle Angaben – der Beleg bleibt links sichtbar.</div>
+                      <div style={{width:'min(620px,100%)'}}>
+                        <div style={{textAlign:'center',marginBottom:26}}>
+                          <div style={{fontSize:20,fontWeight:800,color:C.txt,letterSpacing:'-0.02em',marginBottom:6}}>Beleg zu dieser Bankbewegung</div>
+                          <div style={{fontSize:13.5,color:C.sub}}>{d.name||'—'} · {fmt(num(d.amount))}{d.datum?(' · '+(toISO(d.datum)||d.datum)):''}</div>
+                        </div>
                         {uploading ? (
-                          <div style={{maxWidth:380,margin:'0 auto'}}>
+                          <div style={{maxWidth:380,margin:'0 auto',textAlign:'center'}}>
                             <div style={{display:'flex',justifyContent:'space-between',fontSize:12.5,color:C.sub,marginBottom:8}}><span>Beleg wird hochgeladen…</span><span style={{fontWeight:700,color:C.pri}}>{Math.round(draftUpProg)}%</span></div>
                             <div style={{height:8,borderRadius:99,background:C.surf2,overflow:'hidden'}}><div style={{height:'100%',width:draftUpProg+'%',background:C.pri,borderRadius:99,transition:'width 0.2s ease'}}/></div>
                           </div>
                         ) : (
-                          <label style={{display:'inline-flex',alignItems:'center',justifyContent:'center',gap:9,background:C.pri,color:C.priTxt,borderRadius:12,padding:'13px 26px',fontSize:14.5,fontWeight:700,cursor:'pointer'}}><Ic p={P.upload} sz={16} col={C.priTxt}/> Beleg auswählen<input type="file" accept="image/*,.pdf" onChange={e=>{const f=e.target.files[0];e.target.value='';draftFile(d.id,f);}} style={{display:'none'}}/></label>
+                        <div style={{display:'flex',gap:14,flexWrap:'wrap'}}>
+                          <button onClick={()=>{ setAssignSel(null); setAssignAcc(''); setAssignName(true); setAssignFor(d.id); }} style={{flex:'1 1 240px',display:'flex',flexDirection:'column',alignItems:'center',gap:10,background:hexA(C.pri,0.07),border:'1.5px solid '+hexA(C.pri,0.4),borderRadius:16,padding:'26px 20px',cursor:'pointer',fontFamily:'inherit'}}>
+                            <div style={{width:52,height:52,borderRadius:14,background:hexA(C.pri,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={24} col={C.pri}/></div>
+                            <div style={{fontSize:15.5,fontWeight:800,color:C.txt}}>Beleg zuordnen</div>
+                            <div style={{fontSize:12.5,color:C.sub,textAlign:'center',lineHeight:1.5}}>Bereits erfassten offenen Beleg dieser Bewegung zuordnen.</div>
+                          </button>
+                          <label style={{flex:'1 1 240px',display:'flex',flexDirection:'column',alignItems:'center',gap:10,background:C.surf2,border:'1.5px solid '+C.bdr,borderRadius:16,padding:'26px 20px',cursor:'pointer',fontFamily:'inherit'}}>
+                            <div style={{width:52,height:52,borderRadius:14,background:C.surf3,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.upload} sz={24} col={C.sub}/></div>
+                            <div style={{fontSize:15.5,fontWeight:800,color:C.txt}}>Beleg hochladen</div>
+                            <div style={{fontSize:12.5,color:C.sub,textAlign:'center',lineHeight:1.5}}>Neuen Beleg (Foto/PDF) hochladen und Felder ausfüllen.</div>
+                            <input type="file" accept="image/*,.pdf" onChange={e=>{const f=e.target.files[0];e.target.value='';draftFile(d.id,f);}} style={{display:'none'}}/>
+                          </label>
+                        </div>
                         )}
-                        <div style={{marginTop:22}}><button onClick={()=>{ delDraft(d.id); setDraftEdit(null); }} style={{background:'none',border:'none',color:C.mut,fontSize:13,cursor:'pointer',fontFamily:'inherit',textDecoration:'underline'}}>Buchung verwerfen</button></div>
+                        <div style={{marginTop:22,textAlign:'center'}}><button onClick={()=>{ delDraft(d.id); setDraftEdit(null); }} style={{background:'none',border:'none',color:C.mut,fontSize:13,cursor:'pointer',fontFamily:'inherit',textDecoration:'underline'}}>Buchung verwerfen</button></div>
                       </div>
                     </div>
                     ) : (
