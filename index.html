@@ -326,6 +326,7 @@ const P = {
   bed:   'M3 18v-5a3 3 0 013-3h12a3 3 0 013 3v5 M3 18h18 M3 13V8 M7 10V8h5v2',
   repeat:'M17 1l4 4-4 4 M3 11V9a4 4 0 014-4h14 M7 23l-4-4 4-4 M21 13v2a4 4 0 01-4 4H3',
   menu:  'M3 6h18 M3 12h18 M3 18h18',
+  plus:  'M12 5v14 M5 12h14',
   close: 'M18 6L6 18 M6 6l12 12',
   grip:  'M5 9h14 M5 15h14',
   check: 'M20 6L9 17l-5-5',
@@ -547,6 +548,8 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
               ? {background:C.surf3,border:'1px solid '+C.bdr,borderRadius:8,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:600,color:C.sub,display:'inline-flex',alignItems:'center',gap:5}
               : {background:'none',border:'none',padding:0,cursor:'pointer',fontFamily:'inherit',fontSize:13,color:C.mut,display:'inline-flex',alignItems:'center',gap:4}}>{item.category||'Kategorie'} <Ic p={P.down} sz={11} col={C.mut}/></button>
             {isoDate(item.datum) && <span title={dateLabel} style={{fontSize:12,color:C.sub,display:'inline-flex',alignItems:'center',gap:4}}><Ic p={P.cal} sz={11} col={C.mut}/>{(()=>{const iso=isoDate(item.datum);const a=iso.split('-');return a[2]+'.'+a[1]+'.'+a[0].slice(2);})()}</span>}
+            {item.status==='offen' && <span title="Noch nicht durch Bankkontoauszug bestätigt" style={{fontSize:11,fontWeight:700,color:'#FFB37A',background:hexA('#FFB37A',0.14),border:'1px solid '+hexA('#FFB37A',0.35),borderRadius:7,padding:'2px 8px'}}>Offen</span>}
+            {(item.status==='abgebucht'||item.status==='bezahlt') && <span title={item.status==='bezahlt'?'Bezahlt':'Abgebucht'} style={{fontSize:11,fontWeight:700,color:C.grn,background:hexA(C.grn,0.14),border:'1px solid '+hexA(C.grn,0.35),borderRadius:7,padding:'2px 8px',display:'inline-flex',alignItems:'center',gap:4}}><Ic p={P.check} sz={10} col={C.grn}/> {item.status==='bezahlt'?'Bezahlt':'Abgebucht'}</span>}
             {bookingMissing(item).length>0 && <span title={'Unvollständig: '+bookingMissing(item).join(', ')} style={{fontSize:11,fontWeight:600,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.25)',borderRadius:7,padding:'2px 8px',display:'inline-flex',alignItems:'center',gap:4}}>⚠ Unvollständig</span>}
           </div>
         </div>
@@ -1165,6 +1168,10 @@ function App({session}) {
   const [draftEdit,setDraftEdit]= useState(null); // Import: Entwurf in der Vollbild-Erfassung (id)
   const [draftUpId,setDraftUpId]= useState(null); // Import: Beleg lädt gerade hoch (id)
   const [draftUpProg,setDraftUpProg]= useState(0); // Import: Upload-Fortschritt 0–100
+  const [capture,setCapture]= useState(null);     // Vollbild-Erfassung neuer Buchung {kind,recurring,account,kindLocked,mode,f:{…},scanning}
+  const [capProg,setCapProg]= useState(0);         // Erfassung: Beleg-Upload-Fortschritt
+  const [importTab,setImportTab]= useState('beleg'); // Import-Umschalter: 'beleg' | 'bank'
+  const [confirmMatch,setConfirmMatch]= useState(null); // Bankauszug: Beleg-Treffer bestätigen {draftId, match}
   const [custTab,setCustTab]= useState('details'); // Kundenprofil: Details vs Rechnungen
   const [belPath,setBelPath]= useState([]);        // Belege-DB Ordnerpfad: [bereich, jahr, monat, kind]
   const [zipBusy,setZipBusy]= useState(false);
@@ -1684,7 +1691,9 @@ function App({session}) {
     // Wiederkehrende Ausgabe erkennen: Name/Betrag passen zu einer bestehenden wiederkehrenden Buchung
     let recurMatch=null;
     if(da>0){ for(const b of all){ const it=b.it; if(!it.recurring) continue; const sameName = dn.length>2 && normName(it.name)===dn; const amtClose = Math.abs(num(it.amount)-da)<Math.max(2,da*0.12); const sameNote = d.note && it.note && normName(d.note)===normName(it.note); if((sameName&&amtClose) || (sameNote&&amtClose)){ recurMatch={name:it.name, account:b.key||'', amount:num(it.amount)}; break; } } }
-    return {...d, dup, recur, payMatch, recurMatch};
+    // Offener Beleg (zuvor unter „Import → Beleg" erfasst) zu dieser Bankbewegung finden
+    const openMatch = (!d.invId) ? findOpenBelegMatch(d) : null;
+    return {...d, dup, recur, payMatch, recurMatch, openMatch};
   };
   const flagDrafts = list => { const all=existingBookings(); return list.map(d=>flagDraft(d,all)); };
 
@@ -1874,7 +1883,44 @@ function App({session}) {
   // Import-Pflichtfelder eines Entwurfs
   const draftMissing = (d)=>{ const m=[]; if(!d.account)m.push('Konto'); if(d.account==='privat') return m; /* Privat: keine weiteren Pflichtfelder */ if(!String(d.name||'').trim())m.push('Name'); if(!num(d.amount))m.push('Betrag'); if(!String(d.category||'').trim())m.push('Kategorie'); if(!(d.kind==='ein'||d.kind==='aus'))m.push('Art'); if(!d.datum)m.push('Datum'); if(!String(d.belegnr||'').trim())m.push('Beleg-Nr'); if(!(d.fileData||d.filePath))m.push('Beleg'); return m; };
   // Entwurf endgültig übernehmen (nur wenn vollständig)
-  const commitDraft = (d)=>{ if(draftMissing(d).length) return; const dt=new Date(d.datum); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const cust=customers.find(c=>c.id===d.customerId); setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(d.name),amount:num(d.amount),netto:num(d.netto),mwst:(d.mwst!=null?d.mwst:''),note:(d.note||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',customerId:d.customerId||'',custName:(cust?cust.name:d.custName)||'',invId:d.invId||'',paid:!!d.invId,fileData:d.fileData||null,fileName:d.fileName||'',id:uid()}; _bookKind(nd[ty][tm], d.account, d.kind, item); if(d.invId){ nd.invoices=(nd.invoices||[]).map(iv=>iv.id===d.invId?{...iv,paid:true,paidDate:d.datum||''}:iv); } nd.drafts=(nd.drafts||[]).filter(x=>x.id!==d.id); return nd; }); setDraftEdit(null); setDraftSel(s=>s.filter(x=>x!==d.id)); setToast('Übernommen → '+accLabel(d.account)+' · '+MONTHS[tm]+' '+ty); };
+  const commitDraft = (d)=>{ if(draftMissing(d).length) return; const dt=new Date(d.datum); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const cust=customers.find(c=>c.id===d.customerId); setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(d.name),amount:num(d.amount),netto:num(d.netto),mwst:(d.mwst!=null?d.mwst:''),note:(d.note||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',customerId:d.customerId||'',custName:(cust?cust.name:d.custName)||'',invId:d.invId||'',paid:!!d.invId,status:(d.kind==='ein'?'bezahlt':'abgebucht'),bankConfirmed:true,fileData:d.fileData||null,fileName:d.fileName||'',id:uid()}; _bookKind(nd[ty][tm], d.account, d.kind, item); if(d.invId){ nd.invoices=(nd.invoices||[]).map(iv=>iv.id===d.invId?{...iv,paid:true,paidDate:d.datum||''}:iv); } nd.drafts=(nd.drafts||[]).filter(x=>x.id!==d.id); return nd; }); setDraftEdit(null); setDraftSel(s=>s.filter(x=>x!==d.id)); setToast('Übernommen → '+accLabel(d.account)+' · '+MONTHS[tm]+' '+ty); };
+
+  /* ── Neue Buchung erfassen (Vollbild: Felder links, Beleg-Scan rechts) ── */
+  const captureAccLabel = (acc)=> acc==='unter'?(names.unternehmen||'Firma') : acc==='privat'?(names.privatLabel||'Privat') : (names[acc]||'Konto');
+  const isCapPrivat = c => c && c.account==='privat';
+  const captureMissing = (c)=>{ if(!c) return ['Konto']; const f=c.f||{}; const m=[]; if(!c.account)m.push('Konto'); if(c.account==='privat'){ if(!String(f.name||'').trim())m.push('Name'); if(!num(f.amount))m.push('Betrag'); return m; } if(!String(f.name||'').trim())m.push('Name'); if(!num(f.amount))m.push('Betrag'); if(!String(f.category||'').trim())m.push('Kategorie'); if(!(c.kind==='ein'||c.kind==='aus'))m.push('Art'); if(!c.recurring){ if(!f.datum)m.push('Datum'); if(!String(f.belegnr||'').trim())m.push('Beleg-Nr'); } return m; };
+  const openCapture = (ctx)=>{ setCapture({ kind:ctx.kind||'aus', recurring:!!ctx.recurring, account:ctx.account||'', kindLocked:!!ctx.kindLocked, mode:ctx.mode||'section', f:{ name:'', custName:'', customerId:'', amount:'', netto:'', mwst:'', note:'', category:'', datum:'', belegnr:'', fileData:null, fileName:'' } }); setCapProg(0); };
+  const setCapF = (patch)=> setCapture(c=> c?{...c, f:{...c.f, ...patch}}:c);
+  const scanCaptureFile = async (f)=>{ if(!f) return; const isPdf=/pdf$/i.test(f.name||'')||f.type==='application/pdf'; setCapProg(8); const tick=setInterval(()=>setCapProg(p=>p<88?p+Math.max(3,(88-p)*0.16):p),120);
+    try{ let blob=f, mime='image/jpeg', ext='.jpg'; if(isPdf){ mime='application/pdf'; ext='.pdf'; } else { try{ blob=await compressImage(f,1500,0.6); }catch(_){} } const b64=await fileToB64(blob); clearInterval(tick); setCapProg(94);
+      setCapture(c=>{ if(!c)return c; return {...c, scanning:true, f:{...c.f, fileData:'data:'+mime+';base64,'+b64, fileName:belegFileName(c.f.name,c.f.belegnr,f.name).replace(/\.[a-z0-9]+$/i,ext)}}; });
+      try{ const r=await aiExtractFile(f); setCapture(c=>{ if(!c)return c; const nf={...c.f}; if(r.name&&!String(nf.name).trim())nf.name=r.name; if(r.amount&&!num(nf.amount))nf.amount=String(r.amount); if(r.netto&&!num(nf.netto))nf.netto=String(r.netto); if(r.mwst&&nf.mwst==='')nf.mwst=String(r.mwst); if(r.datum&&!nf.datum)nf.datum=r.datum; if(r.belegnr&&!String(nf.belegnr).trim())nf.belegnr=r.belegnr; if(r.category&&!String(nf.category).trim())nf.category=r.category; const nk=c.kindLocked?c.kind:(r.kind||c.kind); return {...c, kind:nk, scanning:false, f:nf}; }); setToast('Beleg ausgelesen ✓'); }
+      catch(e){ setCapture(c=>c?{...c,scanning:false}:c); setToast('Auslesen fehlgeschlagen: '+(e.message||e)); }
+      setCapProg(100); setTimeout(()=>setCapProg(0),350);
+    }catch(e){ clearInterval(tick); setCapProg(0); setToast('Beleg-Fehler: '+(e.message||e)); }
+  };
+  const bookCapture = ()=>{ const c=capture; if(!c||captureMissing(c).length) return; const f=c.f; const dt=new Date(f.datum); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const cust=customers.find(x=>x.id===f.customerId);
+    setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(f.name),amount:num(f.amount),netto:num(f.netto),mwst:(f.mwst!=null?f.mwst:''),note:(f.note||''),belegnr:f.belegnr||'',category:f.category||'',datum:f.datum||'',customerId:f.customerId||'',custName:(cust?cust.name:f.custName)||'',recurring:!!c.recurring,status:'offen',bankConfirmed:false,fileData:f.fileData||null,fileName:f.fileName||'',id:uid()}; if(c.recurring){ /* in alle Monate des Jahres legen, wie wiederkehrend */ for(let mm=0;mm<12;mm++){ if(!nd[ty])nd[ty]={}; if(!nd[ty][mm])nd[ty][mm]=emptyMonth(); _bookKind(nd[ty][mm], c.account, c.kind, {...item,id:uid()}); } } else { _bookKind(nd[ty][tm], c.account, c.kind, item); } return nd; });
+    setToast((c.recurring?'Wiederkehrend angelegt → ':'Zugeordnet → ')+captureAccLabel(c.account)+' · '+MONTHS[tm]+' '+ty+' · Status: offen'); setCapture(null); setCapProg(0);
+  };
+
+  /* ── Bankauszug: offene Belege automatisch finden + bestätigen (Offen → Abgebucht/Bezahlt) ── */
+  const findOpenBelegMatch = (d)=>{ const dAmt=Math.abs(num(d.amount)); const dNr=String(d.belegnr||'').trim().toLowerCase(); const dName=normName(d.name); const dNote=String(d.note||'').toLowerCase(); const dDate=d.datum?new Date(toISO(d.datum)):null; let best=null,bestScore=0;
+    Object.keys(data||{}).forEach(yk=>{ if(isNaN(+yk))return; const Y=data[yk]; if(!Y||typeof Y!=='object')return; Object.keys(Y).forEach(mk=>{ if(isNaN(+mk))return; const M=Y[mk]; if(!M)return;
+      const visit=(arr,account,kind)=>{ (arr||[]).forEach(it=>{ if(it.status!=='offen')return; let s=0; const iAmt=Math.abs(num(it.amount)); const iNr=String(it.belegnr||'').trim().toLowerCase();
+        if(dNr&&iNr&&dNr===iNr) s+=5;
+        if(dAmt&&iAmt&&Math.abs(dAmt-iAmt)<0.02) s+=3;
+        if(dDate&&it.datum){ const dd=Math.abs((dDate-new Date(toISO(it.datum)))/86400000); if(dd<=3)s+=2; else if(dd<=12)s+=1; }
+        const inm=normName(it.name); if(dName&&inm&&inm.length>3&&(inm.includes(dName.slice(0,6))||dName.includes(inm.slice(0,6)))) s+=1;
+        if(dNote&&it.name&&String(it.name).length>3&&dNote.includes(String(it.name).toLowerCase().slice(0,6))) s+=1;
+        if(s>bestScore && s>=5){ bestScore=s; best={ty:+yk,tm:+mk,account,kind,itemId:it.id,name:it.name,amount:num(it.amount),datum:it.datum,belegnr:it.belegnr,score:s}; }
+      }); };
+      if(M.props)Object.keys(M.props).forEach(pid=>{ const p=M.props[pid]||{}; visit(p.einnahmen,pid,'ein'); visit(p.expenses,pid,'aus'); });
+      if(M.unternehmen){ visit(M.unternehmen.clients,'unter','ein'); visit(M.unternehmen.items,'unter','aus'); }
+      if(M.privat){ visit(M.privat.einnahmen,'privat','ein'); visit(M.privat.items,'privat','aus'); }
+    }); }); return best;
+  };
+  const confirmBankMatch = (draftId, match)=>{ if(!match) return; setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); const dft=(nd.drafts||[]).find(x=>x.id===draftId); const bankDate=dft?dft.datum:''; const M=nd[match.ty]&&nd[match.ty][match.tm]; if(M){ const sub = match.account==='unter'?(match.kind==='aus'?'items':'clients') : match.account==='privat'?(match.kind==='aus'?'items':'einnahmen') : (match.kind==='aus'?'expenses':'einnahmen'); const cont = match.account==='unter'?M.unternehmen : match.account==='privat'?M.privat : (M.props&&M.props[match.account]); if(cont&&cont[sub]){ cont[sub]=cont[sub].map(it=>it.id===match.itemId?{...it,status:(match.kind==='ein'?'bezahlt':'abgebucht'),bankConfirmed:true,bankDate:bankDate||it.datum}:it); } } nd.drafts=(nd.drafts||[]).map(x=>x.id===draftId?{...x,confirmed:true,linkedTo:{ty:match.ty,tm:match.tm,account:match.account,itemId:match.itemId}}:x); return nd; }); setConfirmMatch(null); setToast('Bestätigt → Status: '+(match.kind==='ein'?'Bezahlt':'Abgebucht')); };
 
   /* ── Rechnungen ── */
   const company = data.company || {};              // Unternehmen (bestehend)
@@ -2478,7 +2524,7 @@ function App({session}) {
   const activeAcct = tab==='quellen' ? openAcct : (tab==='immo' ? sp : tab==='unter' ? 'unter' : tab==='privat' ? 'privat' : null);
   const secAccent = activeAcct ? acctColor(activeAcct) : C.pri;
 
-  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey, hideRecur, kind, sums, applyFn) => {
+  const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey, hideRecur, kind, sums, applyFn, addCtx, addLabel) => {
     const kindEff = kind || (folderPath && folderPath[folderPath.length-1]==='Einnahmen' ? 'ein' : 'aus');
     const shown = (items||[]).filter(it=>activeInMonth(it, yr, mo));
     const inSel = srcKey && selKey===srcKey;
@@ -2486,7 +2532,7 @@ function App({session}) {
     const allSel = shownIds.length>0 && selIds.length===shownIds.length;
     return (
       <>
-        {srcKey && (
+        {(srcKey || addCtx) && (
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:12,minHeight:28}}>
             {!inSel && sums && (
               <div style={{display:'flex',gap:16,marginRight:'auto',fontSize:13,flexWrap:'wrap'}}>
@@ -2494,8 +2540,11 @@ function App({session}) {
                 <span style={{display:'flex',alignItems:'center',gap:6,color:C.sub}}><span style={{width:8,height:8,borderRadius:'50%',background:'#FFB37A',display:'inline-block'}}/>Ausgaben <b style={{color:C.txt,...NUM}}>{fmtN(sums.exp)}</b></span>
               </div>
             )}
-            {!inSel && shown.length>0 && (
-              <button onClick={()=>{setSelKey(srcKey);setSelIds([]);}} style={{...toolBtn,marginLeft:sums?undefined:'auto'}}>Auswählen</button>
+            {!inSel && addCtx && (
+              <button onClick={()=>openCapture(addCtx)} style={{display:'inline-flex',alignItems:'center',gap:6,marginLeft:(sums?undefined:'auto'),background:C.pri,color:C.priTxt,border:'none',borderRadius:9,padding:'7px 14px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.plus||P.up} sz={14} col={C.priTxt}/> {addLabel||'Hinzufügen'}</button>
+            )}
+            {!inSel && srcKey && shown.length>0 && (
+              <button onClick={()=>{setSelKey(srcKey);setSelIds([]);}} style={toolBtn}>Auswählen</button>
             )}
             {inSel && (<>
               <span style={{fontSize:12,color:C.sub,marginRight:'auto'}}>{selIds.length} ausgewählt</span>
@@ -2893,10 +2942,8 @@ function App({session}) {
                     (id,all)=>delPropSub(sp,'einnahmen',id,all),
                     (id,dir)=>movePropSub(sp,'einnahmen',id,dir),
                     ['Immobilien',names[sp],'Einnahmen'],
-                    undefined, undefined, undefined, sp, true, undefined, {inc:pc.netto, exp:pc.exp}
+                    undefined, undefined, undefined, sp, true, undefined, {inc:pc.netto, exp:pc.exp}, undefined, {domain:'immo',account:sp,kind:'ein',recurring:false,kindLocked:true}
                   )}
-                  <AddForm addLabel="Einnahme hinzufügen" onAdd={(n,a)=>addPropSub(sp,'einnahmen',n,a,false)} />
-                  <VoiceAdd accent={secAccent} onAdd={(n,a)=>addPropSub(sp,'einnahmen',n,a,false)} />
                 </div>
               )}
 
@@ -2908,10 +2955,8 @@ function App({session}) {
                     (id,all)=>delPropSub(sp,'expenses',id,all),
                     (id,dir)=>movePropSub(sp,'expenses',id,dir),
                     ['Immobilien',names[sp]],
-                    undefined, undefined, undefined, sp, true, undefined, {inc:pc.netto, exp:pc.exp}
+                    undefined, undefined, undefined, sp, true, undefined, {inc:pc.netto, exp:pc.exp}, undefined, {domain:'immo',account:sp,kind:'aus',recurring:false,kindLocked:true}
                   )}
-                  <AddForm addLabel="Ausgabe hinzufügen" onAdd={(n,a)=>addPropSub(sp,'expenses',n,a,false)} />
-                  <VoiceAdd accent={secAccent} onAdd={(n,a)=>addPropSub(sp,'expenses',n,a,false)} />
                 </div>
               )}
 
@@ -2928,9 +2973,8 @@ function App({session}) {
                         ['Immobilien',names[sp],'Einnahmen'],
                         undefined, undefined,
                         (it,range)=>setPropSubRange(sp,'einnahmen',it,range),
-                        null, true, undefined, undefined, (it)=>applyRecurPropSub(sp,'einnahmen',it)
+                        null, true, undefined, undefined, (it)=>applyRecurPropSub(sp,'einnahmen',it), {domain:'immo',account:sp,kind:'ein',recurring:true,kindLocked:true}, 'Hinzufügen'
                       )}
-                      <AddForm addLabel="Wiederkehrende Einnahme hinzufügen" onClickOverride={()=>startRecurInvoice('immo',sp)} onAdd={(n,a)=>addPropSub(sp,'einnahmen',n,a,true)} />
                     </div>
                     <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
                       <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Wiederkehrende Ausgaben</div>
@@ -2942,9 +2986,8 @@ function App({session}) {
                         ['Immobilien',names[sp]],
                         undefined, undefined,
                         (it,range)=>setPropSubRange(sp,'expenses',it,range),
-                        null, true, undefined, undefined, (it)=>applyRecurPropSub(sp,'expenses',it)
+                        null, true, undefined, undefined, (it)=>applyRecurPropSub(sp,'expenses',it), {domain:'immo',account:sp,kind:'aus',recurring:true,kindLocked:true}, 'Hinzufügen'
                       )}
-                      <AddForm addLabel="Wiederkehrende Ausgabe hinzufügen" onAdd={(n,a)=>addPropSub(sp,'expenses',n,a,true)} />
                     </div>
                   </div>
                 </>
@@ -3020,10 +3063,8 @@ function App({session}) {
                   (id,all)=>delSec('unternehmen','clients',id,all),
                   (id,dir)=>moveSec('unternehmen','clients',id,dir),
                   ['Unternehmen','Einnahmen'],
-                  undefined, undefined, undefined, 'unterInc', true, undefined, {inc:tot.unterInc, exp:tot.unterExp}
+                  undefined, undefined, undefined, 'unterInc', true, undefined, {inc:tot.unterInc, exp:tot.unterExp}, undefined, {domain:'unter',account:'unter',kind:'ein',recurring:false,kindLocked:true}
                 )}
-                <AddForm addLabel="Einnahme hinzufügen" placeholder="Name" onAdd={(n,a)=>addSec('unternehmen','clients',n,a,false)} />
-                <VoiceAdd accent={secAccent} onAdd={(n,a)=>addSec('unternehmen','clients',n,a,false)} />
               </div>
             )}
 
@@ -3035,10 +3076,8 @@ function App({session}) {
                   (id,all)=>delSec('unternehmen','items',id,all),
                   (id,dir)=>moveSec('unternehmen','items',id,dir),
                   ['Unternehmen','Ausgaben'],
-                  undefined, undefined, undefined, 'unterExp', true, undefined, {inc:tot.unterInc, exp:tot.unterExp}
+                  undefined, undefined, undefined, 'unterExp', true, undefined, {inc:tot.unterInc, exp:tot.unterExp}, undefined, {domain:'unter',account:'unter',kind:'aus',recurring:false,kindLocked:true}
                 )}
-                <AddForm addLabel="Ausgabe hinzufügen" onAdd={(n,a)=>addSec('unternehmen','items',n,a,false)} />
-                <VoiceAdd accent={secAccent} onAdd={(n,a)=>addSec('unternehmen','items',n,a,false)} />
               </div>
             )}
 
@@ -3055,9 +3094,8 @@ function App({session}) {
                       ['Unternehmen','Einnahmen'],
                       undefined, undefined,
                       (it,range)=>setSecRange('unternehmen','clients',it,range),
-                      null, true, undefined, undefined, (it)=>applyRecurSec('unternehmen','clients',it)
+                      null, true, undefined, undefined, (it)=>applyRecurSec('unternehmen','clients',it), {domain:'unter',account:'unter',kind:'ein',recurring:true,kindLocked:true}, 'Hinzufügen'
                     )}
-                    <AddForm addLabel="Wiederkehrende Einnahme hinzufügen" onClickOverride={()=>startRecurInvoice('unter')} placeholder="Name" onAdd={(n,a)=>addSec('unternehmen','clients',n,a,true)} />
                   </div>
                   <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
                     <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Wiederkehrende Ausgaben</div>
@@ -3069,9 +3107,8 @@ function App({session}) {
                       ['Unternehmen','Ausgaben'],
                       undefined, undefined,
                       (it,range)=>setSecRange('unternehmen','items',it,range),
-                      null, true, undefined, undefined, (it)=>applyRecurSec('unternehmen','items',it)
+                      null, true, undefined, undefined, (it)=>applyRecurSec('unternehmen','items',it), {domain:'unter',account:'unter',kind:'aus',recurring:true,kindLocked:true}, 'Hinzufügen'
                     )}
-                    <AddForm addLabel="Wiederkehrende Ausgabe hinzufügen" onAdd={(n,a)=>addSec('unternehmen','items',n,a,true)} />
                   </div>
                 </div>
               </>
@@ -3109,10 +3146,8 @@ function App({session}) {
                   (id,all)=>delSec('privat','einnahmen',id,all),
                   (id,dir)=>moveSec('privat','einnahmen',id,dir),
                   ['Privat','Einnahmen'],
-                  undefined, undefined, undefined, 'privat', true, undefined, {inc:sumItems(md.privat?.einnahmen,yr,mo), exp:tot.privatExp}
+                  undefined, undefined, undefined, 'privat', true, undefined, {inc:sumItems(md.privat?.einnahmen,yr,mo), exp:tot.privatExp}, undefined, {domain:'privat',account:'privat',kind:'ein',recurring:false,kindLocked:true}, 'Einnahme erfassen'
                 )}
-                <AddForm addLabel="Einnahme hinzufügen" onAdd={(n,a)=>addSec('privat','einnahmen',n,a,false)} />
-                <VoiceAdd accent={secAccent} onAdd={(n,a)=>addSec('privat','einnahmen',n,a,false)} />
               </div>
             )}
 
@@ -3124,10 +3159,8 @@ function App({session}) {
                   (id,all)=>delSec('privat','items',id,all),
                   (id,dir)=>moveSec('privat','items',id,dir),
                   ['Privat'],
-                  undefined, undefined, undefined, 'privat', true, undefined, {inc:sumItems(md.privat?.einnahmen,yr,mo), exp:tot.privatExp}
+                  undefined, undefined, undefined, 'privat', true, undefined, {inc:sumItems(md.privat?.einnahmen,yr,mo), exp:tot.privatExp}, undefined, {domain:'privat',account:'privat',kind:'aus',recurring:false,kindLocked:true}, 'Ausgabe erfassen'
                 )}
-                <AddForm addLabel="Ausgabe hinzufügen" onAdd={(n,a)=>addSec('privat','items',n,a,false)} />
-                <VoiceAdd accent={secAccent} onAdd={(n,a)=>addSec('privat','items',n,a,false)} />
               </div>
             )}
 
@@ -3144,9 +3177,8 @@ function App({session}) {
                       ['Privat','Einnahmen'],
                       undefined, undefined,
                       (it,range)=>setSecRange('privat','einnahmen',it,range),
-                      null, true, undefined, undefined, (it)=>applyRecurSec('privat','einnahmen',it)
+                      null, true, undefined, undefined, (it)=>applyRecurSec('privat','einnahmen',it), {domain:'privat',account:'privat',kind:'ein',recurring:true,kindLocked:true}, 'Einnahme erfassen'
                     )}
-                    <AddForm addLabel="Wiederkehrende Einnahme hinzufügen" onAdd={(n,a)=>addSec('privat','einnahmen',n,a,true)} />
                   </div>
                   <div style={{...SC,flex:1,minWidth:isMobile?'auto':260}}>
                     <div style={{fontSize:12,fontWeight:600,color:'#FFB37A',marginBottom:10}}>Wiederkehrende Ausgaben</div>
@@ -3158,9 +3190,8 @@ function App({session}) {
                       ['Privat'],
                       undefined, undefined,
                       (it,range)=>setSecRange('privat','items',it,range),
-                      null, true, undefined, undefined, (it)=>applyRecurSec('privat','items',it)
+                      null, true, undefined, undefined, (it)=>applyRecurSec('privat','items',it), {domain:'privat',account:'privat',kind:'aus',recurring:true,kindLocked:true}, 'Ausgabe erfassen'
                     )}
-                    <AddForm addLabel="Wiederkehrende Ausgabe hinzufügen" onAdd={(n,a)=>addSec('privat','items',n,a,true)} />
                   </div>
                 </div>
               </>
@@ -3173,8 +3204,8 @@ function App({session}) {
             const aus = drafts.filter(d=>d.kind==='aus');
             const allIds = drafts.map(d=>d.id);
             const allSel = allIds.length>0 && draftSel.length===allIds.length;
-            const draftRow = d => { const hasFile=!!d.fileData; const sel=draftSel.includes(d.id); const catTxt=[d.category, d.datum&&(toISO(d.datum)||d.datum)].filter(Boolean).join(' · ')||'Details ergänzen'; return (
-              <div key={d.id} draggable onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>setDraftEdit(d.id)} onContextMenu={e=>{e.preventDefault();setDraftCtx({x:e.clientX,y:e.clientY,id:d.id});}} style={{display:'flex',gap:12,alignItems:'center',background:C.surf2,border:'1px solid '+(sel?C.pri:C.bdr),borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
+            const draftRow = d => { const hasFile=!!d.fileData; const sel=draftSel.includes(d.id); const matched=d.openMatch && !d.confirmed; const done=!!d.confirmed; const catTxt=[d.category, d.datum&&(toISO(d.datum)||d.datum)].filter(Boolean).join(' · ')||'Details ergänzen'; return (
+              <div key={d.id} draggable onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>{ if(done) return; if(matched){ setConfirmMatch({draftId:d.id,match:d.openMatch}); } else { setDraftEdit(d.id); } }} onContextMenu={e=>{e.preventDefault();setDraftCtx({x:e.clientX,y:e.clientY,id:d.id});}} style={{display:'flex',gap:12,alignItems:'center',background:matched?hexA(C.pri,0.08):(done?hexA(C.grn,0.06):C.surf2),border:'1px solid '+(done?hexA(C.grn,0.5):(matched?C.pri:(sel?C.pri:C.bdr))),borderRadius:14,padding:'12px 14px',cursor:done?'default':'pointer'}}>
                 <button onClick={e=>{e.stopPropagation();setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id]);}} title="Auswählen" style={{width:22,height:22,flexShrink:0,borderRadius:6,border:'1.5px solid '+(sel?C.pri:C.bdrM),background:sel?C.pri:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}>{sel&&<Ic p={P.check} sz={13} col={C.priTxt}/>}</button>
                 <label onClick={e=>e.stopPropagation()} title={hasFile?'Beleg ersetzen':'Beleg hochladen'} style={{position:'relative',width:44,height:44,flexShrink:0,borderRadius:13,background:hasFile?hexA(C.pri,0.16):C.surf3,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
                   <Ic p={hasFile?P.clip:P.upload} sz={17} col={hasFile?C.pri:C.sub}/>
@@ -3188,11 +3219,15 @@ function App({session}) {
                     {d.dup && <button onClick={e=>{e.stopPropagation();setDupPopup({draft:d,match:d.dup});}} title="Bereits vorhanden – ansehen" style={{background:hexA('#FFB37A',0.16),border:'1px solid '+hexA('#FFB37A',0.4),color:'#FFB37A',borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>⚠ bereits vorhanden</button>}
                     {d.payMatch && <span title={'Zahlungseingang zu Rechnung '+d.payMatch.number} style={{display:'inline-flex',alignItems:'center',gap:4,background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}><Ic p={P.spark} sz={10} col={C.pri}/> Zahlung erkannt</span>}
                     {d.recurMatch && !d.payMatch && <span title="Passt zu wiederkehrender Ausgabe" style={{display:'inline-flex',alignItems:'center',gap:4,background:hexA('#ABC4FF',0.14),border:'1px solid '+hexA('#ABC4FF',0.35),color:'#ABC4FF',borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}><Ic p={P.repeat} sz={10} col={'#ABC4FF'}/> wiederkehrend</span>}
-                    {!d.dup && !d.payMatch && !d.recurMatch && d.recur && <span title="Sieht nach wiederkehrender Buchung aus" style={{background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}>🔁 wiederkehrend?</span>}
+                    {!d.dup && !d.payMatch && !d.recurMatch && !d.openMatch && !d.confirmed && d.recur && <span title="Sieht nach wiederkehrender Buchung aus" style={{background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}>🔁 wiederkehrend?</span>}
+                    {matched && <span title="Passender Beleg gefunden – klicken zum Bestätigen" style={{display:'inline-flex',alignItems:'center',gap:4,background:hexA(C.pri,0.18),border:'1px solid '+hexA(C.pri,0.45),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}><Ic p={P.spark} sz={10} col={C.pri}/> Beleg gefunden</span>}
+                    {done && <span style={{display:'inline-flex',alignItems:'center',gap:4,background:hexA(C.grn,0.16),border:'1px solid '+hexA(C.grn,0.4),color:C.grn,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}><Ic p={P.check} sz={10} col={C.grn}/> bestätigt</span>}
                   </div>
                 </div>
                 <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM,flexShrink:0,whiteSpace:'nowrap'}}>{(d.amount||'0')}€</span>
-                <button onClick={e=>{e.stopPropagation();delDraft(d.id);}} title="Entwurf entfernen" style={{background:'none',border:'none',color:C.mut,cursor:'pointer',flexShrink:0,fontSize:16,lineHeight:1,opacity:0.55}}>×</button>
+                {done
+                  ? <span title="Abgebucht/Bezahlt" style={{width:24,height:24,flexShrink:0,borderRadius:'50%',background:hexA(C.grn,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.check} sz={13} col={C.grn}/></span>
+                  : <button onClick={e=>{e.stopPropagation();delDraft(d.id);}} title="Entwurf entfernen" style={{background:'none',border:'none',color:C.mut,cursor:'pointer',flexShrink:0,fontSize:16,lineHeight:1,opacity:0.55}}>×</button>}
               </div>
             ); };
             const col = (title,list,colr,colKind) => (
@@ -3204,9 +3239,41 @@ function App({session}) {
             return (
               <>
                 <div style={{marginBottom:18}}>
-                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>Import</div>
+                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:14}}>Import</div>
+                  <div style={{display:'inline-flex',gap:4,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:4}}>
+                    {[{k:'beleg',l:'Beleg'},{k:'bank',l:'Bankkontoauszug'}].map(t=>(
+                      <button key={t.k} onClick={()=>setImportTab(t.k)} style={{background:importTab===t.k?C.pri:'transparent',color:importTab===t.k?C.priTxt:C.sub,border:'none',borderRadius:9,padding:'8px 17px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{t.l}</button>
+                    ))}
+                  </div>
                 </div>
 
+                {importTab==='beleg' && (()=>{ const openBelege=[]; Object.keys(data||{}).forEach(yk=>{ if(isNaN(+yk))return; const Y=data[yk]; if(!Y||typeof Y!=='object')return; Object.keys(Y).forEach(mk=>{ if(isNaN(+mk))return; const M=Y[mk]; if(!M)return; const grab=(arr,acc,kd)=>{ (arr||[]).forEach(it=>{ if(it.status==='offen') openBelege.push({it,acc,kd,y:+yk,m:+mk}); }); }; if(M.props)Object.keys(M.props).forEach(pid=>{ const p=M.props[pid]||{}; grab(p.einnahmen,pid,'ein'); grab(p.expenses,pid,'aus'); }); if(M.unternehmen){ grab(M.unternehmen.clients,'unter','ein'); grab(M.unternehmen.items,'unter','aus'); } if(M.privat){ grab(M.privat.einnahmen,'privat','ein'); grab(M.privat.items,'privat','aus'); } }); }); openBelege.sort((a,b)=> (b.y-a.y)|| (b.m-a.m));
+                  return (<>
+                    <div style={{...SC,display:'flex',gap:16,alignItems:'center',flexWrap:'wrap',marginBottom:16}}>
+                      <div style={{flex:1,minWidth:200}}>
+                        <div style={{fontSize:15,fontWeight:700,color:C.txt,marginBottom:4}}>Einzelnen Beleg erfassen</div>
+                        <div style={{fontSize:13,color:C.sub,lineHeight:1.5}}>Beleg/Rechnung hochladen, Felder werden automatisch erkannt. Status bleibt <b style={{color:'#FFB37A'}}>Offen</b>, bis der Bankkontoauszug die Abbuchung bestätigt.</div>
+                      </div>
+                      <button onClick={()=>openCapture({mode:'import',kind:'aus',account:'',recurring:false})} style={{display:'inline-flex',alignItems:'center',gap:8,background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'12px 20px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={16} col={C.priTxt}/> Beleg erfassen</button>
+                    </div>
+                    <div style={{...SC}}>
+                      <div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:12,display:'flex',justifyContent:'space-between',letterSpacing:'0.02em'}}><span>OFFENE BELEGE</span><span style={{color:C.mut}}>{openBelege.length}</span></div>
+                      {openBelege.length? (<div style={{display:'flex',flexDirection:'column',gap:10}}>{openBelege.map(({it,acc,kd,y,m})=>(
+                        <div key={it.id} style={{display:'flex',gap:12,alignItems:'center',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'12px 14px'}}>
+                          <div style={{width:38,height:38,flexShrink:0,borderRadius:11,background:it.fileData?hexA(C.pri,0.16):C.surf3,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={it.fileData?P.clip:P.receipt} sz={16} col={it.fileData?C.pri:C.sub}/></div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:15,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{it.name||'—'}</div>
+                            <div style={{fontSize:12,color:C.sub,marginTop:2}}>{captureAccLabel(acc)} · {MONTHS[m]} {y}{it.belegnr?(' · '+it.belegnr):''}</div>
+                          </div>
+                          <span style={{display:'inline-flex',alignItems:'center',gap:5,background:hexA('#FFB37A',0.14),border:'1px solid '+hexA('#FFB37A',0.35),color:'#FFB37A',borderRadius:7,padding:'3px 9px',fontSize:11,fontWeight:700,flexShrink:0}}>Offen</span>
+                          <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM,flexShrink:0,whiteSpace:'nowrap'}}>{fmt(num(it.amount))}</span>
+                        </div>
+                      ))}</div>) : (<div style={{fontSize:13.5,color:C.mut,textAlign:'center',padding:'26px 18px',lineHeight:1.6}}>Noch keine offenen Belege.<br/>Erfasse oben einen Beleg – er erscheint hier, bis der Bankkontoauszug ihn bestätigt.</div>)}
+                    </div>
+                  </>);
+                })()}
+
+                {importTab==='bank' && (<>
                 <div style={{display:'flex',flexDirection:isMobile?'column':'row',gap:12,marginBottom:16}}>
                   <div style={{...SC,flex:1}}>
                     <div style={{fontSize:11,fontWeight:700,color:C.pri,marginBottom:8,letterSpacing:'0.04em'}}>MIT AI</div>
@@ -3246,6 +3313,7 @@ function App({session}) {
                 ) : (
                   <div style={{...SC,textAlign:'center',color:C.mut,fontSize:14,padding:'30px 24px'}}>Noch keine Entwürfe. Lade oben einen Bankauszug als PDF hoch.</div>
                 )}
+                </>)}
 
                 {/* Detail-Overlay für einen Entwurf (von rechts) */}
                 {draftEdit && (()=>{ const d=drafts.find(x=>x.id===draftEdit); if(!d){ return null; } const hasFile=!!d.fileData; const isPdfFile=hasFile&&(/pdf/i.test(d.fileName||'')||/^data:application\/pdf/i.test(d.fileData||'')); const uploading=draftUpId===d.id; const dInp={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const lbl=t=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}</div>); return (
@@ -4382,6 +4450,84 @@ function App({session}) {
           </div>
         </Sheet>
       )}
+
+      {confirmMatch && (()=>{ const m=confirmMatch.match; const d=(data.drafts||[]).find(x=>x.id===confirmMatch.draftId)||{}; return (
+        <div onClick={()=>setConfirmMatch(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:160,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:'min(440px,100%)',background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,padding:'24px 24px 22px',boxShadow:'0 24px 70px rgba(0,0,0,0.6)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:6}}><div style={{width:34,height:34,borderRadius:10,background:hexA(C.pri,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.spark} sz={17} col={C.pri}/></div><div style={{fontSize:17,fontWeight:800,color:C.txt}}>Passender Beleg gefunden</div></div>
+            <div style={{fontSize:13.5,color:C.sub,lineHeight:1.55,marginBottom:16}}>Diese Bankbewegung passt zu einem offenen Beleg. Soll die Buchung bestätigt und auf <b style={{color:C.grn}}>{m.kind==='ein'?'Bezahlt':'Abgebucht'}</b> gesetzt werden?</div>
+            <div style={{display:'flex',gap:12,marginBottom:18}}>
+              <div style={{flex:1,background:C.surf2,borderRadius:12,padding:'11px 13px'}}><div style={{fontSize:10,fontWeight:700,color:C.mut,marginBottom:5,letterSpacing:'0.03em'}}>BANKBEWEGUNG</div><div style={{fontSize:14,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name||'—'}</div><div style={{fontSize:12,color:C.sub,marginTop:3,...NUM}}>{fmt(num(d.amount))}{d.datum?(' · '+(toISO(d.datum)||d.datum)):''}</div></div>
+              <div style={{flex:1,background:hexA(C.pri,0.08),border:'1px solid '+hexA(C.pri,0.25),borderRadius:12,padding:'11px 13px'}}><div style={{fontSize:10,fontWeight:700,color:C.pri,marginBottom:5,letterSpacing:'0.03em'}}>OFFENER BELEG</div><div style={{fontSize:14,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.name||'—'}</div><div style={{fontSize:12,color:C.sub,marginTop:3,...NUM}}>{fmt(num(m.amount))} · {MONTHS[m.tm]} {m.ty}{m.belegnr?(' · '+m.belegnr):''}</div></div>
+            </div>
+            <div style={{display:'flex',gap:10}}>
+              <button onClick={()=>setConfirmMatch(null)} style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:11,padding:'12px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Abbrechen</button>
+              <button onClick={()=>confirmBankMatch(confirmMatch.draftId,m)} style={{flex:1.4,display:'flex',alignItems:'center',justifyContent:'center',gap:7,background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.check} sz={15} col={C.priTxt}/> Zuordnen &amp; bestätigen</button>
+            </div>
+          </div>
+        </div>
+      ); })()}
+
+      {capture && (()=>{ const c=capture; const f=c.f; const isImport=c.mode==='import'; const hasFile=!!f.fileData; const isPdf=hasFile&&(/^data:application\/pdf/i.test(f.fileData)||/pdf$/i.test(f.fileName||'')); const uploading=capProg>0&&capProg<100; const dInp={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}]; const dom=c.account==='unter'?'unter':(c.account==='privat'?null:'immo'); const miss=captureMissing(c); const star=<span style={{color:C.red}}> *</span>; const lbl=(t,req)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{req&&c.account!=='privat'&&star}</div>);
+        return (
+        <div style={{position:'fixed',inset:0,background:C.bg,zIndex:135,display:'flex',flexDirection:'column'}}>
+          <div style={{display:'flex',alignItems:'center',gap:14,padding:'16px 26px',borderBottom:'1px solid '+C.bdr,flexShrink:0}}>
+            <button onClick={()=>{setCapture(null);setCapProg(0);}} title="Zurück" style={{display:'flex',alignItems:'center',gap:7,background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:10,padding:'8px 14px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><span style={{fontSize:16,lineHeight:1}}>←</span> Zurück</button>
+            <div style={{fontSize:17,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>{isImport?'Beleg erfassen':(c.recurring?'Wiederkehrende Buchung':'Neue Buchung')+' erfassen'}</div>
+            <div style={{marginLeft:'auto',fontSize:13,color:C.mut}}>{c.account?captureAccLabel(c.account):'Konto wählen'}{c.recurring?' · wiederkehrend':''}</div>
+          </div>
+          <div style={{flex:1,display:'flex',minHeight:0,flexDirection:isMobile?'column':'row'}}>
+            <div style={{flex:isMobile?'none':1,overflowY:'auto',padding:isMobile?'18px 18px 40px':'26px 30px 56px',order:isMobile?2:1}}>
+              <div style={{maxWidth:560,display:'flex',flexDirection:'column',gap:16}}>
+                <div>{lbl('Konto',true)}{(isImport||!c.account)
+                  ? <select value={c.account||''} onChange={e=>setCapture(cc=>cc?{...cc,account:e.target.value,f:{...cc.f,customerId:'',custName:''}}:cc)} style={{...dInp,cursor:'pointer'}}><option value="">— Konto wählen —</option>{acctOpts.map(o=><option key={o.k} value={o.k}>{o.label}</option>)}</select>
+                  : <div style={{...dInp,display:'flex',alignItems:'center',gap:8,cursor:'default'}}><Ic p={P.lock} sz={13} col={C.mut}/><span style={{fontWeight:600}}>{captureAccLabel(c.account)}</span></div>}</div>
+                <div>{lbl('Name',true)}<input value={f.name||''} onChange={e=>{ const v=e.target.value; const g=guessCategory(v+' '+(f.note||'')); setCapF((!String(f.category||'').trim()||f.catAuto)&&g?{name:v,category:g,catAuto:true}:{name:v}); }} placeholder="Name…" style={dInp}/></div>
+                {dom && <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Kunde <span style={{color:C.mut}}>(optional)</span></div><CustomerSelect customers={customersFor(dom)} value={f.customerId} onPick={cu=>{ if(cu) setCapF({customerId:cu.id,custName:cu.name||''}); else setCapF({customerId:'',custName:''}); }} /></div>}
+                <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                  <div style={{flex:1,minWidth:120}}>{lbl('Betrag € (Brutto)',true)}<input value={f.amount||''} onChange={e=>{ const v=e.target.value; const hasR=(f.mwst!=null&&f.mwst!==''); const rate=num(f.mwst); setCapF(hasR?{amount:v,netto:String(Math.round(num(v)/(1+rate/100)*100)/100)}:{amount:v}); }} inputMode="decimal" style={{...dInp,...NUM}}/></div>
+                  <div style={{flex:1,minWidth:160}}>{lbl('Art')}{c.kindLocked
+                    ? <div style={{display:'flex',alignItems:'center',gap:8,...dInp,cursor:'default'}}><span style={{width:9,height:9,borderRadius:'50%',background:c.kind==='ein'?'#8FD9BD':'#E8A39E'}}/><span style={{fontWeight:600,color:c.kind==='ein'?'#8FD9BD':'#E8A39E'}}>{c.kind==='ein'?'Einnahme':'Ausgabe'}</span></div>
+                    : <div style={{display:'flex',gap:6}}>{['ein','aus'].map(k=>(<button key={k} onClick={()=>setCapture(cc=>cc?{...cc,kind:k}:cc)} style={{flex:1,background:c.kind===k?(k==='ein'?hexA('#8FD9BD',0.18):hexA('#E8A39E',0.18)):C.surf2,border:'1px solid '+(c.kind===k?(k==='ein'?'#8FD9BD':'#E8A39E'):C.bdr),color:c.kind===k?(k==='ein'?'#8FD9BD':'#E8A39E'):C.sub,borderRadius:10,padding:'10px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{k==='ein'?'Einnahme':'Ausgabe'}</button>))}</div>}</div>
+                </div>
+                <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                  <div style={{flex:1,minWidth:120}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Netto €</div><input value={f.netto||''} onChange={e=>{ const v=e.target.value; const hasR=(f.mwst!=null&&f.mwst!==''); const rate=num(f.mwst); setCapF(hasR?{netto:v,amount:String(Math.round(num(v)*(1+rate/100)*100)/100)}:{netto:v}); }} inputMode="decimal" placeholder="Netto" style={{...dInp,...NUM}}/></div>
+                  <div style={{flex:1,minWidth:120}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>MwSt</div><select value={(f.mwst!=null&&f.mwst!=='')?String(f.mwst):''} onChange={e=>{ const v=e.target.value; const rate=num(v); const g=num(f.amount); setCapF(v!==''?{mwst:v,netto:String(Math.round(g/(1+rate/100)*100)/100)}:{mwst:v}); }} style={{...dInp,cursor:'pointer'}}><option value="">—</option><option value="19">19%</option><option value="7">7%</option><option value="0">0%</option></select></div>
+                </div>
+                <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Verwendungszweck / Notizen <span style={{color:C.mut}}>(optional)</span></div><textarea value={f.note||''} onChange={e=>{ const v=e.target.value; const g=guessCategory((f.name||'')+' '+v); setCapF((!String(f.category||'').trim()||f.catAuto)&&g?{note:v,category:g,catAuto:true}:{note:v}); }} rows={2} placeholder="Verwendungszweck…" style={{...dInp,resize:'vertical'}}/></div>
+                <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6,display:'flex',alignItems:'center',gap:7}}>Kategorie{c.account!=='privat'&&star}{f.catAuto&&f.category&&<span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,color:C.pri,background:hexA(C.pri,0.14),borderRadius:6,padding:'2px 7px'}}><Ic p={P.spark} sz={10} col={C.pri}/> KI</span>}</div><select value={f.category||''} onChange={e=>setCapF({category:e.target.value,catAuto:false})} style={{...dInp,cursor:'pointer'}}><option value="">— wählen —</option>{CATS.map(x=><option key={x} value={x}>{x}</option>)}</select></div>
+                <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                  <div style={{flex:1,minWidth:140}}>{lbl('Datum',!c.recurring)}<DateField value={f.datum||''} onChange={v=>setCapF({datum:v})} style={dInp}/></div>
+                  <div style={{flex:1,minWidth:140}}>{lbl('Belegnummer',!c.recurring)}<input value={f.belegnr||''} onChange={e=>setCapF({belegnr:e.target.value})} placeholder="Nr." style={dInp}/></div>
+                </div>
+                <button disabled={miss.length>0} onClick={bookCapture} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'13px',fontSize:14,fontWeight:700,cursor:miss.length?'default':'pointer',fontFamily:'inherit',marginTop:4,opacity:miss.length?0.5:1}}>{miss.length?('Noch '+miss.length+' Pflichtfeld'+(miss.length>1?'er':'')):'Zuordnen'}</button>
+                {!c.recurring && <div style={{fontSize:11.5,color:C.mut,textAlign:'center',lineHeight:1.5}}>Status nach dem Zuordnen: <b style={{color:'#FFB37A'}}>Offen</b> – wird bestätigt, sobald der Bankkontoauszug die Abbuchung zeigt.</div>}
+              </div>
+            </div>
+            <div onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';}} onDrop={e=>{ e.preventDefault(); const file=e.dataTransfer.files&&e.dataTransfer.files[0]; if(file) scanCaptureFile(file); }} style={{width:isMobile?'auto':'min(440px,42%)',height:isMobile?260:'auto',flexShrink:0,background:C.surf2,borderLeft:isMobile?'none':'1px solid '+C.bdr,borderBottom:isMobile?'1px solid '+C.bdr:'none',display:'flex',alignItems:'center',justifyContent:'center',padding:isMobile?14:24,position:'relative',order:isMobile?1:2}}>
+              {hasFile ? (<>
+                {isPdf ? <iframe src={f.fileData} title="Beleg" style={{width:'100%',height:'100%',border:'none',borderRadius:12,background:'#fff'}}/> : <img src={f.fileData} alt="Beleg" style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:12,boxShadow:'0 10px 40px rgba(0,0,0,0.4)'}}/>}
+                {c.scanning && <div style={{position:'absolute',top:isMobile?10:18,left:'50%',transform:'translateX(-50%)',display:'flex',alignItems:'center',gap:8,background:hexA(C.pri,0.92),color:C.priTxt,borderRadius:99,padding:'7px 14px',fontSize:12.5,fontWeight:700}}><Ic p={P.spark} sz={13} col={C.priTxt}/> Beleg wird ausgelesen…</div>}
+                <label style={{position:'absolute',bottom:isMobile?10:18,right:isMobile?10:18,display:'inline-flex',alignItems:'center',gap:7,background:hexA(C.bg,0.85),border:'1px solid '+C.bdr,color:C.txt,borderRadius:10,padding:'8px 13px',fontSize:13,fontWeight:600,cursor:'pointer',backdropFilter:'blur(4px)'}}><Ic p={P.upload} sz={14} col={C.txt}/> Beleg ersetzen<input type="file" accept="image/*,.pdf" onChange={e=>{const file=e.target.files[0];e.target.value='';scanCaptureFile(file);}} style={{display:'none'}}/></label>
+              </>) : (
+                <div style={{textAlign:'center',width:'100%',maxWidth:340}}>
+                  <div style={{width:58,height:58,borderRadius:16,background:hexA(C.pri,0.14),display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}><Ic p={P.upload} sz={26} col={C.pri}/></div>
+                  <div style={{fontSize:15.5,fontWeight:800,color:C.txt,marginBottom:6}}>Beleg hierher ziehen</div>
+                  <div style={{fontSize:13,color:C.sub,lineHeight:1.5,marginBottom:18}}>Foto, Scan oder PDF ablegen – die Felder links werden automatisch erkannt und ausgefüllt.</div>
+                  {uploading ? (
+                    <div style={{maxWidth:280,margin:'0 auto'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:C.sub,marginBottom:7}}><span>Lädt…</span><span style={{fontWeight:700,color:C.pri}}>{Math.round(capProg)}%</span></div>
+                      <div style={{height:7,borderRadius:99,background:C.bg,overflow:'hidden'}}><div style={{height:'100%',width:capProg+'%',background:C.pri,borderRadius:99,transition:'width 0.2s ease'}}/></div>
+                    </div>
+                  ) : (
+                    <label style={{display:'inline-flex',alignItems:'center',justifyContent:'center',gap:8,background:C.pri,color:C.priTxt,borderRadius:11,padding:'11px 22px',fontSize:14,fontWeight:700,cursor:'pointer'}}><Ic p={P.upload} sz={15} col={C.priTxt}/> Beleg auswählen<input type="file" accept="image/*,.pdf" onChange={e=>{const file=e.target.files[0];e.target.value='';scanCaptureFile(file);}} style={{display:'none'}}/></label>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        ); })()}
 
       {bulkMove && (
         <TargetPicker title={bulkMove.ids.length+' Posten verschieben'} moveTargets={moveTargets} curY={yr} curM={mo}
