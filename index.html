@@ -1947,6 +1947,8 @@ function App({session}) {
   };
   const confirmBankMatch = (draftId, match, bankName)=>{ if(!match) return; setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); const dft=(nd.drafts||[]).find(x=>x.id===draftId); const bankDate=dft?dft.datum:''; const M=nd[match.ty]&&nd[match.ty][match.tm]; if(M){ const sub = match.account==='unter'?(match.kind==='aus'?'items':'clients') : match.account==='privat'?(match.kind==='aus'?'items':'einnahmen') : (match.kind==='aus'?'expenses':'einnahmen'); const cont = match.account==='unter'?M.unternehmen : match.account==='privat'?M.privat : (M.props&&M.props[match.account]); if(cont&&cont[sub]){ cont[sub]=cont[sub].map(it=>it.id===match.itemId?{...it,status:(match.kind==='ein'?'bezahlt':'abgebucht'),bankConfirmed:true,bankDate:bankDate||it.datum,name:(bankName&&String(bankName).trim())?bankName:it.name}:it); } } nd.drafts=(nd.drafts||[]).map(x=>x.id===draftId?{...x,confirmed:true,linkedTo:{ty:match.ty,tm:match.tm,account:match.account,itemId:match.itemId}}:x); return nd; }); setConfirmMatch(null); setAssignFor(null); setAssignSel(null); setDraftEdit(null); setToast('Beleg zugeordnet → Status: '+(match.kind==='ein'?'Bezahlt':'Abgebucht')); };
   // Liste offener Belege (Status „offen") – optional nach Art (ein/aus) gefiltert
+  // Schnell-Zuordnung eines Bank-Entwurfs zu einem beliebigen Konto (Einnahme ODER Ausgabe)
+  const quickAssignDraft = (draftId, account)=>{ const d=(drafts||[]).find(x=>x.id===draftId); if(!d) return; const dt=new Date(d.datum); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const kind=(d.kind==='ein'?'ein':'aus'); setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(d.name),amount:num(d.amount),netto:num(d.netto),mwst:(d.mwst!=null?d.mwst:''),note:(d.note||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',status:(kind==='ein'?'bezahlt':'abgebucht'),bankConfirmed:true,fileData:d.fileData||null,fileName:d.fileName||'',id:uid()}; _bookKind(nd[ty][tm], account, kind, item); nd.drafts=(nd.drafts||[]).filter(x=>x.id!==draftId); return nd; }); setDraftSel(s=>s.filter(x=>x!==draftId)); setToast('Zugeordnet → '+captureAccLabel(account)+' · '+MONTHS[tm]+' '+ty); };
   const openBelegeList = (kindFilter)=>{ const out=[]; Object.keys(data||{}).forEach(yk=>{ if(isNaN(+yk))return; const Y=data[yk]; if(!Y||typeof Y!=='object')return; Object.keys(Y).forEach(mk=>{ if(isNaN(+mk))return; const M=Y[mk]; if(!M)return; const grab=(arr,acc,kd)=>{ (arr||[]).forEach(it=>{ if(it.status==='offen' && (!kindFilter||kd===kindFilter)) out.push({it,account:acc,kind:kd,ty:+yk,tm:+mk}); }); }; if(M.props)Object.keys(M.props).forEach(pid=>{ const p=M.props[pid]||{}; grab(p.einnahmen,pid,'ein'); grab(p.expenses,pid,'aus'); }); if(M.unternehmen){ grab(M.unternehmen.clients,'unter','ein'); grab(M.unternehmen.items,'unter','aus'); } if(M.privat){ grab(M.privat.einnahmen,'privat','ein'); grab(M.privat.items,'privat','aus'); } }); }); out.sort((a,b)=>(b.ty-a.ty)||(b.tm-a.tm)); return out; };
 
   /* ── Rechnungen ── */
@@ -3669,12 +3671,12 @@ function App({session}) {
                       <button onClick={()=>{ setRecText(''); setAiCap({parsed:null}); }} style={{display:'flex',alignItems:'center',gap:7,background:hexA(A.c,0.16),border:'1px solid '+hexA(A.c,0.4),color:A.c,borderRadius:10,padding:'8px 15px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><span style={{fontSize:15}}>✨</span> KI erfassen</button>
                     </div>
                   </div>
-                  <div style={{flex:1,minHeight:0,overflowY:'auto',padding:isMobile?'16px 14px 60px':'22px 30px 60px'}}>
+                  <div style={{flex:1,minHeight:0,overflowY:'auto',padding:isMobile?'16px 14px 60px':'26px 36px 72px'}}>
                   {(
-                    <div style={{display:'flex',flexDirection:isMobile?'column':'row-reverse',gap:16,alignItems:'flex-start'}}>
+                    <div style={{display:'flex',flexDirection:isMobile?'column':'row-reverse',gap:28,alignItems:'flex-start'}}>
                       {/* RECHTS (Felder) – per row-reverse rechts, Vorschau links wie beim Beleg-Erfassen */}
-                      <div style={{flex:1,minWidth:0,width:isMobile?'100%':'auto'}}>
-                      <div style={{marginBottom:18,display:'flex',flexDirection:'column',gap:12}}>
+                      <div style={{flex:1,minWidth:0,width:isMobile?'100%':'auto',display:'flex',flexDirection:'column',gap:6}}>
+                      <div style={{marginBottom:20,display:'flex',flexDirection:'column',gap:14}}>
                         <div>
                           <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Kunde <span style={{color:C.red}}>*</span></div>
                           <CustomerSelect customers={customersFor(invEdit.domain||'unter')} value={invEdit.customerId} onPick={c=>{ if(c){ setI({customerId:c.id, custName:c.name||'', custAddress:c.address||'', custEmail:c.email||'', firstName:c.firstName||'', lastName:c.lastName||'', company:c.company||'', anrede:c.anrede||'', saveCust:false}); } else { setI({customerId:'', custName:'', custAddress:'', custEmail:'', firstName:'', lastName:'', company:'', anrede:'', saveCust:true}); } }} />
@@ -3746,11 +3748,11 @@ function App({session}) {
                       </div>
                       {/* RECHTS: Live-Vorschau */}
                       {!isMobile && (
-                      <div style={{flex:1,minWidth:0,position:'sticky',top:80}}>
-                        <div style={{position:'relative',borderRadius:12,overflow:'hidden',border:'1px solid '+C.bdr,background:'#fff'}}>
-                          <iframe title="Rechnungsvorschau" srcDoc={invoiceHTML(invEdit)} style={{width:'100%',height:780,border:'none',background:'#fff',display:'block'}} />
-                          <button onClick={()=>setInvPreview(true)} title="Groß anzeigen" style={{position:'absolute',top:12,right:12,display:'inline-flex',alignItems:'center',gap:6,background:'rgba(20,20,22,0.82)',border:'1px solid rgba(255,255,255,0.12)',color:'#fff',borderRadius:9,padding:'7px 12px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit',backdropFilter:'blur(4px)'}}><Ic p={P.eye} sz={13} col={'#fff'}/> Vergrößern</button>
+                      <div style={{flex:1,minWidth:0,position:'sticky',top:0,alignSelf:'flex-start',height:'calc(100vh - 134px)',background:'#26262a',border:'1px solid '+C.bdr,borderRadius:14,display:'flex',alignItems:'center',justifyContent:'center',padding:18}}>
+                        <div style={{position:'relative',width:'100%',maxWidth:620,height:'100%',borderRadius:8,overflow:'hidden',boxShadow:'0 14px 50px rgba(0,0,0,0.55)',background:'#fff'}}>
+                          <iframe title="Rechnungsvorschau" srcDoc={invoiceHTML(invEdit)} style={{width:'100%',height:'100%',border:'none',background:'#fff',display:'block'}} />
                         </div>
+                        <button onClick={()=>setInvPreview(true)} title="Groß anzeigen" style={{position:'absolute',top:14,right:14,display:'inline-flex',alignItems:'center',gap:6,background:'rgba(20,20,22,0.82)',border:'1px solid rgba(255,255,255,0.14)',color:'#fff',borderRadius:9,padding:'7px 12px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit',backdropFilter:'blur(4px)'}}><Ic p={P.eye} sz={13} col={'#fff'}/> Vergrößern</button>
                       </div>
                       )}
                     </div>
@@ -4617,7 +4619,7 @@ function App({session}) {
         </div>
       ); })()}
 
-      {capture && (()=>{ const c=capture; const f=c.f; const isImport=c.mode==='import'; const hasFile=!!f.fileData; const isPdf=hasFile&&(/^data:application\/pdf/i.test(f.fileData)||/pdf$/i.test(f.fileName||'')); const uploading=capProg>0&&capProg<100; const dInp={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}]; const dom=c.account==='unter'?'unter':(c.account==='privat'?null:'immo'); const miss=captureMissing(c); const star=<span style={{color:C.red}}> *</span>; const lbl=(t,req)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{req&&c.account!=='privat'&&star}</div>);
+      {capture && (()=>{ const c=capture; const f=c.f; const isImport=c.mode==='import'; const hasFile=!!f.fileData; const isPdf=hasFile&&(/^data:application\/pdf/i.test(f.fileData)||/pdf$/i.test(f.fileName||'')); const uploading=capProg>0&&capProg<100; const dInp={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}]; const dom=!c.account?null:(c.account==='unter'?'unter':(c.account==='privat'?null:'immo')); const acctIcon=k=>(k==='unter'?P.brief:k==='privat'?P.prson:P.house); const miss=captureMissing(c); const star=<span style={{color:C.red}}> *</span>; const lbl=(t,req)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{req&&c.account!=='privat'&&star}</div>);
         return (
         <div style={{position:'fixed',inset:0,background:C.bg,zIndex:135,display:'flex',flexDirection:'column'}}>
           <div style={{display:'flex',alignItems:'center',gap:14,padding:'16px 26px',borderBottom:'1px solid '+C.bdr,flexShrink:0}}>
@@ -4628,9 +4630,6 @@ function App({session}) {
           <div style={{flex:1,display:'flex',minHeight:0,flexDirection:isMobile?'column':'row'}}>
             <div style={{width:isMobile?'auto':'min(480px,46%)',flexShrink:0,overflowY:'auto',padding:isMobile?'18px 18px 40px':'26px 30px 56px',order:isMobile?2:2}}>
               <div style={{maxWidth:'100%',display:'flex',flexDirection:'column',gap:16}}>
-                <div>{lbl('Konto',true)}{(isImport||!c.account)
-                  ? <select value={c.account||''} onChange={e=>setCapture(cc=>cc?{...cc,account:e.target.value,f:{...cc.f,customerId:'',custName:''}}:cc)} style={{...dInp,cursor:'pointer'}}><option value="">— Konto wählen —</option>{acctOpts.map(o=><option key={o.k} value={o.k}>{o.label}</option>)}</select>
-                  : <div style={{...dInp,display:'flex',alignItems:'center',gap:8,cursor:'default'}}><Ic p={P.lock} sz={13} col={C.mut}/><span style={{fontWeight:600}}>{captureAccLabel(c.account)}</span></div>}</div>
                 <div>{lbl('Name',true)}<input value={f.name||''} onChange={e=>{ const v=e.target.value; const g=guessCategory(v+' '+(f.note||'')); setCapF((!String(f.category||'').trim()||f.catAuto)&&g?{name:v,category:g,catAuto:true}:{name:v}); }} placeholder="Name…" style={dInp}/></div>
                 {dom && <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Kunde <span style={{color:C.mut}}>(optional)</span></div><CustomerSelect customers={customersFor(dom)} value={f.customerId} onPick={cu=>{ if(cu) setCapF({customerId:cu.id,custName:cu.name||''}); else setCapF({customerId:'',custName:''}); }} /></div>}
                 <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
@@ -4648,6 +4647,17 @@ function App({session}) {
                 <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
                   <div style={{flex:1,minWidth:140}}>{lbl('Datum',!c.recurring)}<DateField value={f.datum||''} onChange={v=>setCapF({datum:v})} style={dInp}/></div>
                   <div style={{flex:1,minWidth:140}}>{lbl('Belegnummer',!c.recurring)}<input value={f.belegnr||''} onChange={e=>setCapF({belegnr:e.target.value})} placeholder="Nr." style={dInp}/></div>
+                </div>
+                <div>{lbl('Konto',true)}
+                  {isImport ? (
+                    <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                      {acctOpts.map(o=>{ const on=c.account===o.k; const col=acctColor(o.k); return (
+                        <button key={o.k} onClick={()=>setCapture(cc=>cc?{...cc,account:on?'':o.k,f:{...cc.f,customerId:'',custName:''}}:cc)} style={{display:'flex',alignItems:'center',gap:8,background:on?hexA(col,0.16):C.surf2,border:'1.5px solid '+(on?col:C.bdr),color:on?C.txt:C.sub,borderRadius:11,padding:'9px 13px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={acctIcon(o.k)} sz={15} col={col}/> {o.label}{on&&<Ic p={P.check} sz={14} col={col}/>}</button>
+                      ); })}
+                    </div>
+                  ) : (
+                    <div style={{display:'inline-flex',alignItems:'center',gap:8,background:hexA(acctColor(c.account),0.16),border:'1.5px solid '+acctColor(c.account),borderRadius:11,padding:'9px 13px',fontSize:13.5,fontWeight:600,color:C.txt}}><Ic p={acctIcon(c.account)} sz={15} col={acctColor(c.account)}/> {captureAccLabel(c.account)} <Ic p={P.lock} sz={12} col={C.mut}/></div>
+                  )}
                 </div>
                 <button disabled={miss.length>0} onClick={bookCapture} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'13px',fontSize:14,fontWeight:700,cursor:miss.length?'default':'pointer',fontFamily:'inherit',marginTop:4,opacity:miss.length?0.5:1}}>{miss.length?('Noch '+miss.length+' Pflichtfeld'+(miss.length>1?'er':'')):'Zuordnen'}</button>
                 {!c.recurring && <div style={{fontSize:11.5,color:C.mut,textAlign:'center',lineHeight:1.5}}>Status nach dem Zuordnen: <b style={{color:'#FFB37A'}}>Offen</b> – wird bestätigt, sobald der Bankkontoauszug die Abbuchung zeigt.</div>}
@@ -4772,10 +4782,10 @@ function App({session}) {
       {draftCtx && (()=>{ const d=(data.drafts||[]).find(x=>x.id===draftCtx.id); if(!d) return null; const isSel=draftSel.includes(d.id); return (
         <div onClick={()=>setDraftCtx(null)} onContextMenu={e=>{e.preventDefault();setDraftCtx(null);}} style={{position:'fixed',inset:0,zIndex:155}}>
           <div onClick={e=>e.stopPropagation()} style={{position:'fixed',left:Math.min(draftCtx.x,window.innerWidth-222),top:Math.min(draftCtx.y,window.innerHeight-260),width:212,background:C.surf,border:'1px solid '+C.bdr,borderRadius:12,padding:5,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
-            {draftCtx.sub ? (()=>{ const acc = d.kind==='ein' ? [{k:'unterInc',l:(names.unternehmen||'Firma')+' · Einnahmen'}] : [{k:'unterExp',l:(names.unternehmen||'Firma')+' · Ausgaben'},{k:'p1',l:names.p1||'Immobilie 1'},{k:'p2',l:names.p2||'Immobilie 2'},{k:'p3',l:names.p3||'Immobilie 3'},{k:'privat',l:names.privatLabel||'Privat'}]; return (<>
-              <button onClick={()=>setDraftCtx({...draftCtx,sub:false})} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:'none',border:'none',borderRadius:8,padding:'9px 12px',fontSize:13,color:C.sub,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><span style={{fontSize:15}}>‹</span> Konto wählen</button>
+            {draftCtx.sub ? (()=>{ const kindLbl=d.kind==='ein'?'Einnahme':'Ausgabe'; const acc=[{k:'unter',l:names.unternehmen||'Firma'},{k:'p1',l:names.p1||'Immobilie 1'},{k:'p2',l:names.p2||'Immobilie 2'},{k:'p3',l:names.p3||'Immobilie 3'},{k:'privat',l:names.privatLabel||'Privat'}]; const aicon=k=>(k==='p1'||k==='p2'||k==='p3'?P.house:k==='privat'?P.prson:P.brief); return (<>
+              <button onClick={()=>setDraftCtx({...draftCtx,sub:false})} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:'none',border:'none',borderRadius:8,padding:'9px 12px',fontSize:13,color:C.sub,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><span style={{fontSize:15}}>‹</span> Konto wählen · als {kindLbl}</button>
               <div style={{height:1,background:C.sep,margin:'3px 8px'}}/>
-              {acc.map(a=>(<button key={a.k} onClick={()=>{ const id=d.id; setDraftCtx(null); assignDrafts([id],a.k,yr,mo); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:13.5,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={a.k==='p1'||a.k==='p2'||a.k==='p3'?P.house:a.k==='privat'?P.prson:P.brief} sz={15} col={C.sub}/> {a.l}</button>))}
+              {acc.map(a=>{ const col=acctColor(a.k); return (<button key={a.k} onClick={()=>{ const id=d.id; setDraftCtx(null); quickAssignDraft(id,a.k); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'10px 12px',fontSize:13.5,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><span style={{width:24,height:24,flexShrink:0,borderRadius:7,background:hexA(col,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={aicon(a.k)} sz={14} col={col}/></span> {a.l}</button>); })}
             </>); })() : (<>
             <button onClick={()=>{ setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id]); setDraftCtx(null); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.check} sz={15} col={isSel?C.pri:C.sub}/> {isSel?'Abwählen':'Auswählen'}</button>
             <button onClick={()=>setDraftCtx({...draftCtx,sub:true})} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.out} sz={15} col={C.sub}/> <span style={{flex:1}}>Zuordnen</span><span style={{fontSize:15,color:C.mut}}>›</span></button>
