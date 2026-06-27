@@ -1136,6 +1136,7 @@ function App({session}) {
   const recRef = useRef(null);
   const [invSearch,setInvSearch]= useState('');     // Rechnungssuche
   const [custSearch,setCustSearch]= useState('');   // Kundensuche
+  const [invTaxAsk,setInvTaxAsk]= useState(null);   // Steuerberater-Frage zur Rechnung {q,answer,busy}
   const [draftSearch,setDraftSearch]= useState(''); // Kontoauszug-Suche
   const [draftFilter,setDraftFilter]= useState('alle'); // Kontoauszug-Statusfilter
   const [invDomain,setInvDomain]= useState('unter'); // Rechnungen/Kunden: Unternehmen vs. Immobilien
@@ -1405,6 +1406,8 @@ function App({session}) {
   /* ── Dateien: Upload / Öffnen / Löschen (Supabase Storage) ── */
   const uploadFile = async (file, folderPath, setItemFile, desiredName) => {
     setToast('⬆️ Lädt hoch…');
+    file = await imageToPdfFile(file);
+    if(desiredName && file.type==='application/pdf') desiredName = String(desiredName).replace(/\.[a-z0-9]+$/i,'.pdf');
     const monthFolder = String(mo+1).padStart(2,'0')+' '+MONTHS[mo];
     const ext=((String(file.name||'').match(/\.([a-z0-9]+)$/i)||[])[1]||'').toLowerCase();
     let fname = desiredName || file.name; if(desiredName && ext && !new RegExp('\\.'+ext+'$','i').test(fname)) fname=fname.replace(/\.[a-z0-9]+$/i,'')+'.'+ext;
@@ -1694,7 +1697,7 @@ function App({session}) {
   const drafts = data.drafts || [];
   const setDrafts = updater => setData(prev=>({...prev, drafts: updater(prev.drafts||[])}));
   const updateDraft = (id,patch) => setDrafts(ds=>ds.map(d=>d.id===id?{...d,...patch}:d));
-  const draftFile = async (id,f) => { if(!f) return; const isPdf=/pdf$/i.test(f.name||'')||f.type==='application/pdf'; setDraftUpId(id); setDraftUpProg(8); const tick=setInterval(()=>setDraftUpProg(p=>p<90?p+Math.max(2,(90-p)*0.18):p),120); try{ const dr=(drafts||[]).find(x=>x.id===id)||{}; let blob=f, mime='image/jpeg', ext='.jpg'; if(isPdf){ mime='application/pdf'; ext='.pdf'; } else { try{ blob=await compressImage(f,1500,0.6); }catch(_){} } const b64=await fileToB64(blob); const fname=belegFileName(dr.name, dr.belegnr, f.name).replace(/\.[a-z0-9]+$/i,ext); clearInterval(tick); setDraftUpProg(100); updateDraft(id,{fileData:'data:'+mime+';base64,'+b64, fileName:fname}); setToast('Beleg angehängt'); setTimeout(()=>{ setDraftUpId(null); setDraftUpProg(0); },350); }catch(e){ clearInterval(tick); setDraftUpId(null); setDraftUpProg(0); setToast('Beleg-Fehler: '+(e.message||e)); } };
+  const draftFile = async (id,f) => { if(!f) return; f=await imageToPdfFile(f); const isPdf=/pdf$/i.test(f.name||'')||f.type==='application/pdf'; setDraftUpId(id); setDraftUpProg(8); const tick=setInterval(()=>setDraftUpProg(p=>p<90?p+Math.max(2,(90-p)*0.18):p),120); try{ const dr=(drafts||[]).find(x=>x.id===id)||{}; let blob=f, mime='image/jpeg', ext='.jpg'; if(isPdf){ mime='application/pdf'; ext='.pdf'; } else { try{ blob=await compressImage(f,1500,0.6); }catch(_){} } const b64=await fileToB64(blob); const fname=belegFileName(dr.name, dr.belegnr, f.name).replace(/\.[a-z0-9]+$/i,ext); clearInterval(tick); setDraftUpProg(100); updateDraft(id,{fileData:'data:'+mime+';base64,'+b64, fileName:fname}); setToast('Beleg angehängt'); setTimeout(()=>{ setDraftUpId(null); setDraftUpProg(0); },350); }catch(e){ clearInterval(tick); setDraftUpId(null); setDraftUpProg(0); setToast('Beleg-Fehler: '+(e.message||e)); } };
   const delDraft = id => { setDrafts(ds=>ds.filter(d=>d.id!==id)); setDraftSel(s=>s.filter(x=>x!==id)); };
   // ── Kontoauszug-Status + Dedup ──
   const draftSig = (d)=> normName(d.name)+'|'+Math.round(num(d.amount)*100)+'|'+(toISO(d.datum)||'')+'|'+String(d.belegnr||'').toLowerCase();
@@ -1926,7 +1929,7 @@ function App({session}) {
   const captureMissing = (c)=>{ if(!c) return ['Konto']; const f=c.f||{}; const m=[]; if(!c.account)m.push('Konto'); if(c.account==='privat'){ if(!String(f.name||'').trim())m.push('Name'); if(!num(f.amount))m.push('Betrag'); return m; } if(!String(f.name||'').trim())m.push('Name'); if(!num(f.amount))m.push('Betrag'); if(!String(f.category||'').trim())m.push('Kategorie'); if(!(c.kind==='ein'||c.kind==='aus'))m.push('Art'); if(!c.recurring){ if(!f.datum)m.push('Datum'); if(!String(f.belegnr||'').trim())m.push('Beleg-Nr'); } return m; };
   const openCapture = (ctx)=>{ setCapture({ kind:ctx.kind||'aus', recurring:!!ctx.recurring, account:ctx.account||'', kindLocked:!!ctx.kindLocked, mode:ctx.mode||'section', f:{ name:'', custName:'', customerId:'', amount:'', netto:'', mwst:'', note:'', category:'', datum:'', belegnr:'', fileData:null, fileName:'' } }); setCapProg(0); };
   const setCapF = (patch)=> setCapture(c=> c?{...c, f:{...c.f, ...patch}}:c);
-  const scanCaptureFile = async (f)=>{ if(!f) return; const isPdf=/pdf$/i.test(f.name||'')||f.type==='application/pdf'; setCapProg(8); const tick=setInterval(()=>setCapProg(p=>p<88?p+Math.max(3,(88-p)*0.16):p),120);
+  const scanCaptureFile = async (f)=>{ if(!f) return; f=await imageToPdfFile(f); const isPdf=/pdf$/i.test(f.name||'')||f.type==='application/pdf'; setCapProg(8); const tick=setInterval(()=>setCapProg(p=>p<88?p+Math.max(3,(88-p)*0.16):p),120);
     try{ let blob=f, mime='image/jpeg', ext='.jpg'; if(isPdf){ mime='application/pdf'; ext='.pdf'; } else { try{ blob=await compressImage(f,1500,0.6); }catch(_){} } const b64=await fileToB64(blob); clearInterval(tick); setCapProg(94);
       setCapture(c=>{ if(!c)return c; return {...c, scanning:true, f:{...c.f, fileData:'data:'+mime+';base64,'+b64, fileName:belegFileName(c.f.name,c.f.belegnr,f.name).replace(/\.[a-z0-9]+$/i,ext)}}; });
       try{ const r=await aiExtractFile(f); setCapture(c=>{ if(!c)return c; const nf={...c.f}; if(r.name&&!String(nf.name).trim())nf.name=r.name; if(r.amount&&!num(nf.amount))nf.amount=String(r.amount); if(r.netto&&!num(nf.netto))nf.netto=String(r.netto); if(r.mwst&&nf.mwst==='')nf.mwst=String(r.mwst); if(r.datum&&!nf.datum)nf.datum=r.datum; if(r.belegnr&&!String(nf.belegnr).trim())nf.belegnr=r.belegnr; if(r.category&&!String(nf.category).trim())nf.category=r.category; const nk=c.kindLocked?c.kind:(r.kind||c.kind); return {...c, kind:nk, scanning:false, f:nf}; }); setToast('Beleg ausgelesen ✓'); }
@@ -1981,6 +1984,8 @@ function App({session}) {
   const defMwstFor = (dom)=>{ const co=companyFor(dom||'unter'); return co&&co.defMwst!=null&&co.defMwst!=='' ? num(co.defMwst) : 7; };
   const newInvoice = (dom)=>({ id:uid(), number:nextInvNo(), domain:dom||'unter', customerId:'', custName:'', custAddress:'', custEmail:'', saveCust:true, account:'', date:new Date().toISOString().slice(0,10), due:'', items:[{desc:'',qty:1,price:0,mwst:defMwstFor(dom)}], note:'' });
   const invCustomer = (inv)=>{ const c=customers.find(x=>x.id===inv.customerId); if(c) return c; return {name:inv.custName||'', address:inv.custAddress||'', email:inv.custEmail||'', firstName:inv.firstName||'', lastName:inv.lastName||'', company:inv.company||'', anrede:inv.anrede||''}; };
+  // Steuerberater-KI: Frage zur aktuellen Rechnung beantworten
+  const askInvoiceTax = async (inv, q)=>{ const qq=String(q||'').trim(); if(!qq){ setToast('Bitte eine Frage eingeben.'); return; } setInvTaxAsk({q:qq, answer:'', busy:true}); try{ const tot=invTotals(inv.items); const cust=invCustomer(inv); const sys="Du bist ein deutscher Steuerberater-Assistent (Standort NRW). Beantworte Fragen zur Rechnungsstellung/Abrechnung kurz, konkret, in Klartext (KEIN Markdown, keine Aufzählungszeichen). Schließe mit einem kurzen Satz, dass der Steuerberater final entscheidet."; const usr="Kontext einer Ausgangsrechnung: Kunde "+((cust&&cust.name)||inv.custName||'—')+", Bereich "+((inv.domain||'unter')==='immo'?'Immobilien/Vermietung':'Firma')+", Positionen: "+((inv.items||[]).map(i=>i.desc+' '+fmt(num(i.price)*num(i.qty||1))+' ('+(i.mwst!=null?i.mwst:19)+'% MwSt)').join('; ')||'—')+", Gesamt brutto "+fmt(tot.gross)+". Frage des Nutzers: „"+qq+"\""; const { data:resp, error } = await aiInvoke({ body:{ model:'claude-haiku-4-5', max_tokens:800, system:sys, messages:[{ role:'user', content:[{ type:'text', text:usr }] }] } }); if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||'KI-Fehler'); const t=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||'(keine Antwort)'; setInvTaxAsk({q:qq, answer:t, busy:false}); }catch(e){ setInvTaxAsk({q:qq, answer:'Konnte nicht beantworten: '+(e.message||e), busy:false}); } };
   // Aus einem wiederkehrenden Posten eine Rechnung vorbereiten (öffnet den Editor)
   const makeRecurInvoice = (item, dom)=>{ const domain=dom||'unter'; const inv=newInvoice(domain); inv.fromRecurId=item.id; if(item.invCustomerId){ const c=customers.find(x=>x.id===item.invCustomerId); if(c){ inv.customerId=c.id; inv.custName=c.name||''; inv.custAddress=c.address||''; inv.custEmail=c.email||''; inv.saveCust=false; } } inv.items=[{desc:item.name||'Leistung', qty:1, price:num(item.amount), mwst:defMwstFor(domain)}]; setInvDomain(domain); setTab('rechnung'); setInvEdit(inv); setToast('Rechnung aus „'+(item.name||'Posten')+'" vorbereitet'); };
   const recurInvoicesFor = (id)=> (data.invoices||[]).filter(iv=>iv.fromRecurId===id);
@@ -2060,6 +2065,8 @@ function App({session}) {
   };
   // jsPDF nachladen (nur bei Bedarf)
   const loadJsPDF = ()=> new Promise((res,rej)=>{ if(window.jspdf&&window.jspdf.jsPDF) return res(); const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('PDF-Bibliothek konnte nicht geladen werden')); document.head.appendChild(s); });
+  // Foto/Scan → PDF (damit Belege immer als PDF gespeichert werden, nicht als PNG/JPG)
+  const imageToPdfFile = async (file)=>{ if(!(file && /^image\//.test(file.type||''))) return file; try{ let src=file; try{ src=await compressImage(file,1800,0.72); }catch(_){ src=file; } await loadJsPDF(); const { jsPDF }=window.jspdf; const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(src); }); const img=await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=dataUrl; }); const portrait=img.height>=img.width; const doc=new jsPDF({unit:'pt',format:'a4',orientation:portrait?'p':'l'}); const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight(); const m=22; const ratio=Math.min((pw-2*m)/img.width,(ph-2*m)/img.height); const w=img.width*ratio, h=img.height*ratio; doc.addImage(dataUrl,'JPEG',(pw-w)/2,(ph-h)/2,w,h,'','FAST'); const blob=doc.output('blob'); return new File([blob],(file.name||'beleg').replace(/\.[^.]+$/,'')+'.pdf',{type:'application/pdf'}); }catch(e){ return file; } };
   const loadJSZip = ()=> new Promise((res,rej)=>{ if(window.JSZip) return res(); const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('ZIP-Bibliothek konnte nicht geladen werden')); document.head.appendChild(s); });
   // ── Belege-Ordnerstruktur ──
   const belBerKeys = ['unter', ...PROPS, 'privat'];
@@ -3748,6 +3755,7 @@ function App({session}) {
                         <button onClick={()=>setInvPreview(true)} style={{...primBtn,background:C.surf2,color:C.txt,flex:1,minWidth:130}}><Ic p={P.eye} sz={16} col={C.txt}/> Vorschau</button>
                         <button onClick={()=>downloadInvoicePDF(invEdit)} style={{...primBtn,background:C.surf2,color:C.txt,flex:1,minWidth:130}}><Ic p={P.upload} sz={16} col={C.txt}/> Herunterladen</button>
                       </div>
+                      <button onClick={()=>setInvTaxAsk({q:'',answer:'',busy:false})} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',marginTop:10,background:hexA(C.pri,0.12),border:'1px solid '+hexA(C.pri,0.3),color:C.pri,borderRadius:11,padding:'11px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.spark} sz={15} col={C.pri}/> Steuerberater-KI zur Rechnung fragen</button>
                       </div>
                       {/* RECHTS: Live-Vorschau */}
                       {!isMobile && (
@@ -4700,6 +4708,19 @@ function App({session}) {
           confirmLabel="Zuordnen"
           onClose={()=>setAssignOpen(false)}
           onConfirm={(dest,ty,tm)=>{ assignDrafts(draftSel,dest,ty,tm); setAssignOpen(false); }} />
+      )}
+
+      {invTaxAsk && invEdit && (
+        <div onClick={()=>setInvTaxAsk(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:165,padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:20,padding:'22px',maxWidth:480,width:'100%',boxShadow:'0 16px 48px rgba(0,0,0,0.5)',maxHeight:'88vh',overflowY:'auto'}}>
+            <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:6}}><Ic p={P.spark} sz={18} col={C.pri}/><div style={{fontSize:17,fontWeight:800,color:C.txt}}>Steuerberater-KI</div></div>
+            <div style={{fontSize:12.5,color:C.sub,lineHeight:1.5,marginBottom:14}}>Frag zur aktuellen Rechnung – z. B. „Welcher MwSt-Satz gilt hier?", „Reverse-Charge nötig?", „Wie buche ich das korrekt?". Die KI nutzt Kunde, Positionen &amp; Bereich der Rechnung.</div>
+            <textarea value={invTaxAsk.q} onChange={e=>setInvTaxAsk(a=>({...a,q:e.target.value}))} rows={3} placeholder="Deine Frage…" style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'10px 12px',fontSize:14,outline:'none',fontFamily:'inherit',resize:'vertical',boxSizing:'border-box',marginBottom:10}}/>
+            <button onClick={()=>askInvoiceTax(invEdit, invTaxAsk.q)} disabled={invTaxAsk.busy} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:700,cursor:invTaxAsk.busy?'default':'pointer',fontFamily:'inherit',opacity:invTaxAsk.busy?0.7:1,marginBottom:14}}>{invTaxAsk.busy?'KI denkt…':'Fragen'}</button>
+            {invTaxAsk.answer && <div style={{background:hexA(C.pri,0.07),border:'1px solid '+hexA(C.pri,0.18),borderRadius:12,padding:'14px',marginBottom:14}}><div style={{fontSize:11,fontWeight:700,color:C.pri,letterSpacing:'0.02em',marginBottom:7}}>ANTWORT</div><div style={{fontSize:13.5,lineHeight:1.55,color:C.txt,whiteSpace:'pre-wrap'}}>{invTaxAsk.answer}</div></div>}
+            <button onClick={()=>setInvTaxAsk(null)} style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Schließen</button>
+          </div>
+        </div>
       )}
 
       {aiCap && (()=>{ const p=aiCap.parsed; const busy=aiCap.busy; const A=KONTO_COLORS.unter; return (
