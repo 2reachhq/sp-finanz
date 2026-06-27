@@ -1135,6 +1135,7 @@ function App({session}) {
   const [aiCap,setAiCap]= useState(null);           // KI-Erfassung Popup {parsed}
   const recRef = useRef(null);
   const [invSearch,setInvSearch]= useState('');     // Rechnungssuche
+  const [custSearch,setCustSearch]= useState('');   // Kundensuche
   const [invDomain,setInvDomain]= useState('unter'); // Rechnungen/Kunden: Unternehmen vs. Immobilien
   const [invKind,setInvKind]= useState('einzel');    // Rechnungsart: einzel | wied
   const [recInvEdit,setRecInvEdit]= useState(null);  // Editor wiederkehrende Rechnung
@@ -2570,9 +2571,18 @@ function App({session}) {
   /* Sidebar nav */
   const NAV = [
     {id:'quellen',label:'Konten',       icon:P.grid},
-    {id:'import', label:'Import',       icon:P.upload},
+    {id:'import', label:'Beleg',        icon:P.clip,   onClick:()=>{setTab('import');setImportTab('beleg');}, active:(tab==='import'&&importTab!=='bank')},
+    {id:'kontoauszug',label:'Kontoauszug', icon:P.upload, onClick:()=>{setTab('import');setImportTab('bank');}, active:(tab==='import'&&importTab==='bank')},
     {id:'rechnung',label:'Rechnungen',  icon:P.receipt},
   ];
+  // Einheitlicher Tab-/Toggle-Stil (wie Import „Beleg/Bankkontoauszug")
+  const PillTabs = ({tabs, value, onChange, style})=>(
+    <div style={{display:'inline-flex',gap:4,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:4,...(style||{})}}>
+      {tabs.map(([k,label])=>(
+        <button key={k} onClick={()=>onChange(k)} style={{background:value===k?C.pri:'transparent',color:value===k?C.priTxt:C.sub,border:'none',borderRadius:9,padding:'8px 16px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>{label}</button>
+      ))}
+    </div>
+  );
   const SONSTIGES = [
     {id:'kunden', label:'Kunden',       icon:P.prson},
     {id:'belege', label:'Belege',       icon:P.clip},
@@ -2670,10 +2680,10 @@ function App({session}) {
         {/* Nav items — rechtsbündig, nur Desktop */}
         {!isMobile && (
           <nav style={{display:'flex',alignItems:'center',gap:6,flex:1,justifyContent:'flex-end'}}>
-            {NAV.map(({id,label,icon})=>{
-              const active = tab===id;
+            {NAV.map(({id,label,icon,onClick,active:activeFn})=>{
+              const active = activeFn!=null?activeFn:(tab===id);
               return (
-                <button key={id} onClick={()=>setTab(id)} className={'navlink'+(active?' active':'')} style={{
+                <button key={id} onClick={onClick||(()=>setTab(id))} className={'navlink'+(active?' active':'')} style={{
                   display:'flex',alignItems:'center',gap:8,padding:'8px 14px',
                   fontFamily:'inherit',fontSize:15,fontWeight:active?600:500,
                   whiteSpace:'nowrap',flexShrink:0,
@@ -2770,10 +2780,10 @@ function App({session}) {
             padding:'10px 12px 16px',boxShadow:'0 18px 44px rgba(0,0,0,0.55)',
             maxHeight:'calc(100vh - 56px)',overflowY:'auto',
           }}>
-            {NAV.map(({id,label,icon})=>{
-              const active = tab===id;
+            {NAV.map(({id,label,icon,onClick,active:activeFn})=>{
+              const active = activeFn!=null?activeFn:(tab===id);
               return (
-                <button key={id} onClick={()=>{setTab(id);setNavOpen(false);}} style={{
+                <button key={id} onClick={()=>{ (onClick||(()=>setTab(id)))(); setNavOpen(false); }} style={{
                   display:'flex',alignItems:'center',gap:13,width:'100%',
                   padding:'13px 14px',borderRadius:12,border:'none',marginBottom:2,
                   background:active?'rgba(62,207,142,0.16)':'transparent',
@@ -2989,16 +2999,7 @@ function App({session}) {
               {tab==='quellen' && <div style={{height:10}}/>}
 
               {/* Toggle */}
-              <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
-                {['einnahmen','ausgaben','wied','inserate'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend',inserate:'Inserate'}[id]; const on=immoView===id; return (
-                  <button key={id} onClick={()=>setImmoView(id)} style={{
-                    background:on?hexA(secAccent,0.16):C.surf,
-                    border:'1px solid '+(on?hexA(secAccent,0.45):'transparent'),
-                    color:on?secAccent:C.sub,borderRadius:10,padding:'8px 18px',
-                    fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
-                  }}>{lbl}</button>
-                ); })}
-              </div>
+              <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben'],['wied','Wiederkehrend'],['inserate','Inserate']]} value={immoView} onChange={setImmoView} /></div>
 
               {immoView==='einnahmen' && (
                 <div style={SC}>
@@ -3109,16 +3110,7 @@ function App({session}) {
             )}
             {tab==='quellen' && <div style={{height:10}}/>}
             {/* Toggle: Einnahmen / Ausgaben / Wiederkehrend */}
-            <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
-              {['einnahmen','ausgaben','wied'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend'}[id]; const on=unterTab===id; return (
-                <button key={id} onClick={()=>setUnterTab(id)} style={{
-                  background:on?hexA(secAccent,0.16):C.surf,
-                  border:'1px solid '+(on?hexA(secAccent,0.45):'transparent'),
-                  color:on?secAccent:C.sub,borderRadius:10,padding:'8px 18px',
-                  fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
-                }}>{lbl}</button>
-              ); })}
-            </div>
+            <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben'],['wied','Wiederkehrend']]} value={unterTab} onChange={setUnterTab} /></div>
 
             {unterTab==='einnahmen' && (
               <div style={SC}>
@@ -3190,16 +3182,7 @@ function App({session}) {
               </div>
             )}
             {tab==='quellen' && <div style={{height:10}}/>}
-            <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
-              {['einnahmen','ausgaben','wied'].map(id=>{ const lbl={einnahmen:'Einnahmen',ausgaben:'Ausgaben',wied:'Wiederkehrend'}[id]; const on=privTab===id; return (
-                <button key={id} onClick={()=>setPrivTab(id)} style={{
-                  background:on?hexA(secAccent,0.16):C.surf,
-                  border:'1px solid '+(on?hexA(secAccent,0.45):'transparent'),
-                  color:on?secAccent:C.sub,borderRadius:10,padding:'8px 18px',
-                  fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
-                }}>{lbl}</button>
-              ); })}
-            </div>
+            <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben'],['wied','Wiederkehrend']]} value={privTab} onChange={setPrivTab} /></div>
 
             {privTab==='einnahmen' && (
               <div style={SC}>
@@ -3300,12 +3283,7 @@ function App({session}) {
             return (
               <>
                 <div style={{marginBottom:18}}>
-                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:14}}>Import</div>
-                  <div style={{display:'inline-flex',gap:4,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:4}}>
-                    {[{k:'beleg',l:'Beleg'},{k:'bank',l:'Bankkontoauszug'}].map(t=>(
-                      <button key={t.k} onClick={()=>setImportTab(t.k)} style={{background:importTab===t.k?C.pri:'transparent',color:importTab===t.k?C.priTxt:C.sub,border:'none',borderRadius:9,padding:'8px 17px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{t.l}</button>
-                    ))}
-                  </div>
+                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>{importTab==='bank'?'Kontoauszug':'Beleg'}</div>
                 </div>
 
                 {importTab==='beleg' && (()=>{ const openBelege=[]; Object.keys(data||{}).forEach(yk=>{ if(isNaN(+yk))return; const Y=data[yk]; if(!Y||typeof Y!=='object')return; Object.keys(Y).forEach(mk=>{ if(isNaN(+mk))return; const M=Y[mk]; if(!M)return; const grab=(arr,acc,kd)=>{ (arr||[]).forEach(it=>{ if(it.status==='offen') openBelege.push({it,acc,kd,y:+yk,m:+mk}); }); }; if(M.props)Object.keys(M.props).forEach(pid=>{ const p=M.props[pid]||{}; grab(p.einnahmen,pid,'ein'); grab(p.expenses,pid,'aus'); }); if(M.unternehmen){ grab(M.unternehmen.clients,'unter','ein'); grab(M.unternehmen.items,'unter','aus'); } if(M.privat){ grab(M.privat.einnahmen,'privat','ein'); grab(M.privat.items,'privat','aus'); } }); }); openBelege.sort((a,b)=> (b.y-a.y)|| (b.m-a.m));
@@ -3972,16 +3950,14 @@ function App({session}) {
             }
             return (
               <>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:10}}>
-                  <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>Kunden</div>
-                  <button onClick={()=>{setCustTab('details');setCustEdit({id:uid(),anrede:'',name:'',address:'',phone:'',email:'',website:'',custNo:nextCustNo(invDomain),domain:invDomain});}} style={{...primBtn,width:'auto',padding:'10px 16px'}}>+ Neuer Kunde</button>
+                <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>Kunden</div>
+                <div style={{marginBottom:14}}><PillTabs tabs={[['unter','Firma'],['immo','Immobilien']]} value={invDomain} onChange={setInvDomain} /></div>
+                <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
+                  <div style={{flex:1,minWidth:200,display:'flex',alignItems:'center',gap:9,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:'11px 14px'}}><Ic p={P.search} sz={15} col={C.mut}/><input value={custSearch} onChange={e=>setCustSearch(e.target.value)} placeholder="Kunde suchen…" style={{flex:1,background:'none',border:'none',outline:'none',color:C.txt,fontSize:14,fontFamily:'inherit'}}/></div>
+                  <button onClick={()=>{setCustTab('details');setCustEdit({id:uid(),anrede:'',name:'',address:'',phone:'',email:'',website:'',custNo:nextCustNo(invDomain),domain:invDomain});}} style={{display:'inline-flex',alignItems:'center',gap:7,background:C.act,color:C.actTxt,border:'none',borderRadius:12,padding:'11px 18px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={15} col={C.actTxt}/> Kunde anlegen</button>
                 </div>
-                <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-                  {[['unter','Firma'],['immo','Immobilien']].map(([k,label])=>{ const on=invDomain===k; return (
-                    <button key={k} onClick={()=>setInvDomain(k)} style={{background:on?hexA(KONTO_COLORS.unter.c,0.16):C.surf,border:'1px solid '+(on?hexA(KONTO_COLORS.unter.c,0.45):'transparent'),color:on?KONTO_COLORS.unter.c:C.sub,borderRadius:10,padding:'8px 18px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{label}</button>
-                  ); })}
-                </div>
-                {domCustomers.length? <div style={{display:'flex',flexDirection:'column',gap:10}}>{domCustomers.map(c=>(
+                {(()=>{ const q=custSearch.trim().toLowerCase(); const list=domCustomers.filter(c=>!q||((c.name||'')+' '+(c.email||'')+' '+(c.custNo||'')).toLowerCase().includes(q));
+                return list.length? <div style={{display:'flex',flexDirection:'column',gap:10}}>{list.map(c=>(
                   <div key={c.id} onClick={()=>setCustEdit(c)} style={{display:'flex',alignItems:'center',gap:13,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
                     <div style={{width:46,height:46,flexShrink:0,borderRadius:12,background:hexA(KONTO_COLORS.unter.c,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.prson} sz={20} col={KONTO_COLORS.unter.c}/></div>
                     <div style={{flex:1,minWidth:0}}>
@@ -3990,7 +3966,7 @@ function App({session}) {
                     </div>
                     <button onClick={e=>{e.stopPropagation();askConfirm('Kunde „'+(c.name||'')+'" löschen?',()=>delCustomer(c.id));}} title="Löschen" style={{background:C.surf3,border:'1px solid '+C.bdr,color:C.mut,cursor:'pointer',flexShrink:0,width:34,height:34,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.trash} sz={15} col={C.mut}/></button>
                   </div>
-                ))}</div> : <div style={{...SC,fontSize:13,color:C.mut}}>Noch keine Kunden. Lege oben deinen ersten Kunden an.</div>}
+                ))}</div> : <div style={{...SC,fontSize:13,color:C.mut,textAlign:'center',padding:'26px 18px'}}>{q?'Keine Treffer.':'Noch keine Kunden. Lege oben deinen ersten Kunden an.'}</div>; })()}
               </>
             );
           })()}
@@ -4146,11 +4122,7 @@ function App({session}) {
           {/* ══ JAHRESÜBERSICHT / MONATSÜBERSICHT ══ */}
           {tab==='yr' && <>
             <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>{'Analyse '+yr}</div>
-            <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
-              {[['monat','Monatsübersicht'],['jahr','Jahresübersicht']].map(([k,label])=>{ const on=yrView===k; return (
-                <button key={k} onClick={()=>setYrView(k)} style={{background:on?hexA(C.pri,0.16):C.surf,border:'1px solid '+(on?hexA(C.pri,0.45):'transparent'),color:on?C.pri:C.sub,borderRadius:10,padding:'8px 18px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{label}</button>
-              ); })}
-            </div>
+            <div style={{marginBottom:18}}><PillTabs tabs={[['monat','Monatsübersicht'],['jahr','Jahresübersicht']]} value={yrView} onChange={setYrView} /></div>
 
             {yrView==='monat' && (()=>{
               const py=mo===0?yr-1:yr, pm=mo===0?11:mo-1;
