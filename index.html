@@ -484,16 +484,20 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
   const M3=(o)=>MONTHS[o.m].slice(0,3)+' '+o.y;
   const rangeLabel = (hasFrom&&hasUntil) ? (M3(item.from)+' – '+M3(item.until)) : hasFrom ? ('ab '+M3(item.from)) : hasUntil ? ('bis '+M3(item.until)) : '';
 
-  const handleFile=async e=>{
-    const f=e.target.files[0]; if(!f) return;
+  const processFile=async f=>{
+    if(!f) return;
     if(f.size>10*1024*1024){ alert('Max. 10 MB pro Datei.'); return; }
-    e.target.value='';
     setUploading(true);
     try{
       if(onUploadFile&&folderPath){ const desired=belegFileName(item.name, item.belegnr, f.name); await onUploadFile(f, folderPath, (filePath,fname)=>onUpdate(item.id,'__file__',{filePath,fileName:fname||desired,fileData:null}), desired); }
       if(onExtract) await onExtract(f, item, onUpdate);
     } finally { setUploading(false); }
   };
+  const handleFile=e=>{ const f=e.target.files[0]; e.target.value=''; processFile(f); };
+  const removeBeleg=()=>{ const run=()=>{ if(item.filePath&&onDeleteFile) onDeleteFile(item.filePath); onUpdate(item.id,'__file__',{filePath:null,fileData:null,fileName:''}); }; askConfirm?askConfirm('Beleg „'+(item.fileName||'')+'" entfernen?',run):run(); };
+  const previewBeleg=()=>{ if(!hasFile) return; if(onOpenFile) onOpenFile(item.filePath||item.fileData, item.fileName, {replace:()=>fileRef.current.click(), remove:removeBeleg}); };
+  const [dragOver,setDragOver]=useState(false);
+  const onBelegDrop=e=>{ e.preventDefault(); e.stopPropagation(); setDragOver(false); const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) processFile(f); };
   const chip=(icon,col,label,onClick)=>(<span onClick={onClick} style={{display:'inline-flex',alignItems:'center',gap:4,background:C.surf2,color:col,borderRadius:6,padding:'3px 8px',fontSize:11,fontWeight:500,whiteSpace:'nowrap',cursor:onClick?'pointer':'default'}}><Ic p={icon} sz={11} col={col}/>{label}</span>);
   const menuBtn={display:'flex',alignItems:'center',gap:8,width:'100%',background:C.surf2,border:'none',borderRadius:10,padding:'10px 12px',fontSize:13,color:C.txt,cursor:'pointer',fontFamily:'inherit',marginTop:8,textAlign:'left'};
   const mItem=(icon,label,onClick,col)=>(<button onClick={onClick} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:col||C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={icon} sz={16} col={col||C.sub}/> <span>{label}</span></button>);
@@ -535,7 +539,7 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
           </button>
         )}
         {/* Upload-Kachel ganz links — Beleg direkt hochladen/ansehen */}
-        <button onClick={e=>{e.stopPropagation(); hasFile?setDlg('file'):fileRef.current.click();}} title={hasFile?'Beleg ansehen':'Beleg hochladen'} style={{position:'relative',width:46,height:46,flexShrink:0,borderRadius:14,background:hasFile?hexA(acc,0.16):C.surf3,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+        <button onClick={e=>{e.stopPropagation(); hasFile?previewBeleg():fileRef.current.click();}} title={hasFile?'Beleg ansehen':'Beleg hochladen'} style={{position:'relative',width:46,height:46,flexShrink:0,borderRadius:14,background:hasFile?hexA(acc,0.16):C.surf3,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
           <Ic p={uploading?P.spark:(hasFile?P.clip:P.upload)} sz={18} col={uploading?acc:(hasFile?acc:C.sub)}/>
           {uploading && <div className="prog" style={{position:'absolute',bottom:4,left:6,right:6,height:3}}/>}
           {!uploading && hasFile && <span style={{position:'absolute',right:-3,bottom:-3,width:15,height:15,borderRadius:'50%',background:C.grn,border:'2px solid '+C.surf2,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.check} sz={8} col={'#06281C'}/></span>}
@@ -544,9 +548,6 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
         <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:5}}>
           <input value={item.name} placeholder="Name…" onClick={e=>e.stopPropagation()} onChange={e=>onUpdate(item.id,'name',e.target.value)} style={{background:'transparent',border:'none',outline:'none',fontFamily:'inherit',fontSize:15.5,fontWeight:600,color:C.txt,width:'100%',padding:0,letterSpacing:'-0.01em'}} />
           <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap'}}>
-            <button onClick={e=>{e.stopPropagation();openCat(e);}} style={item.category
-              ? {background:C.surf3,border:'1px solid '+C.bdr,borderRadius:8,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:600,color:C.sub,display:'inline-flex',alignItems:'center',gap:5}
-              : {background:'none',border:'none',padding:0,cursor:'pointer',fontFamily:'inherit',fontSize:13,color:C.mut,display:'inline-flex',alignItems:'center',gap:4}}>{item.category||'Kategorie'} <Ic p={P.down} sz={11} col={C.mut}/></button>
             {isoDate(item.datum) && <span title={dateLabel} style={{fontSize:12,color:C.sub,display:'inline-flex',alignItems:'center',gap:4}}><Ic p={P.cal} sz={11} col={C.mut}/>{(()=>{const iso=isoDate(item.datum);const a=iso.split('-');return a[2]+'.'+a[1]+'.'+a[0].slice(2);})()}</span>}
             {item.status==='offen' && <span title="Noch nicht durch Bankkontoauszug bestätigt" style={{fontSize:11,fontWeight:700,color:'#FFB37A',background:hexA('#FFB37A',0.14),border:'1px solid '+hexA('#FFB37A',0.35),borderRadius:7,padding:'2px 8px'}}>Offen</span>}
             {(item.status==='abgebucht'||item.status==='bezahlt') && <span title={item.status==='bezahlt'?'Bezahlt':'Abgebucht'} style={{fontSize:11,fontWeight:700,color:C.grn,background:hexA(C.grn,0.14),border:'1px solid '+hexA(C.grn,0.35),borderRadius:7,padding:'2px 8px',display:'inline-flex',alignItems:'center',gap:4}}><Ic p={P.check} sz={10} col={C.grn}/> {item.status==='bezahlt'?'Bezahlt':'Abgebucht'}</span>}
@@ -569,7 +570,7 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
       {/* Detail-Drawer (slidet von rechts herein) */}
       {drawer && (
         <div onClick={(e)=>{e.stopPropagation();setDrawer(false);}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:130,display:'flex',justifyContent:'flex-end'}}>
-          <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'min(520px,100%)',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,borderTopLeftRadius:22,borderBottomLeftRadius:22,boxShadow:'-30px 0 80px rgba(0,0,0,0.55)',overflowY:'auto',padding:'30px 30px 56px'}}>
+          <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'clamp(360px, 40vw, 640px)',maxWidth:'100%',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,borderTopLeftRadius:22,borderBottomLeftRadius:22,boxShadow:'-30px 0 80px rgba(0,0,0,0.55)',overflowY:'auto',padding:'30px 30px 56px'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
               <div style={{fontSize:19,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>Buchung</div>
               <button onClick={()=>setDrawer(false)} title="Schließen" style={{background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:10,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
@@ -612,20 +613,30 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
               {dcell(dateLabel, <DateField value={item.datum} onChange={v=>onUpdate(item.id,'datum',v)} accent={acc} style={{...dInput('100%'),padding:'10px 12px'}} />, !isPrivatItem)}
               {dcell('Beleg-Nr', <input value={item.belegnr||''} onChange={e=>onUpdate(item.id,'belegnr',e.target.value)} placeholder="Beleg-Nr" style={{...dInput('100%'),padding:'10px 12px'}} />, !isPrivatItem)}
               {dcell('Netto €', <input value={item.netto||''} onChange={e=>onNetto(e.target.value)} inputMode="decimal" placeholder="Netto" style={{...dInput('100%'),padding:'10px 12px',...NUM}} />)}
-              {dcell('MwSt', <select value={(item.mwst!=null&&item.mwst!=='')?String(item.mwst):'19'} onChange={e=>onMwst(e.target.value)} style={{...dInput('100%'),padding:'10px 12px',cursor:'pointer'}}><option value="19">19%</option><option value="7">7%</option><option value="0">0%</option></select>)}
+              {dcell('MwSt', <select value={(item.mwst!=null&&item.mwst!=='')?String(item.mwst):'19'} onChange={e=>onMwst(e.target.value)} style={{...dInput('100%'),padding:'10px 12px',cursor:'pointer'}}><option value="19">19%</option><option value="7">7%</option><option value="0">0%</option></select>, !isPrivatItem)}
             </div>
 
             {fLbl('Beleg')}
+            <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={onBelegDrop} style={{marginBottom:16}}>
             {hasFile ? (
-              <div style={{display:'flex',alignItems:'center',gap:8,background:C.surf2,borderRadius:10,padding:'10px 12px',marginBottom:16}}>
-                <Ic p={P.clip} sz={15} col={acc}/>
-                {item.filePath ? <button onClick={()=>onOpenFile&&onOpenFile(item.filePath,item.fileName)} style={{background:'none',border:'none',color:acc,fontSize:14,cursor:'pointer',fontFamily:'inherit',padding:0,flex:1,textAlign:'left',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.fileName}</button>
-                  : <a href={item.fileData} download={item.fileName} style={{color:acc,fontSize:14,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.fileName}</a>}
-                <button onClick={()=>{ const run=()=>{ if(item.filePath&&onDeleteFile) onDeleteFile(item.filePath); onUpdate(item.id,'__file__',{filePath:null,fileData:null,fileName:''}); }; askConfirm?askConfirm('Beleg „'+item.fileName+'" entfernen?',run):run(); }} style={{background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:18,lineHeight:1}}>×</button>
+              <div style={{background:dragOver?hexA(acc,0.12):C.surf2,border:'1.5px '+(dragOver?'dashed '+acc:'solid '+C.bdr),borderRadius:12,padding:'12px 14px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:11}}>
+                  <Ic p={uploading?P.spark:P.clip} sz={16} col={acc}/>
+                  <span style={{flex:1,fontSize:13.5,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{uploading?'Wird ersetzt…':item.fileName}</span>
+                </div>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                  <button onClick={previewBeleg} style={{flex:1,minWidth:90,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:hexA(acc,0.16),border:'none',borderRadius:9,padding:'9px',fontSize:13,fontWeight:600,color:acc,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.doc} sz={14} col={acc}/> Ansehen</button>
+                  {item.fileData
+                    ? <a href={item.fileData} download={item.fileName} style={{flex:1,minWidth:90,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:C.surf3,borderRadius:9,padding:'9px',fontSize:13,fontWeight:600,color:C.sub,textDecoration:'none'}}><Ic p={P.down} sz={14} col={C.sub}/> Laden</a>
+                    : <button onClick={()=>onOpenFile&&onOpenFile(item.filePath,item.fileName)} style={{flex:1,minWidth:90,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:C.surf3,border:'none',borderRadius:9,padding:'9px',fontSize:13,fontWeight:600,color:C.sub,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.down} sz={14} col={C.sub}/> Laden</button>}
+                  <button onClick={()=>fileRef.current.click()} style={{flex:1,minWidth:90,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:C.surf3,border:'none',borderRadius:9,padding:'9px',fontSize:13,fontWeight:600,color:C.sub,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.upload} sz={14} col={C.sub}/> Ersetzen</button>
+                  <button onClick={removeBeleg} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:C.redL,border:'none',borderRadius:9,padding:'9px 12px',fontSize:13,fontWeight:600,color:C.red,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.trash} sz={14} col={C.red}/></button>
+                </div>
               </div>
             ) : (
-              <button onClick={()=>fileRef.current.click()} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:hexA(acc,0.16),border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:acc,cursor:'pointer',fontFamily:'inherit',marginBottom:16}}><Ic p={P.upload} sz={15} col={acc}/> Beleg hochladen</button>
+              <button onClick={()=>fileRef.current.click()} style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:7,width:'100%',background:dragOver?hexA(acc,0.12):hexA(acc,0.07),border:'1.5px dashed '+(dragOver?acc:hexA(acc,0.4)),borderRadius:12,padding:'20px',fontSize:14,fontWeight:600,color:acc,cursor:'pointer',fontFamily:'inherit'}}><Ic p={uploading?P.spark:P.upload} sz={20} col={acc}/> {uploading?'Wird hochgeladen…':'Beleg anhängen'}<span style={{fontSize:11.5,fontWeight:500,color:C.mut}}>oder per Drag & Drop ablegen</span></button>
             )}
+            </div>
 
             {fLbl('Notiz')}
             <textarea value={item.note||''} onChange={e=>{ const v=e.target.value; if(!String(item.category||'').trim()||item.catAuto){ const g=guessCategory((item.name||'')+' '+v); onUpdate(item.id,'__merge__', g?{note:v,category:g,catAuto:true}:{note:v}); } else onUpdate(item.id,'note',v); }} placeholder="Notiz / Verwendungszweck…" rows={3} style={{...dInput('100%'),padding:'10px 12px',resize:'vertical',marginBottom:16}} />
@@ -1172,6 +1183,7 @@ function App({session}) {
   const [capProg,setCapProg]= useState(0);         // Erfassung: Beleg-Upload-Fortschritt
   const [importTab,setImportTab]= useState('beleg'); // Import-Umschalter: 'beleg' | 'bank'
   const [confirmMatch,setConfirmMatch]= useState(null); // Bankauszug: Beleg-Treffer bestätigen {draftId, match}
+  const [filePreview,setFilePreview]= useState(null);   // Beleg-Vorschau (dunkel, nur PDF/Bild) {src,name,isPdf,replace,remove}
   const [custTab,setCustTab]= useState('details'); // Kundenprofil: Details vs Rechnungen
   const [belPath,setBelPath]= useState([]);        // Belege-DB Ordnerpfad: [bereich, jahr, monat, kind]
   const [zipBusy,setZipBusy]= useState(false);
@@ -1390,10 +1402,14 @@ function App({session}) {
     setItemFile(path, fname);
     setToast('✅ Hochgeladen: '+folderPath.join(' / '));
   };
-  const openFile = async (path) => {
-    const {data:d,error}=await sb.storage.from('belege').createSignedUrl(path,3600);
+  const isPdfSrc = (src,name)=> /\.pdf(\?|$)/i.test(String(name||'')) || /^data:application\/pdf/i.test(String(src||'')) || /\.pdf(\?|$)/i.test(String(src||''));
+  const showFilePreview = (src,name,opts)=> setFilePreview({src,name:name||'Beleg',isPdf:isPdfSrc(src,name),replace:(opts&&opts.replace)||null,remove:(opts&&opts.remove)||null});
+  const openFile = async (arg, name, opts) => {
+    if(arg && String(arg).startsWith('data:')){ showFilePreview(arg, name, opts); return; }
+    setToast('Beleg wird geöffnet…');
+    const {data:d,error}=await sb.storage.from('belege').createSignedUrl(arg,3600);
     if(error||!d){ setToast('Öffnen fehlgeschlagen: '+((error&&error.message)||'')); return; }
-    window.open(d.signedUrl,'_blank','noopener');
+    showFilePreview(d.signedUrl, name, opts);
   };
   const deleteFile = async (path) => { try{ await sb.storage.from('belege').remove([path]); }catch(e){} };
 
@@ -2505,9 +2521,9 @@ function App({session}) {
 
   /* Sidebar nav */
   const NAV = [
-    {id:'quellen',label:'Konten',       icon:P.grid},
     {id:'import', label:'Import',       icon:P.upload},
     {id:'rechnung',label:'Rechnungen',  icon:P.receipt},
+    {id:'berater',label:'KI-Berater',   icon:P.spark},
   ];
   const SONSTIGES = [
     {id:'kunden', label:'Kunden',       icon:P.prson},
@@ -2544,7 +2560,7 @@ function App({session}) {
               <button onClick={()=>openCapture(addCtx)} style={{display:'inline-flex',alignItems:'center',gap:6,marginLeft:(sums?undefined:'auto'),background:C.pri,color:C.priTxt,border:'none',borderRadius:9,padding:'7px 14px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.plus||P.up} sz={14} col={C.priTxt}/> {addLabel||'Hinzufügen'}</button>
             )}
             {!inSel && srcKey && shown.length>0 && (
-              <button onClick={()=>{setSelKey(srcKey);setSelIds([]);}} style={toolBtn}>Auswählen</button>
+              <button onClick={()=>{setSelKey(srcKey);setSelIds([]);}} style={{...toolBtn,padding:'7px 14px',fontSize:13,fontWeight:600,borderRadius:9,marginLeft:addCtx?undefined:(sums?undefined:'auto')}}>Auswählen</button>
             )}
             {inSel && (<>
               <span style={{fontSize:12,color:C.sub,marginRight:'auto'}}>{selIds.length} ausgewählt</span>
@@ -4450,6 +4466,22 @@ function App({session}) {
           </div>
         </Sheet>
       )}
+
+      {filePreview && (()=>{ const fp=filePreview; return (
+        <div onClick={()=>setFilePreview(null)} style={{position:'fixed',inset:0,background:'rgba(8,8,10,0.92)',zIndex:170,display:'flex',flexDirection:'column'}}>
+          <div onClick={e=>e.stopPropagation()} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 22px',flexShrink:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0,flex:1}}><Ic p={P.doc} sz={17} col={'#9aa0a6'}/><span style={{fontSize:14,fontWeight:600,color:'#e8eaed',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{fp.name}</span></div>
+            <a href={fp.src} download={fp.name} onClick={e=>e.stopPropagation()} style={{display:'inline-flex',alignItems:'center',gap:7,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.14)',color:'#e8eaed',borderRadius:9,padding:'8px 14px',fontSize:13,fontWeight:600,textDecoration:'none'}}><Ic p={P.down} sz={14} col={'#e8eaed'}/> Herunterladen</a>
+            {fp.replace && <button onClick={()=>{ setFilePreview(null); fp.replace(); }} style={{display:'inline-flex',alignItems:'center',gap:7,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.14)',color:'#e8eaed',borderRadius:9,padding:'8px 14px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.upload} sz={14} col={'#e8eaed'}/> Ersetzen</button>}
+            <button onClick={()=>setFilePreview(null)} title="Schließen" style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.14)',color:'#e8eaed',width:36,height:36,borderRadius:9,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit',flexShrink:0}}>×</button>
+          </div>
+          <div onClick={()=>setFilePreview(null)} style={{flex:1,minHeight:0,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 22px 26px'}}>
+            {fp.isPdf
+              ? <iframe onClick={e=>e.stopPropagation()} src={fp.src} title={fp.name} style={{width:'min(900px,100%)',height:'100%',border:'none',borderRadius:14,background:'#525659',boxShadow:'0 20px 70px rgba(0,0,0,0.6)'}}/>
+              : <img onClick={e=>e.stopPropagation()} src={fp.src} alt={fp.name} style={{maxWidth:'min(900px,100%)',maxHeight:'100%',objectFit:'contain',borderRadius:14,boxShadow:'0 20px 70px rgba(0,0,0,0.6)'}}/>}
+          </div>
+        </div>
+      ); })()}
 
       {confirmMatch && (()=>{ const m=confirmMatch.match; const d=(data.drafts||[]).find(x=>x.id===confirmMatch.draftId)||{}; return (
         <div onClick={()=>setConfirmMatch(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:160,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
