@@ -1084,7 +1084,7 @@ function Login() {
 }
 
 /* ══ Suchbarer Kunden-Dropdown (modern, luftig) ══ */
-function CustomerSelect({customers, value, onPick}) {
+function CustomerSelect({customers, value, onPick, onCreate}) {
   const [open,setOpen]=useState(false);
   const [q,setQ]=useState('');
   const sel=customers.find(c=>c.id===value);
@@ -1101,7 +1101,7 @@ function CustomerSelect({customers, value, onPick}) {
         <div style={{position:'absolute',top:'calc(100% + 6px)',left:0,right:0,zIndex:141,background:C.surf,border:'1px solid '+C.bdr,borderRadius:13,padding:6,boxShadow:'0 16px 40px rgba(0,0,0,0.55)'}}>
           <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Kunde suchen…" style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:9,color:C.txt,padding:'10px 12px',fontSize:14,outline:'none',fontFamily:'inherit',marginBottom:6,boxSizing:'border-box'}} />
           <div style={{maxHeight:240,overflowY:'auto'}}>
-            <button onClick={()=>{onPick(null);setOpen(false);setQ('');}} style={{...row,color:C.pri,fontWeight:600}}><Ic p={P.upload} sz={15} col={C.pri}/> Neuer Kunde</button>
+            <button onClick={()=>{ setOpen(false); setQ(''); if(onCreate) onCreate(); else onPick(null); }} style={{...row,color:C.pri,fontWeight:600}}><Ic p={P.upload} sz={15} col={C.pri}/> Neuer Kunde</button>
             {list.map(c=>(
               <button key={c.id} onClick={()=>{onPick(c);setOpen(false);setQ('');}} style={{...row,background:c.id===value?C.surf2:'none'}}>
                 <Ic p={P.prson} sz={15} col={C.sub}/><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.name||'(ohne Name)'}</span>{c.custNo&&<span style={{fontSize:12,color:C.mut}}>Nr. {c.custNo}</span>}
@@ -1137,6 +1137,7 @@ function App({session}) {
   const [invSearch,setInvSearch]= useState('');     // Rechnungssuche
   const [custSearch,setCustSearch]= useState('');   // Kundensuche
   const [invTaxAsk,setInvTaxAsk]= useState(null);   // Steuerberater-Frage zur Rechnung {q,answer,busy}
+  const [newCust,setNewCust]= useState(null);       // Schnell-Anlegen-Popup {domain,anrede,firstName,lastName,company,address,email,onPick}
   const [draftSearch,setDraftSearch]= useState(''); // Kontoauszug-Suche
   const [draftFilter,setDraftFilter]= useState('alle'); // Kontoauszug-Statusfilter
   const [invDomain,setInvDomain]= useState('unter'); // Rechnungen/Kunden: Unternehmen vs. Immobilien
@@ -1313,7 +1314,7 @@ function App({session}) {
   /* Termine / Events (Mönchengladbach) laden */
   const loadEvents = async () => {
     const {data:rows,error}=await sb.from('events').select('*').order('date',{ascending:true});
-    if(!error && rows) setEvents(rows);
+    if(!error && rows) setEvents(Array.isArray(rows)?rows:[]);
   };
   useEffect(()=>{ if(ready) loadEvents(); },[ready]);
   useEffect(()=>{ if(ready && tab==='kal') loadEvents(); },[tab]);
@@ -1977,6 +1978,8 @@ function App({session}) {
     ? setData(prev=>({...prev, companyImmo:{...(prev.companyImmo||{}), ...patch}}))
     : setData(prev=>({...prev, company:{...(prev.company||{}), ...patch}}));
   const saveCustomer = (c) => setData(prev=>{ const list=[...(prev.customers||[])]; const i=list.findIndex(x=>x.id===c.id); if(i>=0)list[i]=c; else list.push(c); return {...prev, customers:list}; });
+  const openNewCust = (domain, onPick) => setNewCust({domain:domain||'unter', anrede:'', firstName:'', lastName:'', company:'', address:'', email:'', onPick});
+  const saveNewCust = () => { const n=newCust; if(!n) return; const nm=(n.company||[n.firstName,n.lastName].filter(Boolean).join(' ')||'').trim(); if(!nm){ setToast('Bitte Name oder Firma angeben.'); return; } const c={ id:uid(), name:nm, anrede:n.anrede||'', firstName:n.firstName||'', lastName:n.lastName||'', company:n.company||'', address:n.address||'', email:n.email||'', phone:'', website:'', custNo:nextCustNo(n.domain||'unter'), domain:n.domain||'unter' }; saveCustomer(c); if(n.onPick) n.onPick(c); setNewCust(null); setToast('Kunde „'+nm+'" angelegt (Nr. '+c.custNo+')'); };
   const delCustomer = (id) => setData(prev=>({...prev, customers:(prev.customers||[]).filter(c=>c.id!==id)}));
   const invTotals = (items)=>{ let net=0,tax=0; (items||[]).forEach(it=>{ const n=num(it.qty||1)*num(it.price); net+=n; tax+=n*(num(it.mwst!=null?it.mwst:19)/100); }); return {net, tax, gross:net+tax}; };
   const nextInvNo = ()=>{ const y=new Date().getFullYear(); const n=(data.invoices||[]).filter(i=>String(i.number||'').startsWith(String(y))).length+1; return y+'-'+String(n).padStart(3,'0'); };
@@ -3615,7 +3618,7 @@ function App({session}) {
                   </div>
                   <div style={{maxWidth:680,display:'flex',flexDirection:'column',gap:14}}>
                     <div style={{...SC,display:'flex',flexDirection:'column',gap:12}}>
-                      <div><div style={{fontSize:12,color:C.sub,marginBottom:6}}>Kunde <span style={{color:C.red}}>*</span></div><CustomerSelect customers={customersFor(r.domain||'unter')} value={r.customerId} onPick={c=>{ if(c){ setR({customerId:c.id, custName:c.name||'', custAddress:c.address||'', custEmail:c.email||'', firstName:c.firstName||'', lastName:c.lastName||'', company:c.company||'', anrede:c.anrede||'', saveCust:false}); } else setR({customerId:'',firstName:'',lastName:'',company:'',custName:'',saveCust:true}); }}/></div>
+                      <div><div style={{fontSize:12,color:C.sub,marginBottom:6}}>Kunde <span style={{color:C.red}}>*</span></div><CustomerSelect customers={customersFor(r.domain||'unter')} value={r.customerId} onCreate={()=>openNewCust(r.domain||'unter', c=>setR({customerId:c.id, custName:c.name||'', custAddress:c.address||'', custEmail:c.email||'', firstName:c.firstName||'', lastName:c.lastName||'', company:c.company||'', anrede:c.anrede||'', saveCust:false}))} onPick={c=>{ if(c){ setR({customerId:c.id, custName:c.name||'', custAddress:c.address||'', custEmail:c.email||'', firstName:c.firstName||'', lastName:c.lastName||'', company:c.company||'', anrede:c.anrede||'', saveCust:false}); } else setR({customerId:'',firstName:'',lastName:'',company:'',custName:'',saveCust:true}); }}/></div>
                       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                         <div style={{width:120}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Anrede</div><select value={r.anrede||''} onChange={e=>setR({anrede:e.target.value,customerId:''})} style={fld}><option value="">—</option><option value="herr">Herr</option><option value="frau">Frau</option></select></div>
                         <div style={{flex:1,minWidth:120}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Vorname</div><input value={r.firstName||''} onChange={e=>setR({firstName:e.target.value,customerId:'',custName:(r.company||[e.target.value,r.lastName].filter(Boolean).join(' ')),saveCust:true})} style={fld}/></div>
@@ -3689,7 +3692,7 @@ function App({session}) {
                       <div style={{marginBottom:20,display:'flex',flexDirection:'column',gap:14}}>
                         <div>
                           <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Kunde <span style={{color:C.red}}>*</span></div>
-                          <CustomerSelect customers={customersFor(invEdit.domain||'unter')} value={invEdit.customerId} onPick={c=>{ if(c){ setI({customerId:c.id, custName:c.name||'', custAddress:c.address||'', custEmail:c.email||'', firstName:c.firstName||'', lastName:c.lastName||'', company:c.company||'', anrede:c.anrede||'', saveCust:false}); } else { setI({customerId:'', custName:'', custAddress:'', custEmail:'', firstName:'', lastName:'', company:'', anrede:'', saveCust:true}); } }} />
+                          <CustomerSelect customers={customersFor(invEdit.domain||'unter')} value={invEdit.customerId} onCreate={()=>openNewCust(invEdit.domain||'unter', c=>setI({customerId:c.id, custName:c.name||'', custAddress:c.address||'', custEmail:c.email||'', firstName:c.firstName||'', lastName:c.lastName||'', company:c.company||'', anrede:c.anrede||'', saveCust:false}))} onPick={c=>{ if(c){ setI({customerId:c.id, custName:c.name||'', custAddress:c.address||'', custEmail:c.email||'', firstName:c.firstName||'', lastName:c.lastName||'', company:c.company||'', anrede:c.anrede||'', saveCust:false}); } else { setI({customerId:'', custName:'', custAddress:'', custEmail:'', firstName:'', lastName:'', company:'', anrede:'', saveCust:true}); } }} />
                         </div>
                         <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                           <div style={{width:120}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Anrede</div><select value={invEdit.anrede||''} onChange={e=>setI({anrede:e.target.value,customerId:''})} style={fld}><option value="">—</option><option value="herr">Herr</option><option value="frau">Frau</option></select></div>
@@ -4722,6 +4725,29 @@ function App({session}) {
           </div>
         </div>
       )}
+
+      {newCust && (()=>{ const n=newCust; const set=patch=>setNewCust(x=>({...x,...patch})); const isImmo=(n.domain||'unter')==='immo'; const badgeCol=isImmo?KONTO_COLORS.immo.c:KONTO_COLORS.unter.c; const fld2={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const lbl2={fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}; return (
+        <div onClick={()=>setNewCust(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:170,padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:20,padding:'22px',maxWidth:480,width:'100%',boxShadow:'0 16px 48px rgba(0,0,0,0.5)',maxHeight:'88vh',overflowY:'auto'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}><Ic p={P.prson} sz={18} col={C.txt}/><div style={{fontSize:17,fontWeight:800,color:C.txt}}>Neuer Kunde</div><span style={{fontSize:11,fontWeight:700,color:badgeCol,background:hexA(badgeCol,0.14),border:'1px solid '+hexA(badgeCol,0.3),borderRadius:7,padding:'2px 8px'}}>{isImmo?'Immobilien':'Firma'}</span></div>
+            <div style={{fontSize:12.5,color:C.sub,lineHeight:1.5,marginBottom:16}}>Schnell anlegen – der Kunde wird gespeichert und direkt in die Rechnung übernommen.</div>
+            <div style={{display:'grid',gridTemplateColumns:'90px 1fr',gap:10,marginBottom:10}}>
+              <div><div style={lbl2}>Anrede</div><select value={n.anrede||''} onChange={e=>set({anrede:e.target.value})} style={{...fld2,cursor:'pointer'}}><option value="">—</option><option value="herr">Herr</option><option value="frau">Frau</option></select></div>
+              <div><div style={lbl2}>Firma <span style={{color:C.mut}}>(optional)</span></div><input value={n.company||''} onChange={e=>set({company:e.target.value})} placeholder="Firma" style={fld2}/></div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+              <div><div style={lbl2}>Vorname</div><input value={n.firstName||''} onChange={e=>set({firstName:e.target.value})} placeholder="Vorname" style={fld2}/></div>
+              <div><div style={lbl2}>Nachname</div><input value={n.lastName||''} onChange={e=>set({lastName:e.target.value})} placeholder="Nachname" style={fld2}/></div>
+            </div>
+            <div style={{marginBottom:10}}><div style={lbl2}>Adresse</div><textarea value={n.address||''} onChange={e=>set({address:e.target.value})} rows={2} placeholder="Straße, PLZ Ort" style={{...fld2,resize:'vertical'}}/></div>
+            <div style={{marginBottom:16}}><div style={lbl2}>E-Mail <span style={{color:C.mut}}>(optional)</span></div><input value={n.email||''} onChange={e=>set({email:e.target.value})} placeholder="kunde@beispiel.de" style={fld2}/></div>
+            <div style={{display:'flex',gap:10}}>
+              <button onClick={()=>setNewCust(null)} style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:10,padding:'12px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Abbrechen</button>
+              <button onClick={saveNewCust} style={{flex:2,background:C.pri,color:C.priTxt,border:'none',borderRadius:10,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Anlegen &amp; auswählen</button>
+            </div>
+          </div>
+        </div>
+      ); })()}
 
       {aiCap && (()=>{ const p=aiCap.parsed; const busy=aiCap.busy; const A=KONTO_COLORS.unter; return (
         <div onClick={()=>setAiCap(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:160,padding:20}}>
