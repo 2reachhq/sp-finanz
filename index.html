@@ -3290,13 +3290,20 @@ function App({session}) {
             const allIds = drafts.map(d=>d.id);
             const allSel = allIds.length>0 && draftSel.length===allIds.length;
             const draftRow = d => { const hasFile=!!d.fileData; const sel=draftSel.includes(d.id); const matched=d.openMatch && !d.confirmed; const done=!!d.confirmed; const ign=!!d.ignored; const st=draftStatus(d); const catTxt=[d.category, d.datum&&(toISO(d.datum)||d.datum)].filter(Boolean).join(' · ')||'Details ergänzen'; return (
-              <div key={d.id} draggable={!ign} onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>{ if(done||ign) return; setAssignFor(null); setAssignSel(null); setDraftEdit(d.id); }} onContextMenu={e=>{e.preventDefault();setDraftCtx({x:e.clientX,y:e.clientY,id:d.id});}} style={{display:'flex',gap:12,alignItems:'center',background:ign?C.surf:(matched?hexA(C.pri,0.08):(done?hexA(C.grn,0.06):d.privat?hexA('#ABC4FF',0.07):d.isNew?hexA('#FFD27A',0.07):C.surf2)),border:'1px solid '+(done?hexA(C.grn,0.5):(matched?C.pri:(sel?C.pri:(d.isNew?hexA('#FFD27A',0.4):C.bdr)))),borderRadius:14,padding:'12px 14px',cursor:(done||ign)?'default':'pointer',opacity:ign?0.5:1}}>
+              <div key={d.id} draggable={!ign} onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>{ if(done||ign) return; if(matched){ setConfirmMatch({draftId:d.id, match:d.openMatch}); return; } setAssignFor(null); setAssignSel(null); setDraftEdit(d.id); }} onContextMenu={e=>{e.preventDefault();setDraftCtx({x:e.clientX,y:e.clientY,id:d.id});}} style={{display:'flex',gap:12,alignItems:'center',background:ign?C.surf:(matched?hexA(C.pri,0.08):(done?hexA(C.grn,0.06):d.privat?hexA('#ABC4FF',0.07):d.isNew?hexA('#FFD27A',0.07):C.surf2)),border:'1px solid '+(done?hexA(C.grn,0.5):(matched?C.pri:(sel?C.pri:(d.isNew?hexA('#FFD27A',0.4):C.bdr)))),borderRadius:14,padding:'12px 14px',cursor:(done||ign)?'default':'pointer',opacity:ign?0.5:1}}>
                 {!ign && !done && <button onClick={e=>{e.stopPropagation();setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id]);}} title="Auswählen" style={{width:22,height:22,flexShrink:0,borderRadius:6,border:'1.5px solid '+(sel?C.pri:C.bdrM),background:sel?C.pri:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}>{sel&&<Ic p={P.check} sz={13} col={C.priTxt}/>}</button>}
+                {matched ? (
+                  <button onClick={e=>{e.stopPropagation(); setConfirmMatch({draftId:d.id, match:d.openMatch});}} title="Gefundenen Beleg prüfen" style={{position:'relative',width:44,height:44,flexShrink:0,borderRadius:13,background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+                    <Ic p={P.receipt} sz={17} col={C.pri}/>
+                    <span style={{position:'absolute',right:-3,bottom:-3,width:14,height:14,borderRadius:'50%',background:C.pri,border:'2px solid '+C.surf2,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.spark} sz={7} col={C.priTxt}/></span>
+                  </button>
+                ) : (
                 <label onClick={e=>e.stopPropagation()} title={hasFile?'Beleg ersetzen':'Beleg hochladen'} style={{position:'relative',width:44,height:44,flexShrink:0,borderRadius:13,background:hasFile?hexA(C.pri,0.16):C.surf3,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
                   <Ic p={hasFile?P.clip:P.upload} sz={17} col={hasFile?C.pri:C.sub}/>
                   {hasFile && <span style={{position:'absolute',right:-3,bottom:-3,width:14,height:14,borderRadius:'50%',background:C.grn,border:'2px solid '+C.surf2,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.check} sz={7} col={'#06281C'}/></span>}
                   <input type="file" accept="image/*,.pdf" onChange={e=>{const f=e.target.files[0];e.target.value='';draftFile(d.id,f);}} style={{display:'none'}}/>
                 </label>
+                )}
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:15,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name||'—'}</div>
                   <div style={{display:'flex',alignItems:'center',gap:8,marginTop:3,flexWrap:'wrap'}}>
@@ -4664,8 +4671,9 @@ function App({session}) {
             </div>
             <div style={{display:'flex',gap:10}}>
               <button onClick={()=>setConfirmMatch(null)} style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:11,padding:'12px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Abbrechen</button>
-              <button onClick={()=>confirmBankMatch(confirmMatch.draftId,m)} style={{flex:1.4,display:'flex',alignItems:'center',justifyContent:'center',gap:7,background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.check} sz={15} col={C.priTxt}/> Zuordnen &amp; bestätigen</button>
+              <button onClick={()=>confirmBankMatch(confirmMatch.draftId,m)} style={{flex:1.4,display:'flex',alignItems:'center',justifyContent:'center',gap:7,background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.check} sz={15} col={C.priTxt}/> Passt – zuordnen</button>
             </div>
+            <button onClick={()=>{ const id=confirmMatch.draftId; setConfirmMatch(null); setAssignFor(null); setAssignSel(null); setDraftEdit(id); }} style={{width:'100%',marginTop:10,background:'none',border:'none',color:C.sub,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',textDecoration:'underline'}}>Anderen Beleg wählen oder hochladen</button>
           </div>
         </div>
       ); })()}
