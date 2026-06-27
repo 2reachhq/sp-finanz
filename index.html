@@ -1736,6 +1736,8 @@ function App({session}) {
   const markDraftPrivat = id => { updateDraft(id,{privat:true,ignored:false}); setDraftSel(s=>s.filter(x=>x!==id)); setToast('Als privat markiert'); };
   const markDraftIgnore = id => { updateDraft(id,{ignored:true,privat:false}); setDraftSel(s=>s.filter(x=>x!==id)); setToast('Ignoriert'); };
   const restoreDraft = id => { updateDraft(id,{ignored:false,privat:false}); setToast('Wiederhergestellt'); };
+  // Zuordnung einer Bankbuchung rückgängig machen: Beleg-Status zurück auf „offen", Entwurf wieder offen
+  const unconfirmDraft = id => { setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); const dft=(nd.drafts||[]).find(x=>x.id===id); if(dft&&dft.linkedTo){ const L=dft.linkedTo; const M=nd[L.ty]&&nd[L.ty][L.tm]; const cont = L.account==='unter'?(M&&M.unternehmen) : L.account==='privat'?(M&&M.privat) : (M&&M.props&&M.props[L.account]); if(cont){ ['clients','items','einnahmen','expenses'].forEach(sub=>{ if(Array.isArray(cont[sub])) cont[sub]=cont[sub].map(it=>it.id===L.itemId?{...it,status:'offen',bankConfirmed:false}:it); }); } } nd.drafts=(nd.drafts||[]).map(x=>x.id===id?{...x,confirmed:false,linkedTo:null}:x); return nd; }); setToast('Zuordnung rückgängig gemacht'); };
   const fileToB64 = file => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(new Error('Datei lesen fehlgeschlagen')); r.readAsDataURL(file); });
   // Alle vorhandenen Buchungen einsammeln (für Dubletten-/Wiederkehrend-Erkennung)
   const existingBookings = () => { const out=[]; Object.keys(data).forEach(y=>{ if(!/^\d+$/.test(y))return; const ym=data[y]||{}; Object.keys(ym).forEach(m=>{ const md=ym[m]; if(!md)return;
@@ -1959,7 +1961,7 @@ function App({session}) {
   const captureAccLabel = (acc)=> acc==='unter'?(names.unternehmen||'Firma') : acc==='privat'?(names.privatLabel||'Privat') : (names[acc]||'Konto');
   const isCapPrivat = c => c && c.account==='privat';
   const captureMissing = (c)=>{ if(!c) return ['Konto']; const f=c.f||{}; const m=[]; if(!c.account)m.push('Konto'); if(c.account==='privat'){ if(!String(f.name||'').trim())m.push('Name'); if(!num(f.amount))m.push('Betrag'); return m; } if(!String(f.name||'').trim())m.push('Name'); if(!num(f.amount))m.push('Betrag'); if(!String(f.category||'').trim())m.push('Kategorie'); if(!(c.kind==='ein'||c.kind==='aus'))m.push('Art'); if(!c.recurring){ if(!f.datum)m.push('Datum'); if(!String(f.belegnr||'').trim())m.push('Beleg-Nr'); } return m; };
-  const openCapture = (ctx)=>{ setCapture({ kind:ctx.kind||'aus', recurring:!!ctx.recurring, account:ctx.account||'', kindLocked:!!ctx.kindLocked, mode:ctx.mode||'section', f:{ name:'', custName:'', customerId:'', amount:'', netto:'', mwst:'', note:'', category:'', datum:'', belegnr:'', fileData:null, fileName:'' } }); setCapProg(0); };
+  const openCapture = (ctx)=>{ setCapture({ kind:ctx.kind||'aus', recurring:!!ctx.recurring, account:ctx.account||'', kindLocked:!!ctx.kindLocked, mode:ctx.mode||'section', from:(ctx.recurring?{y:yr,m:mo}:null), until:(ctx.recurring?{y:yr,m:11}:null), f:{ name:'', custName:'', customerId:'', amount:'', netto:'', mwst:'', note:'', category:'', datum:'', belegnr:'', fileData:null, fileName:'' } }); setCapProg(0); };
   const setCapF = (patch)=> setCapture(c=> c?{...c, f:{...c.f, ...patch}}:c);
   const scanCaptureFile = async (f)=>{ if(!f) return; f=await imageToPdfFile(f); const isPdf=/pdf$/i.test(f.name||'')||f.type==='application/pdf'; setCapProg(8); const tick=setInterval(()=>setCapProg(p=>p<88?p+Math.max(3,(88-p)*0.16):p),120);
     try{ let blob=f, mime='image/jpeg', ext='.jpg'; if(isPdf){ mime='application/pdf'; ext='.pdf'; } else { try{ blob=await compressImage(f,1500,0.6); }catch(_){} } const b64=await fileToB64(blob); clearInterval(tick); setCapProg(94);
@@ -1970,7 +1972,7 @@ function App({session}) {
     }catch(e){ clearInterval(tick); setCapProg(0); setToast('Beleg-Fehler: '+(e.message||e)); }
   };
   const bookCapture = ()=>{ const c=capture; if(!c||captureMissing(c).length) return; const f=c.f; const dt=new Date(f.datum); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const cust=customers.find(x=>x.id===f.customerId);
-    setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(f.name),amount:num(f.amount),netto:num(f.netto),mwst:(f.mwst!=null?f.mwst:''),note:(f.note||''),belegnr:f.belegnr||'',category:f.category||'',datum:f.datum||'',customerId:f.customerId||'',custName:(cust?cust.name:f.custName)||'',recurring:!!c.recurring,status:'offen',bankConfirmed:false,fileData:f.fileData||null,fileName:f.fileName||'',id:uid()}; if(c.recurring){ /* in alle Monate des Jahres legen, wie wiederkehrend */ for(let mm=0;mm<12;mm++){ if(!nd[ty])nd[ty]={}; if(!nd[ty][mm])nd[ty][mm]=emptyMonth(); _bookKind(nd[ty][mm], c.account, c.kind, {...item,id:uid()}); } } else { _bookKind(nd[ty][tm], c.account, c.kind, item); } return nd; });
+    setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(f.name),amount:num(f.amount),netto:num(f.netto),mwst:(f.mwst!=null?f.mwst:''),note:(f.note||''),belegnr:f.belegnr||'',category:f.category||'',datum:f.datum||'',customerId:f.customerId||'',custName:(cust?cust.name:f.custName)||'',recurring:!!c.recurring,status:'offen',bankConfirmed:false,fileData:f.fileData||null,fileName:f.fileName||'',id:uid()}; if(c.recurring){ /* nur im gewählten Zeitraum (von–bis) anlegen */ const fr=c.from||{y:ty,m:0}; const un=c.until||{y:fr.y,m:11}; let yy=fr.y, mm=fr.m, guard=0; while((yy<un.y || (yy===un.y && mm<=un.m)) && guard<120){ if(!nd[yy])nd[yy]={}; if(!nd[yy][mm])nd[yy][mm]=emptyMonth(); _bookKind(nd[yy][mm], c.account, c.kind, {...item,id:uid(),from:fr,until:un}); mm++; if(mm>11){mm=0;yy++;} guard++; } } else { _bookKind(nd[ty][tm], c.account, c.kind, item); } return nd; });
     setToast((c.recurring?'Wiederkehrend angelegt → ':'Zugeordnet → ')+captureAccLabel(c.account)+' · '+MONTHS[tm]+' '+ty+' · Status: offen'); setCapture(null); setCapProg(0);
   };
 
@@ -3331,6 +3333,8 @@ function App({session}) {
                     <Ic p={P.receipt} sz={17} col={C.pri}/>
                     <span style={{position:'absolute',right:-3,bottom:-3,width:14,height:14,borderRadius:'50%',background:C.pri,border:'2px solid '+C.surf2,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.spark} sz={7} col={C.priTxt}/></span>
                   </button>
+                ) : done ? (
+                  <div title="Zugeordnet" style={{width:44,height:44,flexShrink:0,borderRadius:13,background:hexA(C.grn,0.16),border:'1px solid '+hexA(C.grn,0.4),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={hasFile?P.clip:P.check} sz={18} col={C.grn}/></div>
                 ) : (
                 <label onClick={e=>e.stopPropagation()} title={hasFile?'Beleg ersetzen':'Beleg hochladen'} style={{position:'relative',width:44,height:44,flexShrink:0,borderRadius:13,background:hasFile?hexA(C.pri,0.16):C.surf3,border:'1px solid '+(hasFile?'transparent':C.sep),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
                   <Ic p={hasFile?P.clip:P.upload} sz={17} col={hasFile?C.pri:C.sub}/>
@@ -3348,7 +3352,7 @@ function App({session}) {
                 </div>
                 <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM,flexShrink:0,whiteSpace:'nowrap'}}>{(d.amount||'0')}€</span>
                 {done
-                  ? <span title="Abgebucht/Bezahlt" style={{width:24,height:24,flexShrink:0,borderRadius:'50%',background:hexA(C.grn,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.check} sz={13} col={C.grn}/></span>
+                  ? <button onClick={e=>{e.stopPropagation();unconfirmDraft(d.id);}} title="Zuordnung rückgängig machen" style={{display:'flex',alignItems:'center',gap:5,background:C.surf3,border:'1px solid '+C.bdr,color:C.sub,borderRadius:8,padding:'5px 9px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>↩︎ Rückgängig</button>
                   : ign
                   ? <button onClick={e=>{e.stopPropagation();restoreDraft(d.id);}} title="Wiederherstellen" style={{display:'flex',alignItems:'center',gap:5,background:C.surf3,border:'1px solid '+C.bdr,color:C.sub,borderRadius:8,padding:'5px 9px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>↩︎ Rückgängig</button>
                   : <button onClick={e=>{e.stopPropagation();setDraftCtx({x:e.clientX,y:e.clientY,id:d.id});}} title="Aktionen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',flexShrink:0,width:26,height:26,borderRadius:6,fontSize:18,lineHeight:1,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>⋮</button>}
@@ -4743,6 +4747,22 @@ function App({session}) {
                   <div style={{flex:1,minWidth:140}}>{lbl('Datum',!c.recurring)}<DateField value={f.datum||''} onChange={v=>setCapF({datum:v})} style={dInp}/></div>
                   <div style={{flex:1,minWidth:140}}>{lbl('Belegnummer',!c.recurring)}<input value={f.belegnr||''} onChange={e=>setCapF({belegnr:e.target.value})} placeholder="Nr." style={dInp}/></div>
                 </div>
+                {c.recurring && (()=>{ const fr=c.from||{y:yr,m:mo}; const un=c.until||{y:yr,m:11}; const yrs=[]; for(let y=yr-1;y<=yr+6;y++)yrs.push(y); const selSt={...dInp,cursor:'pointer'}; return (
+                  <div style={{background:hexA(C.pri,0.06),border:'1px solid '+hexA(C.pri,0.25),borderRadius:12,padding:'14px'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12.5,fontWeight:700,color:C.txt,marginBottom:10}}><Ic p={P.repeat} sz={14} col={C.pri}/> Zeitraum</div>
+                    <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                      <div style={{flex:1,minWidth:150}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Von</div><div style={{display:'flex',gap:8}}>
+                        <select value={fr.m} onChange={e=>setCapture(cc=>cc?{...cc,from:{...(cc.from||{y:yr,m:mo}),m:+e.target.value}}:cc)} style={{...selSt,flex:2}}>{MONTHS.map((mn,i)=><option key={i} value={i}>{mn}</option>)}</select>
+                        <select value={fr.y} onChange={e=>setCapture(cc=>cc?{...cc,from:{...(cc.from||{y:yr,m:mo}),y:+e.target.value}}:cc)} style={{...selSt,flex:1}}>{yrs.map(y=><option key={y} value={y}>{y}</option>)}</select>
+                      </div></div>
+                      <div style={{flex:1,minWidth:150}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Bis</div><div style={{display:'flex',gap:8}}>
+                        <select value={un.m} onChange={e=>setCapture(cc=>cc?{...cc,until:{...(cc.until||{y:yr,m:11}),m:+e.target.value}}:cc)} style={{...selSt,flex:2}}>{MONTHS.map((mn,i)=><option key={i} value={i}>{mn}</option>)}</select>
+                        <select value={un.y} onChange={e=>setCapture(cc=>cc?{...cc,until:{...(cc.until||{y:yr,m:11}),y:+e.target.value}}:cc)} style={{...selSt,flex:1}}>{yrs.map(y=><option key={y} value={y}>{y}</option>)}</select>
+                      </div></div>
+                    </div>
+                    <div style={{fontSize:11,color:C.mut,marginTop:9,lineHeight:1.5}}>Die Buchung wird für jeden Monat in diesem Zeitraum angelegt.</div>
+                  </div>
+                ); })()}
                 <div>{lbl('Konto',true)}
                   {isImport ? (
                     <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
