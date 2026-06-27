@@ -140,7 +140,7 @@ function parseStatement(lines, defYear){
     if(dm){ let dd=dm[1].padStart(2,'0'), mm=dm[2].padStart(2,'0'); let yy=dm[3]; if(yy){ if(yy.length===2) yy='20'+yy; } else { yy=String(dY); } if(+mm>=1 && +mm<=12 && +dd>=1 && +dd<=31) datum=yy+'-'+mm+'-'+dd; }
     let kind='aus';
     if(raw.includes('-')) kind='aus';
-    else if(/(\+|\bH\b|Haben|Gutschr|Gehalt|Lohn|Eingang|Erstattung|Zahlungseingang|Rückzahlung|Miete)/i.test(L)) kind='ein';
+    else if(/(\+|\bH\b|Haben|Gutschr|Gehalt|Lohn|Eingang|Erstattung|R(ü|ue)ckerstattung|Zahlungseingang|R(ü|ue)ckzahlung|Miete|Cashback|Cash\s?back|Bonus|Pr(ä|ae)mie|Zinsen|Ertr(ä|ae)ge|Dividende|Auszahlung)/i.test(L)) kind='ein';
     else if(/(\bS\b|Lastschr|Abbuch|Kartenzahl|Dauerauftrag|Überweisung|SEPA|Entgelt|Gebühr)/i.test(L)) kind='aus';
     let desc=L.replace(/-?\d{1,3}(?:\.\d{3})*,\d{2}\s*[+-]?\s*[HS]?\s*€?$/,'').trim();
     desc=desc.replace(/\b\d{2}[.\/]\d{2}[.\/]?(?:\d{2,4})?\b/g,'').replace(/\s{2,}/g,' ').trim();
@@ -337,6 +337,7 @@ const P = {
   grip:  'M5 9h14 M5 15h14',
   check: 'M20 6L9 17l-5-5',
   upload:'M12 3v13 M7 8l5-5 5 5 M5 21h14',
+  bank:  'M3 21h18 M4 10h16 M12 3L3 8h18z M6 10v8 M10 10v8 M14 10v8 M18 10v8',
   plus:  'M12 5v14 M5 12h14',
   swap:  'M7 16V4 M3 8l4-4 4 4 M17 8v12 M21 16l-4 4-4-4',
   spark: 'M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z',
@@ -563,7 +564,7 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
           </div>
         </div>
         {/* Preis */}
-        <div style={{fontSize:16,fontWeight:700,color:C.txt,...NUM,whiteSpace:'nowrap'}}>{money}</div>
+        <div style={{fontSize:16,fontWeight:700,color:kind==='aus'?'#FFB37A':C.txt,...NUM,whiteSpace:'nowrap'}}>{kind==='aus'?'−':''}{money}</div>
         {!selMode && (
           <button onClick={e=>{e.stopPropagation();openMenu(e);}} title="Optionen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',flexShrink:0,width:26,height:26,borderRadius:6,fontSize:18,lineHeight:1,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>⋮</button>
         )}
@@ -1998,7 +1999,10 @@ function App({session}) {
   /* ── Bankauszug: offene Belege automatisch finden + bestätigen (Offen → Abgebucht/Bezahlt) ── */
   const findOpenBelegMatch = (d)=>{ const dAmt=Math.abs(num(d.amount)); const dNr=String(d.belegnr||'').trim().toLowerCase(); const dName=normName(d.name); const dNote=String(d.note||'').toLowerCase(); const dDate=d.datum?new Date(toISO(d.datum)):null; let best=null,bestScore=0;
     Object.keys(data||{}).forEach(yk=>{ if(isNaN(+yk))return; const Y=data[yk]; if(!Y||typeof Y!=='object')return; Object.keys(Y).forEach(mk=>{ if(isNaN(+mk))return; const M=Y[mk]; if(!M)return;
-      const visit=(arr,account,kind)=>{ (arr||[]).forEach(it=>{ if(it.status!=='offen')return; let s=0; const iAmt=Math.abs(num(it.amount)); const iNr=String(it.belegnr||'').trim().toLowerCase();
+      const visit=(arr,account,kind)=>{ (arr||[]).forEach(it=>{ if(it.status!=='offen')return; const iAmt=Math.abs(num(it.amount)); const iNr=String(it.belegnr||'').trim().toLowerCase();
+        if(d.kind && d.kind!==kind) return; // Einnahme nur zu Einnahme, Ausgabe nur zu Ausgabe
+        if(dAmt>0 && iAmt>0 && Math.abs(dAmt-iAmt) > Math.max(0.02, dAmt*0.015)) return; // Betrag muss passen (keine Falsch-Treffer)
+        let s=0;
         if(dNr&&iNr&&dNr===iNr) s+=5;
         if(dAmt&&iAmt&&Math.abs(dAmt-iAmt)<0.02) s+=3;
         if(dDate&&it.datum){ const dd=Math.abs((dDate-new Date(toISO(it.datum)))/86400000); if(dd<=3)s+=2; else if(dd<=12)s+=1; }
@@ -2219,9 +2223,13 @@ function App({session}) {
         else { if(!M.props)M.props={}; const s=M.props[account]||{}; M.props[account]= isExpense?{...s,expenses:[...(s.expenses||[]),item]}:{...s,einnahmen:[...(s.einnahmen||[]),item]}; }
       }
       // Wiederkehrend: einmalig eine Vorlage anlegen, die monatlich automatisch erzeugt wird
-      if(isNew && inv.recur){ const sd=new Date(toISO(inv.recur.start)||inv.date); const fy=isNaN(sd)?ty:sd.getFullYear(); const fm=isNaN(sd)?tm:sd.getMonth(); let toY2,toM2; if(inv.recur.end){ const ed=new Date(toISO(inv.recur.end)); toY2=isNaN(ed)?fy:ed.getFullYear(); toM2=isNaN(ed)?11:ed.getMonth(); } else { toY2=fy+5; toM2=11; } const rec={ id:uid(), domain:inv.domain||'unter', account, customerId:inv.customerId||'', custName:inv.custName||'', custAddress:inv.custAddress||'', custEmail:inv.custEmail||'', firstName:inv.firstName||'', lastName:inv.lastName||'', company:inv.company||'', anrede:inv.anrede||'', saveCust:false, fromY:fy, fromM:fm, toY:toY2, toM:toM2, items:(inv.items||[]).map(it=>({...it})), note:inv.note||'', headerText:inv.headerText, footerText:inv.footerText, active:true, interval:(inv.recur.interval||'monatlich'), fromInvoiceId:inv.id }; nd.recurInvoices=[...(nd.recurInvoices||[]), rec]; }
+      if(isNew && inv.recur){ const sd=new Date(toISO(inv.recur.start)||inv.date); const fy=isNaN(sd)?ty:sd.getFullYear(); const fm=isNaN(sd)?tm:sd.getMonth(); let toY2,toM2; if(inv.recur.end){ const ed=new Date(toISO(inv.recur.end)); toY2=isNaN(ed)?fy:ed.getFullYear(); toM2=isNaN(ed)?11:ed.getMonth(); } else { toY2=fy+5; toM2=11; } const auto=inv.recur.auto!==false; const rec={ id:uid(), domain:inv.domain||'unter', account, customerId:inv.customerId||'', custName:inv.custName||'', custAddress:inv.custAddress||'', custEmail:inv.custEmail||'', firstName:inv.firstName||'', lastName:inv.lastName||'', company:inv.company||'', anrede:inv.anrede||'', saveCust:false, fromY:fy, fromM:fm, toY:toY2, toM:toM2, items:(inv.items||[]).map(it=>({...it})), note:inv.note||'', headerText:inv.headerText, footerText:inv.footerText, active:auto, interval:(inv.recur.interval||'monatlich'), fromInvoiceId:inv.id }; nd.recurInvoices=[...(nd.recurInvoices||[]), rec];
+        // diese Rechnung als Start-Monat der Serie markieren → kein Duplikat bei Auto-Erstellung
+        if(auto){ const si=list.findIndex(x=>x.id===inv.id); if(si>=0){ list[si]={...list[si], recurTemplateId:rec.id, genYM:fy*12+fm}; nd.invoices=list; } }
+      }
       return nd; });
-    setToast('Rechnung '+inv.number+' gespeichert'+(pdfPath?' (PDF abgelegt)':'')+(inv.recur?' + als wiederkehrend angelegt':'')+' + als '+(isExpense?'Ausgabe':'Einnahme')+' gebucht'); setInvEdit(null);
+    if(inv.recur && inv.recur.auto!==false) setTimeout(()=>genRecInvoices(),80);
+    setToast('Rechnung '+inv.number+' gespeichert'+(pdfPath?' (PDF abgelegt)':'')+(inv.recur?(inv.recur.auto!==false?' + Serie wird automatisch erzeugt':' + als wiederkehrend angelegt'):'')+' + als '+(isExpense?'Ausgabe':'Einnahme')+' gebucht'); setInvEdit(null);
   };
   const uploadLogo = async (file, dom)=>{ try{ let blob=file; try{ blob=await compressImage(file,400,0.8); }catch(_){} const b64=await fileToB64(blob); setCompanyFor(dom||'unter',{logoData:'data:image/jpeg;base64,'+b64}); setToast('Logo gespeichert'); }catch(e){ setToast('Logo-Upload fehlgeschlagen: '+(e.message||e)); } };
   // Rechnungs-HTML (für Live-Vorschau & Druck/PDF)
@@ -2660,8 +2668,8 @@ function App({session}) {
   const NAV = [
     {id:'quellen',label:'Konten',       icon:P.grid},
     {id:'import', label:'Beleg',        icon:P.clip,   onClick:()=>{setTab('import');setImportTab('beleg');}, active:(tab==='import'&&importTab!=='bank')},
-    {id:'kontoauszug',label:'Kontoauszug', icon:P.upload, onClick:()=>{setTab('import');setImportTab('bank');}, active:(tab==='import'&&importTab==='bank')},
     {id:'rechnung',label:'Rechnungen',  icon:P.receipt},
+    {id:'kontoauszug',label:'Kontoauszug', icon:P.bank, onClick:()=>{setTab('import');setImportTab('bank');}, active:(tab==='import'&&importTab==='bank')},
   ];
   // Einheitlicher Tab-/Toggle-Stil (wie Import „Beleg/Bankkontoauszug")
   const PillTabs = ({tabs, value, onChange, style})=>(
@@ -3788,7 +3796,7 @@ function App({session}) {
                         </div>
                         <div style={{marginTop:14,background:invEdit.recur?hexA(C.pri,0.08):C.surf2,border:'1px solid '+(invEdit.recur?hexA(C.pri,0.3):C.bdr),borderRadius:12,padding:'12px 14px'}}>
                           <label style={{display:'flex',alignItems:'center',gap:11,cursor:'pointer'}}>
-                            <input type="checkbox" checked={!!invEdit.recur} onChange={e=>{ if(e.target.checked){ setI({recur:{interval:'monatlich', start:(invEdit.date||''), end:''}}); setInvRecurDlg(true); } else setI({recur:null}); }} style={{width:18,height:18,accentColor:C.pri}}/>
+                            <input type="checkbox" checked={!!invEdit.recur} onChange={e=>{ if(e.target.checked){ setI({recur:{interval:'monatlich', start:(invEdit.date||''), end:'', auto:true}}); setInvRecurDlg(true); } else setI({recur:null}); }} style={{width:18,height:18,accentColor:C.pri}}/>
                             <span style={{display:'flex',alignItems:'center',gap:7,fontSize:13.5,fontWeight:700,color:C.txt}}><Ic p={P.repeat} sz={15} col={invEdit.recur?C.pri:C.sub}/> Wiederkehrend</span>
                             {invEdit.recur && <button onClick={(e)=>{e.preventDefault();setInvRecurDlg(true);}} style={{marginLeft:'auto',background:C.surf3,border:'1px solid '+C.bdr,color:C.pri,borderRadius:8,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Bearbeiten</button>}
                           </label>
@@ -4937,6 +4945,10 @@ function App({session}) {
               <div><div style={lbl2}>Startdatum</div><DateField value={rc.start} onChange={v=>setRc({start:v})} accent={C.pri} style={fld2}/></div>
               <div><div style={lbl2}>Enddatum <span style={{color:C.mut}}>(optional)</span></div><DateField value={rc.end} onChange={v=>setRc({end:v})} accent={C.pri} placeholder="unbefristet" style={fld2}/></div>
             </div>
+            <label style={{display:'flex',alignItems:'flex-start',gap:11,background:(rc.auto!==false)?hexA(C.pri,0.08):C.surf2,border:'1px solid '+((rc.auto!==false)?hexA(C.pri,0.3):C.bdr),borderRadius:12,padding:'12px 14px',marginBottom:18,cursor:'pointer'}}>
+              <input type="checkbox" checked={rc.auto!==false} onChange={e=>setRc({auto:e.target.checked})} style={{width:18,height:18,accentColor:C.pri,marginTop:1}}/>
+              <span><span style={{fontSize:13.5,fontWeight:700,color:C.txt}}>Rechnungen automatisch erstellen</span><br/><span style={{fontSize:12,color:C.sub,lineHeight:1.5}}>Für jeden Monat im Zeitraum wird zu Monatsbeginn automatisch eine Rechnung erzeugt und gebucht.</span></span>
+            </label>
             <div style={{display:'flex',gap:10}}>
               <button onClick={()=>{ setI({recur:null}); setInvRecurDlg(false); }} style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:10,padding:'12px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Entfernen</button>
               <button onClick={()=>setInvRecurDlg(false)} style={{flex:2,background:C.pri,color:C.priTxt,border:'none',borderRadius:10,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Übernehmen</button>
