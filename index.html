@@ -4169,6 +4169,13 @@ function App({session}) {
                       <div style={{fontSize:13,fontWeight:700,color:C.txt}}>Rechnungen & Aktivität</div>
                       <button onClick={()=>{ const nv=newInvoice(cDom); nv.customerId=c.id; nv.custName=c.name||''; nv.custAddress=c.address||''; nv.custEmail=c.email||''; nv.saveCust=false; setInvDomain(cDom); setCustEdit(null); setTab('rechnung'); setInvEdit(nv); }} style={{...primBtn,width:'auto',padding:'9px 15px',fontSize:13}}>+ Neue Rechnung</button>
                     </div>
+                    {(()=>{ const paidInv=invs.filter(iv=>iv.paid); const openInv=invs.filter(iv=>!iv.paid); const sum=l=>l.reduce((s,iv)=>s+(iv.total!=null?iv.total:invTotals(iv.items).gross),0); const kpi=(lbl,val,col,sub)=>(<div style={{flex:1,minWidth:130,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:13,padding:'13px 15px'}}><div style={{fontSize:11.5,color:C.sub,marginBottom:6}}>{lbl}</div><div style={{fontSize:19,fontWeight:800,color:col,...NUM}}>{val}</div>{sub&&<div style={{fontSize:11,color:C.mut,marginTop:3}}>{sub}</div>}</div>); return (
+                      <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:16}}>
+                        {kpi('Gesamtumsatz', fmt(sum(invs)), C.txt, invs.length+' Rechnung'+(invs.length!==1?'en':''))}
+                        {kpi('Bezahlt', fmt(sum(paidInv)), C.grn, paidInv.length+' Rechnung'+(paidInv.length!==1?'en':''))}
+                        {kpi('Offen', fmt(sum(openInv)), '#FFB37A', openInv.length+' Rechnung'+(openInv.length!==1?'en':''))}
+                      </div>
+                    ); })()}
                     {rows.length? (()=>{ const groups={}; rows.forEach(r=>{ const iso=toISO(r.date); const key=iso?iso.slice(0,7):'0000-99'; (groups[key]=groups[key]||[]).push(r); }); const keys=Object.keys(groups).sort().reverse(); const mLbl=k=>{ if(k==='0000-99')return 'Ohne Datum'; const [y,m]=k.split('-'); return MONTHS[(+m)-1]+' '+y; }; return keys.map(key=>(
                       <div key={key} style={{marginBottom:18}}>
                         <div style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10}}>{mLbl(key)}</div>
