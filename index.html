@@ -1891,24 +1891,50 @@ function App({session}) {
     setImportBusy(false);
   };
   /* Import OHNE KI (lokal) – nur zum Vergleichen */
+  /* KI liest einen kompletten Bank-Kontoauszug aus → Array von Buchungen (Betrag, Datum, Empfänger, Verwendungszweck) */
+  const aiReadStatement = async file => {
+    const isPdf = file.type==='application/pdf' || /\.pdf$/i.test(file.name);
+    let blob=file, media=file.type||'image/jpeg';
+    if(!isPdf){ try{ blob=await compressImage(file); media='image/jpeg'; }catch(_){} }
+    const b64 = await fileToB64(blob);
+    const block = isPdf ? { type:'document', source:{ type:'base64', media_type:'application/pdf', data:b64 } } : { type:'image', source:{ type:'base64', media_type:media, data:b64 } };
+    const prompt = "Dies ist ein Bank-Kontoauszug (Deutschland). Lies ALLE einzelnen Buchungen/Umsätze aus. "
+      + "Gib AUSSCHLIESSLICH minifiziertes JSON-Array zurück, kein Text drumherum:\n"
+      + '[{"d":"TT.MM.JJJJ","b":"Empfaenger oder Auftraggeber","z":"Verwendungszweck komplett","a":-12.34,"k":"a","r":"Rechnungs-/Kundennummer falls im Zweck"}]\n'
+      + "d=Buchungsdatum, b=Name des Empfängers/Auftraggebers (NICHT die eigene Bank), z=kompletter Verwendungszweck als Text, "
+      + "a=Betrag mit Vorzeichen (negativ=Ausgabe/Lastschrift, positiv=Eingang/Gutschrift, Punkt als Dezimaltrennzeichen), "
+      + "k=\"e\" bei Eingang/Gutschrift sonst \"a\", r=Rechnungs- oder Kundennummer falls im Verwendungszweck erkennbar sonst leer. "
+      + "Ignoriere Salden, Zwischensummen und Überschriften. Erfinde nichts.";
+    const { data:resp, error } = await aiInvoke({ body:{ model:'claude-haiku-4-5', max_tokens:6000, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
+    if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
+    let txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; txt=txt.replace(/```json|```/g,'').trim(); const mm=txt.match(/\[[\s\S]*\]/); if(mm)txt=mm[0];
+    const arr=JSON.parse(txt); if(!Array.isArray(arr)) return [];
+    return arr.map(p=>{ const amt=parseFloat(String(p.a).replace(',','.'))||0; const kind=(p.k==='e'|| amt>0)?'ein':'aus'; return { name:String(p.b||'').slice(0,80), note:String(p.z||''), amount:Math.abs(amt), kind, datum:toISO(p.d||'')||'', belegnr:String(p.r||'') }; }).filter(p=>p.amount>0||p.name);
+  };
+  /* Häufigsten Monat einer Buchungsliste finden (für Auto-Monatswechsel) */
+  const dominantMonth = list => { const cnt={}; (list||[]).forEach(p=>{ const iso=toISO(p.datum); if(iso&&/^\d{4}-\d{2}/.test(iso)){ const k=iso.slice(0,7); cnt[k]=(cnt[k]||0)+1; } }); let best=null,bv=0; Object.keys(cnt).forEach(k=>{ if(cnt[k]>bv){bv=cnt[k];best=k;} }); return best; };
   const importLocal = async file => {
     setImportBusy(true);
     try{
-      const isPdf = file.type==='application/pdf' || /\.pdf$/i.test(file.name);
-      let lines;
-      if(isPdf){ lines = await pdfToLines(file); }
-      else {
-        setToast('OCR läuft… (kann etwas dauern)');
-        await loadTesseract();
-        const { data:{ text } } = await window.Tesseract.recognize(file, 'deu');
-        lines = String(text||'').split('\n');
+      // 1) KI-Auslesung (Betrag, Datum, Empfänger, Verwendungszweck)
+      let parsed=[];
+      try{ setToast('🔎 KI liest den Kontoauszug…'); parsed = await aiReadStatement(file); }catch(e){ parsed=[]; }
+      // 2) Fallback: Regex-Parser, falls KI nichts liefert
+      if(!parsed.length){
+        const isPdf = file.type==='application/pdf' || /\.pdf$/i.test(file.name);
+        let lines;
+        if(isPdf){ lines = await pdfToLines(file); }
+        else { setToast('OCR läuft… (kann etwas dauern)'); await loadTesseract(); const { data:{ text } } = await window.Tesseract.recognize(file, 'deu'); lines = String(text||'').split('\n'); }
+        parsed = parseStatement(lines, yr);
       }
-      const parsed = parseStatement(lines, yr);
-      // Buchungen ohne erkanntes Datum dem aktuell gewählten Monat zuordnen (Monats-Kontoauszug)
-      const ymPin = yr+'-'+String(mo+1).padStart(2,'0')+'-01'; parsed.forEach(p=>{ if(!p.datum) p.datum=ymPin; });
-      if(!parsed.length) setToast('Ohne KI nichts erkannt (Text-PDF nötig bzw. OCR zu ungenau).');
-      else { addImportDrafts(parsed); setToast(parsed.length+' Posten erkannt (ohne KI) · Dubletten übersprungen'); }
-    }catch(e){ setToast('Ohne KI fehlgeschlagen: '+(e.message||e)); }
+      if(!parsed.length){ setToast('Nichts erkannt – bitte Text-PDF oder klares Foto verwenden.'); setImportBusy(false); return; }
+      // 3) Monat erkennen und ggf. dorthin wechseln (#12)
+      const dom = dominantMonth(parsed);
+      const curYm = yr+'-'+String(mo+1).padStart(2,'0');
+      if(dom && dom!==curYm){ const [dy,dm]=dom.split('-').map(Number); setYr(dy); setMo(dm-1); setToast('Kontoauszug gehört zu '+MONTHS[dm-1]+' '+dy+' – Monat gewechselt. '+parsed.length+' Posten erkannt.'); }
+      else { const ymPin = yr+'-'+String(mo+1).padStart(2,'0')+'-01'; parsed.forEach(p=>{ if(!p.datum) p.datum=ymPin; }); setToast(parsed.length+' Posten per KI erkannt · Dubletten übersprungen.'); }
+      addImportDrafts(parsed);
+    }catch(e){ setToast('Import fehlgeschlagen: '+(e.message||e)); }
     setImportBusy(false);
   };
   /* ── Beleg erfassen (Foto/Upload → KI → speichern + Bild in DB) ── */
@@ -3524,15 +3550,19 @@ function App({session}) {
                     ); })}
                   </div>
                 )}
-                {draftSel.length>0 && (
+                {monthDrafts.length>0 && (()=>{ const selectable=monthDrafts.filter(d=>!d.confirmed&&!d.ignored).map(d=>d.id); const allSelNow=selectable.length>0 && selectable.every(id=>draftSel.includes(id)); return (
                   <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:12}}>
-                    <span style={{fontSize:13,color:C.sub,marginRight:'auto'}}>{draftSel.length} ausgewählt</span>
-                    <button onClick={()=>setAssignOpen(true)} style={{...toolBtn,color:C.pri}}>Zuordnen</button>
-                    <button onClick={()=>{ const ids=[...draftSel]; ids.forEach(markDraftPrivat); }} style={toolBtn}>Privat</button>
-                    <button onClick={()=>{ const ids=[...draftSel]; ids.forEach(markDraftIgnore); }} style={toolBtn}>Ignorieren</button>
-                    <button onClick={()=>setDraftSel([])} style={{...toolBtn,color:C.txt}}>Fertig</button>
+                    <button onClick={()=>setDraftSel(allSelNow?[]:selectable)} style={{...toolBtn,color:allSelNow?C.txt:C.pri}}>{allSelNow?'Auswahl aufheben':'Alle auswählen'}</button>
+                    {draftSel.length>0 && <>
+                      <span style={{fontSize:13,color:C.sub,marginRight:'auto'}}>{draftSel.length} ausgewählt</span>
+                      <button onClick={()=>setAssignOpen(true)} style={{...toolBtn,color:C.pri}}>Zuordnen</button>
+                      <button onClick={()=>{ const ids=[...draftSel]; ids.forEach(markDraftPrivat); }} style={toolBtn}>Privat</button>
+                      <button onClick={()=>{ const ids=[...draftSel]; ids.forEach(markDraftIgnore); }} style={toolBtn}>Ignorieren</button>
+                      <button onClick={()=>{ const ids=[...draftSel]; askConfirm(ids.length+' Buchung'+(ids.length>1?'en':'')+' wirklich löschen?',()=>{ ids.forEach(delDraft); setDraftSel([]); }); }} style={{...toolBtn,color:C.red}}>Löschen</button>
+                      <button onClick={()=>setDraftSel([])} style={{...toolBtn,color:C.txt}}>Fertig</button>
+                    </>}
                   </div>
-                )}
+                ); })()}
                 {monthDrafts.length>0 ? (()=>{
                   const q=draftSearch.trim().toLowerCase();
                   const filtered=monthDrafts.filter(d=>{ if(draftFilter!=='alle' && draftStatus(d).key!==draftFilter) return false; if(draftDir!=='alle' && (d.kind||'aus')!==draftDir) return false; if(q){ const hay=((d.name||'')+' '+(d.amount||'')+' '+(d.note||'')+' '+(d.belegnr||'')+' '+(d.category||'')).toLowerCase(); if(!hay.includes(q)) return false; } return true; });
@@ -5143,6 +5173,8 @@ function App({session}) {
             {!d.privat && <button onClick={()=>{ const id=d.id; setDraftCtx(null); markDraftPrivat(id); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.prson} sz={15} col={'#ABC4FF'}/> Privat markieren</button>}
             {!d.ignored && <button onClick={()=>{ const id=d.id; setDraftCtx(null); markDraftIgnore(id); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.sub,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.close} sz={15} col={C.mut}/> Ignorieren</button>}
             {(d.privat||d.ignored) && <button onClick={()=>{ const id=d.id; setDraftCtx(null); restoreDraft(id); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.repeat} sz={15} col={C.sub}/> Rückgängig machen</button>}
+            <div style={{height:1,background:C.sep,margin:'4px 8px'}}/>
+            <button onClick={()=>{ const id=d.id; const nm=d.name||'Buchung'; setDraftCtx(null); askConfirm('Buchung „'+nm+'" wirklich löschen?',()=>{ delDraft(id); }); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.red,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.trash} sz={15} col={C.red}/> Löschen</button>
             </>); })()}
           </div>
         </div>
