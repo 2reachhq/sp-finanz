@@ -42,6 +42,11 @@
     .prog{height:5px;width:100%;background:rgba(123,194,170,0.18);border-radius:99px;overflow:hidden;position:relative}
     .prog::after{content:'';position:absolute;top:0;height:100%;width:40%;border-radius:99px;background:#7BC2AA;animation:progslide 1.05s ease-in-out infinite}
     @keyframes progslide{0%{left:-42%}100%{left:100%}}
+    .typing{display:inline-flex;gap:5px;align-items:center}
+    .typing span{width:7px;height:7px;border-radius:50%;background:#7BC2AA;display:inline-block;animation:typingbounce 1.1s ease-in-out infinite}
+    .typing span:nth-child(2){animation-delay:.18s}
+    .typing span:nth-child(3){animation-delay:.36s}
+    @keyframes typingbounce{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-5px);opacity:1}}
     .navlink.active { color:#fff; }
   </style>
 </head>
@@ -339,6 +344,8 @@ const P = {
   upload:'M12 3v13 M7 8l5-5 5 5 M5 21h14',
   bank:  'M3 21h18 M4 10h16 M12 3L3 8h18z M6 10v8 M10 10v8 M14 10v8 M18 10v8',
   mic:   'M12 2a3 3 0 00-3 3v6a3 3 0 006 0V5a3 3 0 00-3-3z M5 11a7 7 0 0014 0 M12 18v3 M8 21h8',
+  maximize: 'M8 3H5a2 2 0 00-2 2v3 M16 3h3a2 2 0 012 2v3 M21 16v3a2 2 0 01-2 2h-3 M8 21H5a2 2 0 01-2-2v-3',
+  minimize: 'M8 3v3a2 2 0 01-2 2H3 M16 3v3a2 2 0 002 2h3 M21 16h-3a2 2 0 00-2 2v3 M8 21v-3a2 2 0 00-2-2H3',
   plus:  'M12 5v14 M5 12h14',
   swap:  'M7 16V4 M3 8l4-4 4 4 M17 8v12 M21 16l-4 4-4-4',
   spark: 'M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z',
@@ -1279,12 +1286,13 @@ function App({session}) {
   const [aiBusy,setAiBusy]= useState(false);
   const [botOpen,setBotOpen]= useState(false);     // In-App-Assistent (Chatbot)
   const [botInput,setBotInput]= useState('');
+  const [botMax,setBotMax]= useState(false);         // Assistent: Fenster vergrößert
   const [botRecOn,setBotRecOn]= useState(false);     // Assistent: Sprachaufnahme aktiv
   const botRecRef=useRef(null);
   const [botFile,setBotFile]= useState(null);        // an den Assistenten angehängte Datei
   const [botBusy,setBotBusy]= useState(false);        // Assistent arbeitet (KI)
   const [botFlow,setBotFlow]= useState(null);         // laufender Dialog-Flow (z. B. Rechnung erstellen)
-  const [botMsgs,setBotMsgs]= useState([{role:'assistant',content:'Hi! Ich bin dein Assistent. Ich kann navigieren, Zahlen auswerten, Kunden/Rechnungen anlegen – und du kannst mir eine Datei (z. B. Airbnb/Booking-Übersicht oder einen Beleg) anhängen, dann lese ich die Posten aus. Frag z. B. „Ergebnis Juni", „Neue Rechnung" oder häng eine Datei an.'}]);
+  const [botMsgs,setBotMsgs]= useState([{role:'assistant',content:'Hey! Ich bin deine KI-Buchhaltung – quasi dein persönlicher Steuerberater rund um die Uhr. Ich kenne deine Zahlen, erkläre sie dir verständlich, warne früh bei Risiken und nehme dir Arbeit ab: Rechnungen, Belege, Auswertungen. Frag einfach los – z. B. „Wie steht meine Firma da?", „Worauf muss ich steuerlich achten?", „Mach mir eine Rechnung an Max über 1500" – oder häng eine Datei an, dann lese ich sie aus.'}]);
   const [belegOpen,setBelegOpen]= useState(false); // Beleg-Erfassung
   const [belegBusy,setBelegBusy]= useState(false);
   const [belegRes,setBelegRes]= useState(null);    // {name,amount,kind,info}
@@ -2466,8 +2474,28 @@ function App({session}) {
     if(/beleg/.test(q)) return go('belege','die Belege');
     if(/steuer/.test(q)) return go('steuer','die Steuer-Übersicht');
     if(/einstellung|profil|firmendaten|logo/.test(q)) return go('settings','Einstellungen');
-    if(/konto|konten|home|start|übersicht/.test(q)) return go('quellen','die Konten');
-    return 'Ich kann lokal in der App: zu Bereichen navigieren (Konten, Import, Rechnungen, Kunden, Analyse, Belege, Steuer, Einstellungen), Kunden & Rechnungen anlegen, Zahlen auswerten („Ergebnis Juni", „Bester Monat", „Jahresergebnis") und beim Import Buchungen auswählen (z. B. „Wähle alle Buchungen an, die mit Adobe anfangen"). Deine Daten verlassen die App dabei nicht.';
+    if(/konto|konten|home|start/.test(q)) return go('quellen','die Konten');
+    return null; // nicht lokal beantwortbar → echte KI mit Datenkontext
+  };
+  // Kompakter Finanz-Kontext für die KI (alle Bereiche, knapp gehalten)
+  const buildFinanceContext = ()=>{ const lines=[]; try{
+    const y=yearTotals(); lines.push('Jahr '+yr+': Einnahmen '+fmt(y.inc)+', Ausgaben '+fmt(y.exp)+', Ergebnis '+(y.net>=0?'+':'')+fmt(y.net)+'.');
+    const mo2=[]; for(let i=0;i<12;i++){ const t=calcTotals(getMD(yr,i),yr,i); if(t.totalInc||t.totalExp) mo2.push(MONTHS[i].slice(0,3)+' '+(t.net>=0?'+':'')+fmt(t.net)); } if(mo2.length) lines.push('Monatsergebnisse '+yr+': '+mo2.join(' · ')+'.');
+    const invs=data.invoices||[]; const paid=invs.filter(x=>x.paid).length; const openSum=invs.filter(x=>!x.paid).reduce((s,x)=>s+(x.total||0),0); lines.push('Rechnungen: '+invs.length+' gesamt, '+paid+' bezahlt, '+(invs.length-paid)+' offen (offene Summe '+fmt(openSum)+').');
+    lines.push('Wiederkehrende Rechnungen: '+((data.recurInvoices||[]).length)+'. Kunden: '+((data.customers||[]).length)+'.');
+    try{ const ob=openBelegeList?openBelegeList().length:0; lines.push('Offene Belege (noch nicht per Bankauszug bestätigt): '+ob+'.'); }catch(_){ }
+    const dr=(data.drafts||[]).length; if(dr) lines.push('Unbearbeitete Kontoauszug-Buchungen: '+dr+'.');
+  }catch(e){ lines.push('(Kontext teilweise nicht lesbar)'); } return lines.join('\n'); };
+  const botAskAI = async (q)=>{ setBotBusy(true);
+    try{ const ctx=buildFinanceContext();
+      const sys="Du bist der persönliche KI-Buchhalter und Steuerberater-Assistent der Finanz-App des Nutzers. Du kennst dessen komplette Finanzdaten (siehe KONTEXT). Sprich wie ein erfahrener, vertrauter CFO/Steuerberater: einfache, klare Sprache, proaktiv – erkläre Zahlen verständlich, weise früh auf Risiken hin und schlage konkrete nächste Schritte vor. Du bist eine KI, aber persönlich und zupackend (z. B. „klar, ich mach das für dich", „schau's dir kurz an, dann erledige ich den Rest"). Kein Markdown, keine Tabellen, kurz und konkret, Beträge in Euro. Wenn Daten fehlen, sag es ehrlich. Schließe steuerliche Aussagen mit einem kurzen Hinweis, dass der Steuerberater final entscheidet.";
+      const usr="KONTEXT (aktuelle Finanzdaten des Nutzers):\n"+ctx+"\n\nFrage des Nutzers: "+q;
+      const { data:resp, error } = await aiInvoke({ body:{ model:'claude-haiku-4-5', max_tokens:900, system:sys, messages:[{role:'user',content:[{type:'text',text:usr}]}] } });
+      if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||'KI-Fehler');
+      const t=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||'(keine Antwort)';
+      setBotMsgs(m=>[...m,{role:'assistant',content:t}]);
+    }catch(e){ setBotMsgs(m=>[...m,{role:'assistant',content:'Sorry, das konnte ich gerade nicht beantworten ('+(e.message||e)+'). Frag mich gern nochmal oder etwas konkreter.'}]); }
+    setBotBusy(false);
   };
   // Datei (PDF/Bild/XML/CSV) per KI in Posten zerlegen
   const aiExtractPosten = async (file)=>{
@@ -2558,11 +2586,13 @@ function App({session}) {
     botRecRef.current=r; try{ r.start(); setBotRecOn(true); }catch(_){ setToast('Aufnahme konnte nicht gestartet werden.'); }
   };
   const botSend = async (text)=>{ const q=(text!=null?text:botInput).trim(); const file=botFile; if(botBusy) return; if(!q && !file) return; if(botRecOn){ try{ botRecRef.current&&botRecRef.current.stop(); }catch(_){ } setBotRecOn(false); }
-    setBotMsgs(m=>[...m,{role:'user',content:(q||'')+(file?((q?' ':'')+'📎 '+file.name):'')}]); setBotInput('');
+    setBotMsgs(m=>[...m,{role:'user',content:(q||'')+(file?((q?' ':'')+'📎 '+file.name):'')}]); setBotInput(''); { const ta=document.querySelector('#botInputArea'); if(ta){ta.style.height='auto';} }
     if(botFlow){ await advanceFlow(q); return; }
     if(file){ await handleBotFile(file); return; }
     if(/\brechnung/i.test(q) && /(erstell|erzeug|schreib|\bmach\b|stell|leg)/i.test(q)){ startInvoiceFlow(q); return; }
-    const reply=botReply(q); setBotBusy(true); await new Promise(r=>setTimeout(r, 650+Math.min(900, (reply||'').length*6))); setBotBusy(false); setBotMsgs(m=>[...m,{role:'assistant',content:reply}]);
+    const reply=botReply(q);
+    if(reply!=null){ setBotBusy(true); await new Promise(r=>setTimeout(r, 480+Math.min(700, reply.length*5))); setBotBusy(false); setBotMsgs(m=>[...m,{role:'assistant',content:reply}]); }
+    else { await botAskAI(q); }
   };
   const analyzeTax = async () => {
     if(taxBusy) return;
@@ -5142,18 +5172,17 @@ function App({session}) {
 
       {/* ── Schwebender In-App-Assistent (Chatbot) ── */}
       {botOpen && (
-        <div style={{position:'fixed',right:isMobile?12:24,bottom:isMobile?86:24,width:isMobile?'calc(100vw - 24px)':520,maxWidth:'calc(100vw - 24px)',height:isMobile?'62vh':'min(760px, 84vh)',maxHeight:isMobile?'72vh':'88vh',zIndex:120,background:C.surf,border:'1px solid '+C.bdr,borderRadius:20,boxShadow:'0 24px 60px rgba(0,0,0,0.55)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{position:'fixed',right:isMobile?12:24,bottom:isMobile?86:24,width:isMobile?'calc(100vw - 24px)':(botMax?'min(900px, 94vw)':440),maxWidth:'calc(100vw - 24px)',height:isMobile?'62vh':(botMax?'92vh':'min(720px, 82vh)'),maxHeight:isMobile?'72vh':'94vh',zIndex:120,background:C.surf,border:'1px solid '+C.bdr,borderRadius:20,boxShadow:'0 24px 60px rgba(0,0,0,0.55)',display:'flex',flexDirection:'column',overflow:'hidden',transition:'width .2s ease, height .2s ease'}}>
           <div style={{display:'flex',alignItems:'center',gap:9,padding:'14px 16px',borderBottom:'1px solid '+C.sep,flexShrink:0}}>
             <span style={{width:30,height:30,borderRadius:9,background:hexA(C.pri,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.spark} sz={16} col={C.pri}/></span>
             <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700,color:C.txt}}>Assistent</div><div style={{fontSize:11,color:C.mut}}>navigiert & rechnet lokal · liest Dateien per KI</div></div>
+            {!isMobile && <button onClick={()=>setBotMax(m=>!m)} title={botMax?'Verkleinern':'Vergrößern'} style={{background:C.surf2,border:'none',color:C.sub,width:30,height:30,borderRadius:9,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={botMax?P.minimize:P.maximize} sz={15} col={C.sub}/></button>}
             <button onClick={()=>setBotOpen(false)} style={{background:C.surf2,border:'none',color:C.sub,width:30,height:30,borderRadius:9,cursor:'pointer',fontSize:18,lineHeight:1,fontFamily:'inherit'}}>×</button>
           </div>
           <div style={{flex:1,overflowY:'auto',padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
             {botMsgs.map((m,i)=>{ const primBot={background:C.pri,color:C.priTxt,border:'none',borderRadius:9,padding:'8px 13px',fontSize:12.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}; const ghostBot={background:C.surf3,border:'1px solid '+C.bdr,color:C.sub,borderRadius:9,padding:'8px 13px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}; const a=m.action; const isLast=i===botMsgs.length-1; return (
               <div key={i} style={{display:'flex',flexDirection:'column',alignItems:m.role==='user'?'flex-end':'flex-start',gap:7}}>
-                {m.role==='user'
-                  ? <div style={{maxWidth:'85%',background:C.act,color:C.actTxt,borderRadius:'13px 13px 4px 13px',padding:'9px 12px',fontSize:13.5,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{m.content}</div>
-                  : <div style={{display:'flex',alignItems:'flex-end',gap:8,maxWidth:'90%'}}><span style={{fontSize:19,lineHeight:1,flexShrink:0}}>{/⚠️|fehlgeschlagen|Konnte nicht|nicht gefunden/i.test(m.content)?'😕':/✅|erstellt|gespeichert|gebucht|erledigt/i.test(m.content)?'😊':'✨'}</span><div style={{background:C.surf2,color:C.txt,borderRadius:'13px 13px 13px 4px',padding:'9px 12px',fontSize:13.5,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{m.content}</div></div>}
+                <div style={{maxWidth:'88%',background:m.role==='user'?C.act:C.surf2,color:m.role==='user'?C.actTxt:C.txt,borderRadius:m.role==='user'?'13px 13px 4px 13px':'13px 13px 13px 4px',padding:'9px 12px',fontSize:13.5,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{m.content}</div>
                 {a && isLast && a.type==='import' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={()=>applyBotImport(a.drafts)} style={primBot}>In Import übernehmen</button><button onClick={()=>setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x))} style={ghostBot}>Abbrechen</button></div>}
                 {a && isLast && a.type==='confirmInvoice' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={finalizeBotInvoice} style={primBot}>Ja, erstellen</button><button onClick={()=>{ setBotFlow(null); setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x).concat([{role:'assistant',content:'Okay, abgebrochen.'}])); }} style={ghostBot}>Abbrechen</button></div>}
                 {a && a.type==='showInvoice' && (()=>{ const iv=(data.invoices||[]).find(x=>x.id===a.invId); if(!iv) return null; return <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={()=>setInvView(iv)} style={primBot}>Ansehen</button><button onClick={()=>openMailCompose(iv)} style={ghostBot}>Senden</button><button onClick={()=>downloadInvoicePDF(iv)} style={ghostBot}>PDF</button></div>; })()}
@@ -5161,10 +5190,10 @@ function App({session}) {
                 {a && a.type==='invoiceDone' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{a.hasMail && <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botStartSend(a.invId); }} style={primBot}>✉️ Per E-Mail senden</button>}<button onClick={()=>botPreviewInvoice(a.invId)} style={ghostBot}>📄 Ansehen</button>{!a.hasMail && <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botStartSend(a.invId); }} style={ghostBot}>✉️ Senden</button>}<button onClick={()=>setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x).concat([{role:'assistant',content:'Alles erledigt. 👍'}]))} style={ghostBot}>Fertig</button></div>}
               </div>
             ); })}
-            {botBusy && <div style={{display:'flex',alignItems:'flex-end',gap:8}}><span style={{fontSize:20,lineHeight:1}}>🤔</span><div style={{background:C.surf2,borderRadius:'13px 13px 13px 4px',padding:'11px 14px',minWidth:120}}><div style={{fontSize:12.5,color:C.sub,marginBottom:8}}>denkt nach…</div><div className="prog" style={{height:4,borderRadius:99}}/></div></div>}
+            {botBusy && <div style={{display:'flex',justifyContent:'flex-start'}}><div style={{background:C.surf2,borderRadius:'13px 13px 13px 4px',padding:'13px 16px'}}><span className="typing"><span/><span/><span/></span></div></div>}
             {botMsgs.length<=1 && (
               <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:2}}>
-                {['Jahresergebnis','Bester Monat','Rechnung erstellen','Datei auslesen…','Öffne Kunden'].map(s=>(s==='Datei auslesen…'?
+                {['Wie steht meine Firma da?','Worauf steuerlich achten?','Rechnung erstellen','Bester Monat','Datei auslesen…'].map(s=>(s==='Datei auslesen…'?
                   <button key={s} onClick={()=>{ const inp=document.querySelector('#botFileTrigger'); if(inp)inp.click(); }} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:9,padding:'7px 11px',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{s}</button>
                   :
                   <button key={s} onClick={()=>botSend(s)} style={{background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:9,padding:'7px 11px',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{s}</button>
@@ -5174,11 +5203,11 @@ function App({session}) {
           </div>
           <div style={{padding:'10px 14px 12px',borderTop:'1px solid '+C.sep,flexShrink:0}}>
             {botFile && <div style={{display:'flex',alignItems:'center',gap:8,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:9,padding:'7px 10px',marginBottom:8,fontSize:12.5,color:C.sub}}><Ic p={P.clip} sz={13} col={C.pri}/><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{botFile.name}</span><button onClick={()=>setBotFile(null)} style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1}}>×</button></div>}
-            <div style={{display:'flex',gap:8}}>
-              <label title="Datei anhängen" style={{display:'flex',alignItems:'center',justifyContent:'center',width:42,flexShrink:0,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,cursor:botBusy?'default':'pointer',opacity:botBusy?0.5:1}}><Ic p={P.clip} sz={17} col={C.sub}/><input id="botFileTrigger" type="file" accept="image/*,.pdf,.xml,.csv,.txt" disabled={botBusy} onChange={e=>{const f=e.target.files[0];e.target.value='';if(f)setBotFile(f);}} style={{display:'none'}}/></label>
-              <button onClick={toggleBotRec} title={botRecOn?'Aufnahme stoppen':'Sprache aufnehmen'} disabled={botBusy} style={{display:'flex',alignItems:'center',justifyContent:'center',width:42,flexShrink:0,background:botRecOn?C.red:C.surf2,border:'1px solid '+(botRecOn?C.red:C.bdr),borderRadius:11,cursor:botBusy?'default':'pointer',opacity:botBusy?0.5:1,position:'relative'}}><Ic p={P.mic} sz={17} col={botRecOn?'#fff':C.sub}/>{botRecOn&&<span style={{position:'absolute',top:5,right:5,width:7,height:7,borderRadius:'50%',background:'#fff'}}/>}</button>
-              <input value={botInput} onChange={e=>setBotInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!botBusy)botSend();}} placeholder={botRecOn?'Sprich jetzt…':botFile?'Optional: Hinweis dazu…':'Frag, befiehl, sprich oder häng eine Datei an…'} style={{flex:1,background:C.surf2,border:'1px solid '+(botRecOn?C.red:C.bdr),borderRadius:11,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit'}}/>
-              <button onClick={()=>!botBusy&&botSend()} disabled={botBusy} style={{background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'0 16px',fontSize:14,fontWeight:700,cursor:botBusy?'default':'pointer',fontFamily:'inherit',opacity:botBusy?0.5:1}}>›</button>
+            <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+              <label title="Datei anhängen" style={{display:'flex',alignItems:'center',justifyContent:'center',width:42,height:44,flexShrink:0,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,cursor:botBusy?'default':'pointer',opacity:botBusy?0.5:1}}><Ic p={P.clip} sz={17} col={C.sub}/><input id="botFileTrigger" type="file" accept="image/*,.pdf,.xml,.csv,.txt" disabled={botBusy} onChange={e=>{const f=e.target.files[0];e.target.value='';if(f)setBotFile(f);}} style={{display:'none'}}/></label>
+              <button onClick={toggleBotRec} title={botRecOn?'Aufnahme stoppen':'Sprache aufnehmen'} disabled={botBusy} style={{display:'flex',alignItems:'center',justifyContent:'center',width:42,height:44,flexShrink:0,background:botRecOn?C.red:C.surf2,border:'1px solid '+(botRecOn?C.red:C.bdr),borderRadius:11,cursor:botBusy?'default':'pointer',opacity:botBusy?0.5:1,position:'relative'}}><Ic p={P.mic} sz={17} col={botRecOn?'#fff':C.sub}/>{botRecOn&&<span style={{position:'absolute',top:5,right:5,width:7,height:7,borderRadius:'50%',background:'#fff'}}/>}</button>
+              <textarea id="botInputArea" value={botInput} rows={1} onChange={e=>setBotInput(e.target.value)} onInput={e=>{ e.target.style.height='auto'; e.target.style.height=Math.min(150,e.target.scrollHeight)+'px'; }} onKeyDown={e=>{ if(e.key==='Enter'&&!e.shiftKey&&!botBusy){ e.preventDefault(); botSend(); e.target.style.height='auto'; } }} placeholder={botRecOn?'Sprich jetzt…':botFile?'Optional: Hinweis dazu…':'Frag, befiehl, sprich oder häng eine Datei an…'} style={{flex:1,background:C.surf2,border:'1px solid '+(botRecOn?C.red:C.bdr),borderRadius:11,color:C.txt,padding:'11px 13px',fontSize:14,lineHeight:1.4,outline:'none',fontFamily:'inherit',resize:'none',minHeight:44,maxHeight:150,boxSizing:'border-box',overflowY:'auto'}}/>
+              <button onClick={()=>!botBusy&&botSend()} disabled={botBusy} style={{background:C.pri,color:C.priTxt,border:'none',borderRadius:11,height:44,padding:'0 16px',fontSize:18,fontWeight:700,cursor:botBusy?'default':'pointer',fontFamily:'inherit',opacity:botBusy?0.5:1,flexShrink:0}}>›</button>
             </div>
           </div>
         </div>
