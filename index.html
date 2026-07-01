@@ -1272,6 +1272,7 @@ function App({session}) {
   const [draftCtx,setDraftCtx]= useState(null);   // Rechts-Klick-Menü auf Import-Entwurf {x,y,id}
   const [assignOpen,setAssignOpen]= useState(false);
   const [importBusy,setImportBusy]= useState(false);
+  const [importStep,setImportStep]= useState('');  // Fortschritts-Text beim Kontoauszug-Import
   const [dupPopup,setDupPopup]= useState(null);   // Dubletten-Hinweis {draft, match}
   const [draftEdit,setDraftEdit]= useState(null); // Import: Entwurf in der Vollbild-Erfassung (id)
   const [draftUpId,setDraftUpId]= useState(null); // Import: Beleg lädt gerade hoch (id)
@@ -1920,23 +1921,29 @@ function App({session}) {
       + "- r = Rechnungs- oder Kundennummer aus dem Verwendungszweck, sonst leerer String.\n"
       + "IGNORIERE strikt: Kontostand, Saldo, Anfangssaldo, Endsaldo, Zwischensummen, Überträge, Überschriften, Spaltentitel, Seitenzahlen, IBAN/BIC-Kopfzeilen, Adressen. "
       + "Jede Zeile ist genau EINE Transaktion mit genau EINEM Betrag. Erfinde nichts. Keine Buchungen gefunden → gib [] zurück.";
-  const aiReadStatement = async file => {
+  const aiReadStatement = async (file, onStep) => {
+    const step = s => { if(onStep) onStep(s); };
     const isPdf = file.type==='application/pdf' || /\.pdf$/i.test(file.name);
     let content;
     if(isPdf){
       // 1) Text aus dem PDF ziehen — für Text-PDFs (N26 & Co.) am zuverlässigsten + günstig
+      step('PDF wird gelesen…');
       let text='';
       try{ const lines = await pdfToLines(file); text = (lines||[]).join('\n').trim(); }catch(_){}
       if(text.length > 40){
+        step('KI erkennt die Buchungen…');
         content = [{ type:'text', text: STMT_RULES + "\n\nKONTOAUSZUG (Rohtext, Zeilen ggf. leicht verschoben):\n" + text.slice(0,26000) }];
       } else {
         // 2) Gescanntes PDF ohne Textebene → als Dokument an die Vision-KI
+        step('Gescanntes PDF – KI liest das Bild…');
         const b64 = await fileToB64(file);
         content = [{ type:'document', source:{ type:'base64', media_type:'application/pdf', data:b64 } }, { type:'text', text: "Dies ist ein Bild eines Kontoauszugs. " + STMT_RULES }];
       }
     } else {
+      step('Bild wird vorbereitet…');
       let blob=file, media=file.type||'image/jpeg';
       try{ blob=await compressImage(file); media='image/jpeg'; }catch(_){}
+      step('KI liest das Bild…');
       const b64 = await fileToB64(blob);
       content = [{ type:'image', source:{ type:'base64', media_type:media, data:b64 } }, { type:'text', text: "Dies ist ein Foto/Bild eines Kontoauszugs. " + STMT_RULES }];
     }
@@ -1949,21 +1956,22 @@ function App({session}) {
   /* Häufigsten Monat einer Buchungsliste finden (für Auto-Monatswechsel) */
   const dominantMonth = list => { const cnt={}; (list||[]).forEach(p=>{ const iso=toISO(p.datum); if(iso&&/^\d{4}-\d{2}/.test(iso)){ const k=iso.slice(0,7); cnt[k]=(cnt[k]||0)+1; } }); let best=null,bv=0; Object.keys(cnt).forEach(k=>{ if(cnt[k]>bv){bv=cnt[k];best=k;} }); return best; };
   const importLocal = async file => {
-    setImportBusy(true);
+    setImportBusy(true); setImportStep('Kontoauszug wird geöffnet…');
     try{
       // 1) KI-Auslesung (Betrag, Datum, Empfänger, Verwendungszweck)
       let parsed=[];
-      try{ setToast('🔎 KI liest den Kontoauszug…'); parsed = await aiReadStatement(file); }catch(e){ parsed=[]; }
+      try{ parsed = await aiReadStatement(file, setImportStep); }catch(e){ parsed=[]; }
       // 2) Fallback: Regex-Parser, falls KI nichts liefert
       if(!parsed.length){
         const isPdf = file.type==='application/pdf' || /\.pdf$/i.test(file.name);
         let lines;
-        if(isPdf){ lines = await pdfToLines(file); }
-        else { setToast('OCR läuft… (kann etwas dauern)'); await loadTesseract(); const { data:{ text } } = await window.Tesseract.recognize(file, 'deu'); lines = String(text||'').split('\n'); }
+        if(isPdf){ setImportStep('PDF-Text wird ausgewertet…'); lines = await pdfToLines(file); }
+        else { setImportStep('Texterkennung (OCR) läuft… kann etwas dauern'); await loadTesseract(); const { data:{ text } } = await window.Tesseract.recognize(file, 'deu'); lines = String(text||'').split('\n'); }
         parsed = parseStatement(lines, yr);
       }
-      if(!parsed.length){ setToast('Nichts erkannt – bitte Text-PDF oder klares Foto verwenden.'); setImportBusy(false); return; }
+      if(!parsed.length){ setToast('Nichts erkannt – bitte Text-PDF oder klares Foto verwenden.'); setImportBusy(false); setImportStep(''); return; }
       // 3) Monat erkennen und ggf. dorthin wechseln (#12)
+      setImportStep(parsed.length+' Buchungen erkannt – werden zugeordnet…');
       const dom = dominantMonth(parsed);
       const curYm = yr+'-'+String(mo+1).padStart(2,'0');
       let switchedTo=null;
@@ -1972,7 +1980,7 @@ function App({session}) {
       const res=addImportDrafts(parsed);
       setImportSummary({ total:parsed.length, added:res.added, skipped:res.skipped, dupBook:res.dupBook, switchedTo });
     }catch(e){ setToast('Import fehlgeschlagen: '+(e.message||e)); }
-    setImportBusy(false);
+    setImportBusy(false); setImportStep('');
   };
   /* ── Beleg erfassen (Foto/Upload → KI → speichern + Bild in DB) ── */
   const folderFor = key => (key==='p1'||key==='p2'||key==='p3') ? ['Immobilien', names[key]] : key==='unterInc' ? [names.unternehmen,'Einnahmen'] : key==='unterExp' ? [names.unternehmen,'Ausgaben'] : ['Privat'];
@@ -3624,7 +3632,7 @@ function App({session}) {
             const allSel = allIds.length>0 && draftSel.length===allIds.length;
             const draftRow = d => { const hasFile=!!d.fileData; const sel=draftSel.includes(d.id); const matched=d.openMatch && !d.confirmed; const done=!!d.confirmed; const ign=!!d.ignored; const st=draftStatus(d); const catTxt=[d.category, d.datum&&(toISO(d.datum)||d.datum)].filter(Boolean).join(' · ')||'Details ergänzen'; return (
               <div key={d.id} draggable={!ign} onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>{ if(done||ign) return; if(matched){ setConfirmMatch({draftId:d.id, match:d.openMatch}); return; } setAssignFor(null); setAssignSel(null); setDraftEdit(d.id); }} onContextMenu={e=>{e.preventDefault();setDraftCtx({x:e.clientX,y:e.clientY,id:d.id});}} style={{display:'flex',gap:12,alignItems:'center',background:ign?C.surf:(matched?hexA(C.pri,0.08):(done?hexA(C.grn,0.06):d.privat?hexA('#ABC4FF',0.07):d.isNew?hexA('#FFD27A',0.07):C.surf2)),border:'1px solid '+(done?hexA(C.grn,0.5):(matched?C.pri:(sel?C.pri:(d.isNew?hexA('#FFD27A',0.4):C.bdr)))),borderRadius:14,padding:'12px 14px',cursor:(done||ign)?'default':'pointer',opacity:ign?0.5:1}}>
-                {!ign && !done && <button onClick={e=>{e.stopPropagation();setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id]);}} title="Auswählen" style={{width:22,height:22,flexShrink:0,borderRadius:6,border:'1.5px solid '+(sel?C.pri:C.bdrM),background:sel?C.pri:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}>{sel&&<Ic p={P.check} sz={13} col={C.priTxt}/>}</button>}
+                {!ign && !done && sel && <button onClick={e=>{e.stopPropagation();setDraftSel(s=>s.filter(x=>x!==d.id));}} title="Abwählen" style={{width:22,height:22,flexShrink:0,borderRadius:6,border:'1.5px solid '+C.pri,background:C.pri,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}><Ic p={P.check} sz={13} col={C.priTxt}/></button>}
                 {matched ? (
                   <button onClick={e=>{e.stopPropagation(); setConfirmMatch({draftId:d.id, match:d.openMatch});}} title="Gefundenen Beleg prüfen" style={{position:'relative',width:44,height:44,flexShrink:0,borderRadius:13,background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
                     <Ic p={P.receipt} sz={17} col={C.pri}/>
@@ -3700,7 +3708,15 @@ function App({session}) {
                     <input type="file" accept=".pdf,application/pdf,image/*" multiple disabled={importBusy} onChange={async e=>{const fs=[...e.target.files]; e.target.value=''; for(const f of fs){ await importLocal(f); }}} style={{display:'none'}} />
                   </label>
                 </div>
-                {importBusy && <div className="prog" style={{maxWidth:'100%',marginBottom:12}}/>}
+                {importBusy && (
+                  <div style={{marginBottom:12}}>
+                    <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:7,fontSize:13,fontWeight:600,color:C.pri}}>
+                      <span style={{display:'inline-flex'}}><Ic p={P.spark} sz={15} col={C.pri}/></span>
+                      <span>{importStep||'KI liest den Kontoauszug…'}</span>
+                    </div>
+                    <div className="prog" style={{maxWidth:'100%'}}/>
+                  </div>
+                )}
 
                 {monthDrafts.length>0 && (
                   <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:8}}>
@@ -3747,8 +3763,8 @@ function App({session}) {
                   <div style={{position:'fixed',inset:0,background:C.bg,zIndex:130,display:'flex',flexDirection:'column'}}>
                     {/* Kopfzeile */}
                     <div style={{display:'flex',alignItems:'center',gap:14,padding:'16px 26px',borderBottom:'1px solid '+C.bdr,flexShrink:0}}>
-                      <button onClick={()=>{ if(assignFor===d.id){ setAssignFor(null); setAssignSel(null); } else setDraftEdit(null); }} title="Zurück" style={{display:'flex',alignItems:'center',gap:7,background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:10,padding:'8px 14px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><span style={{fontSize:16,lineHeight:1}}>←</span> Zurück</button>
-                      <div style={{fontSize:17,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>{assignFor===d.id?'Beleg zuordnen':hasFile?'Beleg erfassen':'Beleg hochladen'}</div>
+                      <button onClick={()=>{ if(assignFor===d.id){ setAssignFor(null); setAssignSel(null); } else setDraftEdit(null); }} title="Zurück zum Kontoauszug" style={{display:'flex',alignItems:'center',gap:7,background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:10,padding:'8px 14px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><span style={{fontSize:16,lineHeight:1}}>←</span> {assignFor===d.id?'Zurück':'Kontoauszug'}</button>
+                      <div style={{fontSize:17,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>{assignFor===d.id?'Beleg zuordnen':'Beleg erfassen'}</div>
                       <div style={{marginLeft:'auto',fontSize:13,color:C.mut}}>{d.name||'Neuer Posten'}{num(d.amount)?(' · '+fmt(num(d.amount))):''}</div>
                     </div>
                     {assignFor===d.id ? (()=>{
@@ -5392,7 +5408,7 @@ function App({session}) {
       {draftCtx && (()=>{ const d=(data.drafts||[]).find(x=>x.id===draftCtx.id); if(!d) return null; const isSel=draftSel.includes(d.id); return (
         <div onClick={()=>setDraftCtx(null)} onContextMenu={e=>{e.preventDefault();setDraftCtx(null);}} style={{position:'fixed',inset:0,zIndex:155}}>
           <div onClick={e=>e.stopPropagation()} style={{position:'fixed',left:Math.min(draftCtx.x,window.innerWidth-222),top:Math.min(draftCtx.y,window.innerHeight-260),width:212,background:C.surf,border:'1px solid '+C.bdr,borderRadius:12,padding:5,boxShadow:'0 14px 36px rgba(0,0,0,0.55)'}}>
-            {(()=>{ const acc=[{k:'unter',l:names.unternehmen||'Firma'},{k:'p1',l:names.p1||'Immobilie 1'},{k:'p2',l:names.p2||'Immobilie 2'},{k:'p3',l:names.p3||'Immobilie 3'},{k:'privat',l:names.privatLabel||'Privat'}]; const aicon=k=>(k==='p1'||k==='p2'||k==='p3'?P.house:k==='privat'?P.prson:P.brief); const onLeft=draftCtx.x>window.innerWidth-440; return (<>
+            {(()=>{ const acc=[{k:'unter',l:names.unternehmen||'Firma'},{k:'p1',l:names.p1||'Immobilie 1'},{k:'p2',l:names.p2||'Immobilie 2'},{k:'p3',l:names.p3||'Immobilie 3'}]; const aicon=k=>(k==='p1'||k==='p2'||k==='p3'?P.house:k==='privat'?P.prson:P.brief); const onLeft=draftCtx.x>window.innerWidth-440; return (<>
             <button onClick={()=>{ setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id]); setDraftCtx(null); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.check} sz={15} col={isSel?C.pri:C.sub}/> {isSel?'Abwählen':'Auswählen'}</button>
             <div onMouseEnter={()=>setDraftCtx(c=>c?{...c,sub:true}:c)} onMouseLeave={()=>setDraftCtx(c=>c?{...c,sub:false}:c)} style={{position:'relative'}}>
               <button onClick={()=>setDraftCtx(c=>c?{...c,sub:!c.sub}:c)} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:draftCtx.sub?C.surf2:'none',border:'none',borderRadius:8,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}><Ic p={P.out} sz={15} col={C.sub}/> <span style={{flex:1}}>Zuordnen</span><span style={{fontSize:15,color:C.mut}}>{onLeft?'‹':'›'}</span></button>
