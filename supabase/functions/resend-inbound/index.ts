@@ -1,4 +1,4 @@
-// SP Finanz – Rechnungen per E-Mail-Weiterleitung: Webhook-Ziel für "Resend Inbound".
+// Buqo – Rechnungen per E-Mail-Weiterleitung: Webhook-Ziel für "Resend Inbound".
 // Wird von Resend (über Svix) aufgerufen, wenn eine Mail an die eingerichtete Empfangsadresse
 // eingeht (z. B. rechnungen@inbound.designpeak.io). Lädt PDF/Bild-Anhänge, lässt sie von Claude
 // auslesen (gleiche Logik wie der manuelle Beleg-Scan) und legt Treffer in "resend_import_queue"

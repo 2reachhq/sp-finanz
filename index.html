@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SP Finanz</title>
+  <title>Buqo</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23D8F878'/%3E%3Ctext x='16' y='23' font-family='Arial, sans-serif' font-weight='800' font-size='20' fill='%230A0A0A' text-anchor='middle'%3EB%3C/text%3E%3C/svg%3E">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -393,6 +394,15 @@ function Ic({p,sz=15,col='currentColor'}) {
       strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,display:'block'}}>
       <path d={p} />
     </svg>
+  );
+}
+
+/* ══ Buqo-Logo-Mark ══ */
+function BuqoMark({sz=28}) {
+  return (
+    <div style={{width:sz,height:sz,borderRadius:sz*0.28,background:C.act,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+      <span style={{fontSize:sz*0.56,fontWeight:800,color:C.actTxt,fontFamily:FONT,lineHeight:1}}>B</span>
+    </div>
   );
 }
 
@@ -1178,7 +1188,10 @@ function Login() {
   return (
     <div style={{position:'fixed',inset:0,background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT,padding:20}}>
       <form onSubmit={submit} style={{width:'100%',maxWidth:340,background:C.surf,borderRadius:18,padding:28,border:'1px solid '+C.bdr}}>
-        <div style={{fontSize:22,fontWeight:700,color:C.txt,letterSpacing:'-0.03em',marginBottom:4}}>SP Finanz</div>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
+          <BuqoMark sz={30}/>
+          <div style={{fontSize:22,fontWeight:700,color:C.txt,letterSpacing:'-0.03em'}}>Buqo</div>
+        </div>
         <div style={{fontSize:13,color:C.sub,marginBottom:22}}>Bitte einloggen</div>
         <label style={{fontSize:12,color:C.sub,display:'block',marginBottom:6}}>E-Mail</label>
         <input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoFocus required style={{...inp,marginBottom:14}} />
@@ -1891,12 +1904,12 @@ function App({session}) {
     try{
       const {data,error}=await sb.functions.invoke('gmail-oauth-start',{body:{}});
       if(error) throw error; if(data&&data.error) throw new Error(data.error);
-      const popup=window.open(data.url,'sp-finanz-gmail-oauth','width=520,height=680');
+      const popup=window.open(data.url,'buqo-gmail-oauth','width=520,height=680');
       if(!popup) throw new Error('Popup wurde blockiert – bitte Popups für diese Seite erlauben.');
     }catch(e){ setToast('Gmail-Verbindung fehlgeschlagen: '+(e.message||e)); setGmailConnectBusy(false); }
   };
   useEffect(()=>{
-    const onMsg = (ev)=>{ const d=ev.data; if(!d||d.source!=='sp-finanz-gmail-oauth') return; setGmailConnectBusy(false); setToast(d.message||(d.ok?'Gmail verbunden':'Gmail-Verbindung fehlgeschlagen')); if(d.ok){ loadGmailAccounts(); pullGmailQueueIntoDrafts(); } };
+    const onMsg = (ev)=>{ const d=ev.data; if(!d||d.source!=='buqo-gmail-oauth') return; setGmailConnectBusy(false); setToast(d.message||(d.ok?'Gmail verbunden':'Gmail-Verbindung fehlgeschlagen')); if(d.ok){ loadGmailAccounts(); pullGmailQueueIntoDrafts(); } };
     window.addEventListener('message', onMsg);
     return ()=>window.removeEventListener('message', onMsg);
   },[]);
@@ -2640,11 +2653,11 @@ function App({session}) {
   /* Alle Daten als Datei exportieren (zur Auswertung) */
   const exportData = () => {
     try{
-      const payload = { app:'SP Finanz', exportedAt:new Date().toISOString(), names, data };
+      const payload = { app:'Buqo', exportedAt:new Date().toISOString(), names, data };
       const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'sp-finanz-export-'+new Date().toISOString().slice(0,10)+'.json';
+      a.href = url; a.download = 'buqo-export-'+new Date().toISOString().slice(0,10)+'.json';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(url), 1000);
       setToast('Daten exportiert – Datei wurde heruntergeladen');
@@ -2662,7 +2675,7 @@ function App({session}) {
     try{
       const monatswerte = Array.from({length:12},(_,i)=>{const t=calcTotals(getMD(yr,i),yr,i);return {monat:MONTHS[i],einnahmen:t.totalInc,ausgaben:t.totalExp,ergebnis:t.net};});
       const snapshot = { namen:names, jahr:yr, monatswerte, jahresdaten:data[yr]||{} };
-      const system = "Du bist der persönliche Finanz- und Steuer-Assistent in der App „SP Finanz“ für einen Nutzer in Deutschland (Immobilien-Vermietung, ein Unternehmen, private Ausgaben). "
+      const system = "Du bist der persönliche Finanz- und Steuer-Assistent in der App „Buqo“ für einen Nutzer in Deutschland (Immobilien-Vermietung, ein Unternehmen, private Ausgaben). "
         + "Du kennst seine echten Daten (JSON unten; Beträge in EUR, Monate 0=Januar … 11=Dezember; Ausgaben sind positiv gespeichert). "
         + "Antworte auf Deutsch: konkret, freundlich, kompakt, mit echten Zahlen aus den Daten. Gib praktische Hinweise (worauf achten, wo evtl. sparen, was in Deutschland häufig absetzbar ist). "
         + "Erfinde niemals Zahlen. Wenn Daten fehlen, sag es. "
@@ -3141,7 +3154,7 @@ function App({session}) {
         position:'sticky',top:0,zIndex:40,
       }}>
         {/* Logo — Klick = Konten */}
-        <button onClick={()=>{setTab('home');setOpenAcct('unter');}} style={{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:isMobile?18:23,fontWeight:800,color:C.txt,letterSpacing:'-0.03em',flexShrink:0,padding:0}}>SP Finanz</button>
+        <button onClick={()=>{setTab('home');setOpenAcct('unter');}} style={{display:'flex',alignItems:'center',gap:9,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:isMobile?18:23,fontWeight:800,color:C.txt,letterSpacing:'-0.03em',flexShrink:0,padding:0}}><BuqoMark sz={isMobile?24:28}/> Buqo</button>
 
         {/* Nav items — rechtsbündig, nur Desktop */}
         {!isMobile && (

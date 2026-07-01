@@ -1,4 +1,4 @@
--- SP Finanz – Gmail-Integration: verbundene Postfächer + Warteschlange erkannter Rechnungen
+-- Buqo – Gmail-Integration: verbundene Postfächer + Warteschlange erkannter Rechnungen
 -- Ausführen im Supabase SQL-Editor (oder via `supabase db push`) BEVOR die gmail-* Edge Functions deployed werden.
 
 -- Verbundene Gmail-Postfächer (OAuth-Refresh-Token). Nur der Service-Role-Key (Edge Functions)

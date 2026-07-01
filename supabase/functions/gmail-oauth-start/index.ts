@@ -1,4 +1,4 @@
-// SP Finanz – Gmail-Anbindung: erzeugt die Google-Consent-URL für einen eingeloggten App-Nutzer.
+// Buqo – Gmail-Anbindung: erzeugt die Google-Consent-URL für einen eingeloggten App-Nutzer.
 // Der Client öffnet die zurückgegebene URL in einem Popup-Fenster (siehe gmail-oauth-callback).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 

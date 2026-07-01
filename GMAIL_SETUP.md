@@ -87,7 +87,7 @@ supabase functions deploy gmail-sync
 
 ## 6. In der App verbinden
 
-In SP Finanz unter **Einstellungen → Gmail** auf "Postfach verbinden" klicken
+In Buqo unter **Einstellungen → Gmail** auf "Postfach verbinden" klicken
 (öffnet ein Google-Consent-Popup). Danach erscheinen neue Rechnungs-Anhänge
 automatisch (alle 15 Minuten) als Entwürfe unter **Import → Kontoauszug**,
 wo sie wie gewohnt bestätigt und einem Konto zugeordnet werden.

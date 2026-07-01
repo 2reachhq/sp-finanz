@@ -1,4 +1,4 @@
-// SP Finanz – Gmail-Anbindung: OAuth-Redirect-Ziel. Wird von Google aufgerufen (kein App-Login-Header),
+// Buqo – Gmail-Anbindung: OAuth-Redirect-Ziel. Wird von Google aufgerufen (kein App-Login-Header),
 // tauscht den Code gegen Tokens, speichert sie serverseitig und schließt sich selbst (Popup-Flow).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -32,7 +32,7 @@ function popupResponse(ok: boolean, message: string) {
   <p style="font-size:12px;opacity:.6;">Dieses Fenster schließt sich gleich automatisch.</p>
 </div>
 <script>
-  try { if (window.opener) window.opener.postMessage({ source: 'sp-finanz-gmail-oauth', ok: ${ok ? "true" : "false"}, message: ${JSON.stringify(message)} }, '*'); } catch (e) {}
+  try { if (window.opener) window.opener.postMessage({ source: 'buqo-gmail-oauth', ok: ${ok ? "true" : "false"}, message: ${JSON.stringify(message)} }, '*'); } catch (e) {}
   setTimeout(() => window.close(), ${ok ? 1200 : 3500});
 </script>
 </body></html>`;

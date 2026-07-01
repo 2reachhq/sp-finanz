@@ -1,4 +1,4 @@
-// SP Finanz – KI-Proxy (hält den Anthropic-Schlüssel geheim)
+// Buqo – KI-Proxy (hält den Anthropic-Schlüssel geheim)
 // Nur eingeloggte App-Nutzer dürfen diese Funktion aufrufen.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 

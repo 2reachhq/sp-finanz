@@ -1,4 +1,4 @@
--- SP Finanz – Rechnungen per E-Mail-Weiterleitung (Resend Inbound)
+-- Buqo – Rechnungen per E-Mail-Weiterleitung (Resend Inbound)
 -- Unabhängig von der Gmail-Integration: Warteschlange für Rechnungs-Anhänge,
 -- die an eine per Resend empfangende Adresse (z. B. rechnungen@inbound.designpeak.io)
 -- weitergeleitet bzw. direkt dorthin geschickt wurden.

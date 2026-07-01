@@ -1,4 +1,4 @@
-// SP Finanz – Gmail-Sync: holt für jedes verbundene Postfach neue Mails mit Rechnungs-/Beleg-Anhängen,
+// Buqo – Gmail-Sync: holt für jedes verbundene Postfach neue Mails mit Rechnungs-/Beleg-Anhängen,
 // lässt sie von der KI auslesen (gleiche Logik wie der manuelle Beleg-Scan in der App) und legt sie in
 // "gmail_import_queue" ab. Der Client holt sich offene Zeilen von dort und reiht sie in die bestehenden
 // Bankauszug-Entwürfe ein, wo der Nutzer sie wie gewohnt bestätigt/zuordnet.
