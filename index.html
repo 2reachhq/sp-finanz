@@ -51,7 +51,7 @@
   </style>
 </head>
 <body>
-<script>try{var _t=localStorage.getItem('sp_theme')||'dark';var _d=_t==='dark'||(_t==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);var _bg=_d?'#0B0B0F':'#F5F6F9';document.documentElement.style.background=_bg;document.body.style.background=_bg;document.documentElement.style.colorScheme=_d?'dark':'light';}catch(e){}</script>
+<script>try{var _t=localStorage.getItem('sp_theme')||'dark';var _d=_t==='dark'||(_t==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);var _bg=_d?'#0A0A0A':'#F4F5F7';document.documentElement.style.background=_bg;document.body.style.background=_bg;document.documentElement.style.colorScheme=_d?'dark':'light';}catch(e){}</script>
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
@@ -76,35 +76,35 @@ const PRIV_PRESETS  = ['Kleidung','Urlaub','Sport & Fitness','Streaming & Abos',
 // pri = „Tinten"-Akzent (Text/Icons/aktive Zustände) → im Light-Mode dunkler, damit auf Weiß lesbar.
 // act = kräftige Füllfläche (Buttons/Avatar) → in beiden Modi das Lime.
 const THEME_DARK = {
-  bg:'#0C0D0A', surf:'#181915', surf2:'#212319', surf3:'#2C2E22',
-  bdr:'rgba(255,255,255,0.09)', bdrM:'rgba(255,255,255,0.15)',
-  pri:'#D8F878', priL:'rgba(216,248,120,0.20)', priTxt:'#0C0D0A',
-  act:'#D8F878', actL:'rgba(216,248,120,0.18)', actTxt:'#0C0D0A',
-  grn:'#B7E85C', grnL:'rgba(183,232,92,0.14)',
+  bg:'#0A0A0A', surf:'#1A1A1A', surf2:'#242424', surf3:'#2E2E2E',
+  bdr:'rgba(255,255,255,0.08)', bdrM:'rgba(255,255,255,0.14)',
+  pri:'#D8F878', priL:'rgba(216,248,120,0.20)', priTxt:'#0A0A0A',
+  act:'#D8F878', actL:'rgba(216,248,120,0.18)', actTxt:'#0A0A0A',
+  grn:'#B7E85C', grnL:'rgba(183,232,92,0.13)',
   red:'#FF6B6B', redL:'rgba(255,107,107,0.11)',
   amb:'#FFC24B', ambL:'rgba(255,194,75,0.12)',
   exp:'#FFB37A',
-  txt:'#F5F7EE', sub:'rgba(245,247,238,0.62)', mut:'rgba(245,247,238,0.40)',
+  txt:'#FFFFFF', sub:'rgba(255,255,255,0.62)', mut:'rgba(255,255,255,0.40)',
   sep:'rgba(255,255,255,0.07)',
 };
 const THEME_LIGHT = {
-  bg:'#F6F7F1', surf:'#FFFFFF', surf2:'#EDEFE4', surf3:'#E2E5D6',
-  bdr:'rgba(20,26,10,0.12)', bdrM:'rgba(20,26,10,0.20)',
-  pri:'#5E8C10', priL:'rgba(94,140,16,0.14)', priTxt:'#FFFFFF',
-  act:'#D8F878', actL:'rgba(216,248,120,0.16)', actTxt:'#0C0D0A',
+  bg:'#F4F5F7', surf:'#FFFFFF', surf2:'#EEF0F3', surf3:'#E3E6EB',
+  bdr:'rgba(15,18,24,0.10)', bdrM:'rgba(15,18,24,0.18)',
+  pri:'#5E8C10', priL:'rgba(94,140,16,0.13)', priTxt:'#FFFFFF',
+  act:'#D8F878', actL:'rgba(216,248,120,0.20)', actTxt:'#0A0A0A',
   grn:'#4E8F16', grnL:'rgba(78,143,22,0.12)',
   red:'#E03131', redL:'rgba(224,49,49,0.11)',
   amb:'#C97A00', ambL:'rgba(201,122,0,0.12)',
   exp:'#D9531A',
-  txt:'#171A10', sub:'rgba(23,26,16,0.64)', mut:'rgba(23,26,16,0.44)',
-  sep:'rgba(20,26,10,0.09)',
+  txt:'#15171C', sub:'rgba(21,23,28,0.62)', mut:'rgba(21,23,28,0.42)',
+  sep:'rgba(15,18,24,0.08)',
 };
 let C = {...THEME_DARK};
 // hex → rgba mit Alpha
 const hexA=(hex,a)=>{ const n=parseInt(String(hex).slice(1),16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; };
 // relative Helligkeit + ideale Textfarbe (dunkel auf hellen Akzenten, hell auf dunklen)
 const relLum=(hex)=>{ try{ const n=parseInt(String(hex).slice(1),16); const r=((n>>16)&255)/255,g=((n>>8)&255)/255,b=(n&255)/255; return 0.2126*r+0.7152*g+0.0722*b; }catch(e){ return 0; } };
-const idealText=(hex)=> relLum(hex)>0.58 ? '#0C0D0A' : '#FFFFFF';
+const idealText=(hex)=> relLum(hex)>0.58 ? '#0A0A0A' : '#FFFFFF';
 // Konto-Farben in Anzeige-Reihenfolge (Teal · Peach · Lime · Violett · Rosé) – zur neuen Palette passend
 const ACCT_ORDER=['unter','p1','p2','p3','privat'];
 const ACCT_PAL  =['#70B8BA','#FFCCB6','#C6E06A','#B8A9E8','#F2A9C4'];
@@ -4718,12 +4718,16 @@ function App({session}) {
                     ); })}
                   </div>
                 )}
-                <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
-                  <div style={{flex:1,minWidth:200,display:'flex',alignItems:'center',gap:9,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:'11px 14px'}}><Ic p={P.search} sz={15} col={C.mut}/><input value={belegSearch} onChange={e=>setBelegSearch(e.target.value)} placeholder="Name, Belegnummer, Betrag…" style={{flex:1,background:'none',border:'none',outline:'none',color:C.txt,fontSize:14,fontFamily:'inherit'}}/>{belegSearch&&<button onClick={()=>setBelegSearch('')} style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>×</button>}</div>
-                  <button onClick={()=>openCapture({mode:'import',kind:'aus',account:(belAcct!=='alle'?belAcct:''),recurring:belKindF==='wied'})} style={{display:'inline-flex',alignItems:'center',gap:8,background:C.pri,color:C.priTxt,border:'none',borderRadius:12,padding:'11px 18px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={15} col={C.priTxt}/> Beleg erfassen</button>
+                <div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap',alignItems:'center'}}>
+                  <div style={{flex:1,minWidth:180,position:'relative'}}>
+                    <span style={{position:'absolute',left:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'inline-flex'}}><Ic p={P.search} sz={15} col={C.mut}/></span>
+                    <input value={belegSearch} onChange={e=>setBelegSearch(e.target.value)} placeholder="Name, Belegnummer, Betrag…" style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,color:C.txt,padding:'12px '+(belegSearch?'36px':'12px')+' 12px 38px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+                    {belegSearch && <button onClick={()=>setBelegSearch('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>✕</button>}
+                  </div>
+                  <button onClick={()=>openCapture({mode:'import',kind:'aus',account:(belAcct!=='alle'&&belAcct?belAcct:''),recurring:belKindF==='wied'})} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',gap:8,background:C.act,color:C.actTxt,border:'none',borderRadius:12,padding:'12px 18px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={15} col={C.actTxt}/> Beleg erfassen</button>
                   <div style={{position:'relative'}}>
                     {(()=>{ const active=belKindF!=='alle'||belStatusF!=='alle'; return (
-                    <button onClick={()=>setBelFilterOpen(o=>!o)} title="Filter" style={{display:'inline-flex',alignItems:'center',gap:6,background:(active||belFilterOpen)?hexA(C.pri,0.16):C.surf2,border:'1px solid '+((active||belFilterOpen)?hexA(C.pri,0.45):C.bdr),color:active?C.pri:C.sub,borderRadius:12,padding:'11px 15px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.filter} sz={15} col={active?C.pri:C.sub}/> Filter</button>
+                    <button onClick={()=>setBelFilterOpen(o=>!o)} title="Filter" style={{display:'inline-flex',alignItems:'center',gap:6,background:(active||belFilterOpen)?hexA(C.pri,0.16):C.surf2,border:'1px solid '+((active||belFilterOpen)?hexA(C.pri,0.45):C.bdr),color:active?C.pri:C.sub,borderRadius:11,padding:'12px 14px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.filter} sz={15} col={active?C.pri:C.sub}/> Filter</button>
                     ); })()}
                     {belFilterOpen && (<>
                       <div onClick={()=>setBelFilterOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
@@ -4744,13 +4748,13 @@ function App({session}) {
                   <div key={gk}>
                     <div style={{fontSize:11,fontWeight:700,color:C.mut,letterSpacing:'0.06em',marginBottom:9,textTransform:'uppercase'}}>{lbl} · {groups[gk].length}</div>
                     <div style={{display:'flex',flexDirection:'column',gap:10}}>{groups[gk].map(r=>{ const bc=acol(r._ber); const aus=r._kind==='aus'; return (
-                      <div key={r.id+r._y+r._m} onClick={()=>setBelegEdit({loc:r})} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderLeft:'3px solid '+bc,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
-                        <div style={{width:44,height:44,flexShrink:0,borderRadius:12,background:hexA(bc,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={19} col={bc}/></div>
+                      <div key={r.id+r._y+r._m} onClick={()=>openCaptureEdit(r)} style={{display:'flex',alignItems:'center',gap:13,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'13px 15px',cursor:'pointer'}}>
+                        <div style={{width:46,height:46,flexShrink:0,borderRadius:12,background:hexA(bc,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={20} col={bc}/></div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:15,fontWeight:700,color:C.txt,display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</span>{r.recurring&&<Ic p={P.repeat} sz={13} col={bc}/>}</div>
-                          <div style={{fontSize:12.5,color:C.sub,marginTop:2,display:'flex',alignItems:'center',gap:6}}><span style={{color:bc,fontWeight:600}}>{belBerLabel(r._ber)}</span><span style={{color:C.mut}}>·</span>{(r.date&&(toISO(r.date)||r.date))||'—'}</div>
+                          <div style={{fontSize:15.5,fontWeight:700,color:C.txt,display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</span>{r.recurring&&<Ic p={P.repeat} sz={13} col={bc}/>}</div>
+                          <div style={{fontSize:12.5,color:C.sub,marginTop:3,display:'flex',alignItems:'center',gap:6}}><span style={{color:bc,fontWeight:600}}>{belBerLabel(r._ber)}</span><span style={{color:C.mut}}>·</span>{(r.date&&(toISO(r.date)||r.date))||'—'}</div>
                         </div>
-                        <div style={{fontSize:15,fontWeight:700,...NUM,color:aus?C.exp:C.grn,whiteSpace:'nowrap'}}>{aus?'-':''}{fmt(Math.abs(r.amount))}</div>
+                        <div style={{fontSize:16,fontWeight:800,...NUM,color:aus?C.exp:C.txt,whiteSpace:'nowrap'}}>{aus?'-':''}{fmt(Math.abs(r.amount))}</div>
                         <span style={{color:C.mut,fontSize:18,flexShrink:0}}>›</span>
                       </div>
                     ); })}</div>
