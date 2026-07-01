@@ -382,6 +382,8 @@ const P = {
   layers:'M12 2l9 5-9 5-9-5z M3 12l9 5 9-5 M3 17l9 5 9-5',
   filter:'M22 3H2l8 9.46V19l4 2v-8.54z',
   dload:'M12 3v13 M7 12l5 5 5-5 M5 21h14',
+  mail:  'M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z M22 6l-10 7L2 6',
+  refresh:'M23 4v6h-6 M1 20v-6h6 M3.51 9a9 9 0 0114.13-3.36L23 10 M1 14l5.36 4.36A9 9 0 0020.49 15',
 };
 
 /* ══ Icon component ══ */
@@ -1316,6 +1318,9 @@ function App({session}) {
   const [yrFilter,setYrFilter]= useState({unter:true,p1:true,p2:true,p3:true,privat:true});
   const [storageInfo,setStorageInfo]= useState(null);
   const [storageLoading,setStorageLoading]= useState(false);
+  const [gmailAccounts,setGmailAccounts]= useState([]);  // verbundene Gmail-Postfächer (Status, ohne Tokens)
+  const [gmailConnectBusy,setGmailConnectBusy]= useState(false);
+  const [gmailSyncBusy,setGmailSyncBusy]= useState(false);
   const isMobile = useIsMobile(900);
   const [navOpen,setNavOpen]= useState(false);
   const [selKey,setSelKey]= useState(null);      // Bereich im Auswahl-Modus
@@ -1870,6 +1875,62 @@ function App({session}) {
   const draftSig = (d)=> normName(d.name)+'|'+Math.round(num(d.amount)*100)+'|'+(toISO(d.datum)||'')+'|'+String(d.belegnr||'').toLowerCase();
   const addImportDrafts = (list)=>{ const flagged=flagDrafts(list||[]); const existing=new Set((drafts||[]).map(draftSig)); let added=0, skipped=0, dupBook=0; const fresh=[]; flagged.forEach(d=>{ const s=draftSig(d); if(existing.has(s)){ skipped++; return; } existing.add(s); if(d.dup) dupBook++; fresh.push({...d, isNew:true}); added++; }); setDrafts(ds=>{ const old=(ds||[]).map(d=>d.isNew?{...d,isNew:false}:d); return [...fresh, ...old]; }); return {total:flagged.length, added, skipped, dupBook}; };
   const draftStatus = (d)=>{ if(d.ignored) return {key:'ignoriert',label:'Ignoriert',col:C.mut}; if(d.privat) return {key:'privat',label:'Privat',col:'#ABC4FF'}; if(d.confirmed) return {key:'zugeordnet',label:'Zugeordnet',col:C.grn}; if(d.openMatch) return {key:'beleg',label:'Beleg gefunden',col:C.pri}; if(d.isNew) return {key:'neu',label:'Neu',col:'#FFD27A'}; return {key:'offen',label:'Offen',col:C.exp}; };
+
+  /* ── Gmail-Integration ── */
+  // Liste der verbundenen Postfächer (Status/Zeitpunkt – Tokens bleiben serverseitig)
+  const loadGmailAccounts = async () => {
+    const {data:rows,error}=await sb.from('gmail_accounts').select('id,email,status,last_sync_at,last_error,created_at').order('created_at',{ascending:true});
+    if(!error && rows) setGmailAccounts(rows);
+  };
+  useEffect(()=>{ if(ready) loadGmailAccounts(); },[ready]);
+  useEffect(()=>{ if(ready) pullGmailQueueIntoDrafts(); },[ready]);
+  // Postfach verbinden: Consent-URL holen, in Popup öffnen, auf Ergebnis-Nachricht warten
+  const connectGmailAccount = async () => {
+    setGmailConnectBusy(true);
+    try{
+      const {data,error}=await sb.functions.invoke('gmail-oauth-start',{body:{}});
+      if(error) throw error; if(data&&data.error) throw new Error(data.error);
+      const popup=window.open(data.url,'sp-finanz-gmail-oauth','width=520,height=680');
+      if(!popup) throw new Error('Popup wurde blockiert – bitte Popups für diese Seite erlauben.');
+    }catch(e){ setToast('Gmail-Verbindung fehlgeschlagen: '+(e.message||e)); setGmailConnectBusy(false); }
+  };
+  useEffect(()=>{
+    const onMsg = (ev)=>{ const d=ev.data; if(!d||d.source!=='sp-finanz-gmail-oauth') return; setGmailConnectBusy(false); setToast(d.message||(d.ok?'Gmail verbunden':'Gmail-Verbindung fehlgeschlagen')); if(d.ok){ loadGmailAccounts(); pullGmailQueueIntoDrafts(); } };
+    window.addEventListener('message', onMsg);
+    return ()=>window.removeEventListener('message', onMsg);
+  },[]);
+  const disconnectGmailAccount = async (id)=>{
+    const {error}=await sb.from('gmail_accounts').update({status:'disconnected'}).eq('id',id);
+    if(error){ setToast('Trennen fehlgeschlagen: '+error.message); return; }
+    setToast('Postfach getrennt'); loadGmailAccounts();
+  };
+  // Manueller Sync-Anstoß (zusätzlich zum automatischen Hintergrund-Job)
+  const runGmailSync = async ()=>{
+    setGmailSyncBusy(true);
+    try{
+      const {data,error}=await sb.functions.invoke('gmail-sync',{body:{}});
+      if(error) throw error; if(data&&data.error) throw new Error(data.error);
+      const added=(data.accounts||[]).reduce((s,a)=>s+(a.added||0),0);
+      setToast(added? added+' neue Beleg(e) aus Gmail gefunden' : 'Gmail geprüft – nichts Neues');
+      await loadGmailAccounts(); await pullGmailQueueIntoDrafts();
+    }catch(e){ setToast('Gmail-Sync fehlgeschlagen: '+(e.message||e)); }
+    setGmailSyncBusy(false);
+  };
+  // Offene Gmail-Funde in die bestehenden Bankauszug-Entwürfe einreihen (gleiche Review-Oberfläche wie beim Kontoauszug-Import)
+  const pullGmailQueueIntoDrafts = async ()=>{
+    const {data:rows,error}=await sb.from('gmail_import_queue').select('id,extracted,file_path,subject,from_email,received_at').eq('status','pending');
+    if(error || !rows || !rows.length) return;
+    const list=rows.filter(r=>r.extracted).map(r=>{ const ex=r.extracted||{}; return {
+      name: ex.name || r.subject || 'Beleg aus Gmail',
+      amount: ex.amount || 0, netto: ex.netto || '', mwst: ex.mwst || '',
+      kind: ex.kind==='ein' ? 'ein' : 'aus', datum: ex.datum || (r.received_at||'').slice(0,10),
+      belegnr: ex.belegnr || '', category: ex.category || '',
+      note: 'Aus Gmail: '+(r.from_email||r.subject||''),
+      filePath: r.file_path || null, gmailQueueId: r.id,
+    }; });
+    if(list.length) addImportDrafts(list);
+    await sb.from('gmail_import_queue').update({status:'imported'}).in('id', rows.map(r=>r.id));
+  };
   const markDraftPrivat = id => { updateDraft(id,{privat:true,ignored:false}); setDraftSel(s=>s.filter(x=>x!==id)); setToast('Als privat markiert'); };
   const markDraftIgnore = id => { updateDraft(id,{ignored:true,privat:false}); setDraftSel(s=>s.filter(x=>x!==id)); setToast('Ignoriert'); };
   const restoreDraft = id => { updateDraft(id,{ignored:false,privat:false}); setToast('Wiederhergestellt'); };
@@ -2133,7 +2194,7 @@ function App({session}) {
       const nd=JSON.parse(JSON.stringify(prev));
       if(!nd[ty]) nd[ty]={};
       if(!nd[ty][tm]) nd[ty][tm]=emptyMonth();
-      const copies=dlist.map(d=>({...newItem(d.name),amount:num(d.amount),netto:num(d.netto),mwst:(d.mwst!=null?d.mwst:''),note:(d.note||d.info||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',fileData:d.fileData||null,fileName:d.fileName||'',id:uid()}));
+      const copies=dlist.map(d=>({...newItem(d.name),amount:num(d.amount),netto:num(d.netto),mwst:(d.mwst!=null?d.mwst:''),note:(d.note||d.info||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',fileData:d.fileData||null,filePath:d.filePath||null,fileName:d.fileName||'',id:uid()}));
       setListAt(nd[ty][tm],dstLoc,[...getListAt(nd[ty][tm],dstLoc),...copies]);
       nd.drafts=(nd.drafts||[]).filter(d=>!ids.includes(d.id));
       return nd;
@@ -2148,7 +2209,7 @@ function App({session}) {
   // Import-Pflichtfelder eines Entwurfs
   const draftMissing = (d)=>{ const m=[]; if(!d.account)m.push('Konto'); if(d.account==='privat') return m; /* Privat: keine weiteren Pflichtfelder */ if(!String(d.name||'').trim())m.push('Name'); if(!num(d.amount))m.push('Betrag'); if(!String(d.category||'').trim())m.push('Kategorie'); if(!(d.kind==='ein'||d.kind==='aus'))m.push('Art'); if(!d.datum)m.push('Datum'); if(!String(d.belegnr||'').trim())m.push('Beleg-Nr'); if(!(d.fileData||d.filePath))m.push('Beleg'); return m; };
   // Entwurf endgültig übernehmen (nur wenn vollständig)
-  const commitDraft = (d)=>{ if(draftMissing(d).length) return; const dt=new Date(d.datum); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const cust=customers.find(c=>c.id===d.customerId); setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(d.name),amount:num(d.amount),netto:num(d.netto),mwst:(d.mwst!=null?d.mwst:''),note:(d.note||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',customerId:d.customerId||'',custName:(cust?cust.name:d.custName)||'',invId:d.invId||'',paid:!!d.invId,status:(d.kind==='ein'?'bezahlt':'abgebucht'),bankConfirmed:true,fileData:d.fileData||null,fileName:d.fileName||'',id:uid()}; _bookKind(nd[ty][tm], d.account, d.kind, item); if(d.invId){ nd.invoices=(nd.invoices||[]).map(iv=>iv.id===d.invId?{...iv,paid:true,paidDate:d.datum||''}:iv); } nd.drafts=(nd.drafts||[]).filter(x=>x.id!==d.id); return nd; }); setDraftEdit(null); setDraftSel(s=>s.filter(x=>x!==d.id)); setToast('Übernommen → '+accLabel(d.account)+' · '+MONTHS[tm]+' '+ty); };
+  const commitDraft = (d)=>{ if(draftMissing(d).length) return; const dt=new Date(d.datum); const ty=isNaN(dt)?yr:dt.getFullYear(); const tm=isNaN(dt)?mo:dt.getMonth(); const cust=customers.find(c=>c.id===d.customerId); setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); if(!nd[ty])nd[ty]={}; if(!nd[ty][tm])nd[ty][tm]=emptyMonth(); const item={...newItem(d.name),amount:num(d.amount),netto:num(d.netto),mwst:(d.mwst!=null?d.mwst:''),note:(d.note||''),belegnr:d.belegnr||'',category:d.category||'',datum:d.datum||'',customerId:d.customerId||'',custName:(cust?cust.name:d.custName)||'',invId:d.invId||'',paid:!!d.invId,status:(d.kind==='ein'?'bezahlt':'abgebucht'),bankConfirmed:true,fileData:d.fileData||null,filePath:d.filePath||null,fileName:d.fileName||'',id:uid()}; _bookKind(nd[ty][tm], d.account, d.kind, item); if(d.invId){ nd.invoices=(nd.invoices||[]).map(iv=>iv.id===d.invId?{...iv,paid:true,paidDate:d.datum||''}:iv); } nd.drafts=(nd.drafts||[]).filter(x=>x.id!==d.id); return nd; }); setDraftEdit(null); setDraftSel(s=>s.filter(x=>x!==d.id)); setToast('Übernommen → '+accLabel(d.account)+' · '+MONTHS[tm]+' '+ty); };
 
   /* ── Neue Buchung erfassen (Vollbild: Felder links, Beleg-Scan rechts) ── */
   const captureAccLabel = (acc)=> acc==='unter'?(names.unternehmen||'Firma') : acc==='privat'?(names.privatLabel||'Privat') : (names[acc]||'Konto');
@@ -3339,7 +3400,7 @@ function App({session}) {
 
           {/* ══ EINSTELLUNGEN (Profil) ══ */}
           {tab==='settings' && (()=>{
-            const STABS=[{k:'profil',l:'Profil',ic:P.prson},{k:'konten',l:'Konten & Rechnung',ic:P.brief},{k:'team',l:'Team',ic:P.prson},{k:'berater',l:'Steuerberater',ic:P.spark},{k:'admin',l:'Admin',ic:P.gear}];
+            const STABS=[{k:'profil',l:'Profil',ic:P.prson},{k:'konten',l:'Konten & Rechnung',ic:P.brief},{k:'team',l:'Team',ic:P.prson},{k:'berater',l:'Steuerberater',ic:P.spark},{k:'gmail',l:'Gmail',ic:P.mail},{k:'admin',l:'Admin',ic:P.gear}];
             const sAcct = bizAccts.includes(settingsAcct)?settingsAcct:(bizAccts[0]||'unter');
             const fldL={...SS,textAlign:'left'};
             const toggleIn=(arr,k)=> arr.includes(k)?arr.filter(x=>x!==k):[...arr,k];
@@ -3463,6 +3524,32 @@ function App({session}) {
                 <div style={{...SC}}>
                   <div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:6,letterSpacing:'0.02em'}}>STEUERBERATER · {taxAdvisors.length}</div>
                   {taxAdvisors.length? <div>{taxAdvisors.map(m=>teamRow(m,()=>askConfirm('„'+m.email+'" entfernen?',()=>removeTaxAdvisor(m.id))))}</div> : <div style={{fontSize:13,color:C.mut,textAlign:'center',padding:'22px 14px'}}>Noch kein Steuerberater eingeladen.</div>}
+                </div>
+              </>)}
+
+              {settingsTab==='gmail' && (<>
+                <div style={{...SC,marginBottom:12,maxWidth:640}}>
+                  <div style={{fontSize:14,fontWeight:700,color:C.txt,marginBottom:4}}>Gmail-Postfächer verbinden</div>
+                  <div style={{fontSize:12,color:C.mut,lineHeight:1.5,marginBottom:14}}>Verbundene Postfächer werden automatisch im Hintergrund nach Rechnungen/Belegen als Anhang durchsucht. Treffer erscheinen als Entwurf unter Import → Kontoauszug, wo du sie wie gewohnt bestätigst und einem Konto zuordnest. Es funktionieren nur Postfächer eurer Google-Workspace-Domain.</div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    <button onClick={connectGmailAccount} disabled={gmailConnectBusy} style={{display:'inline-flex',alignItems:'center',gap:8,background:C.act,color:C.actTxt,border:'none',borderRadius:11,padding:'11px 18px',fontSize:14,fontWeight:700,cursor:gmailConnectBusy?'default':'pointer',fontFamily:'inherit',opacity:gmailConnectBusy?0.6:1}}><Ic p={P.mail} sz={15} col={C.actTxt}/> {gmailConnectBusy?'Öffnet…':'Postfach verbinden'}</button>
+                    <button onClick={runGmailSync} disabled={gmailSyncBusy || !gmailAccounts.some(a=>a.status==='connected')} style={{...BVm,opacity:(gmailSyncBusy||!gmailAccounts.some(a=>a.status==='connected'))?0.5:1}}><Ic p={P.refresh} sz={14} col={C.pri}/> {gmailSyncBusy?'Prüft…':'Jetzt synchronisieren'}</button>
+                  </div>
+                </div>
+                <div style={{...SC}}>
+                  <div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:6,letterSpacing:'0.02em'}}>VERBUNDEN · {gmailAccounts.length}</div>
+                  {gmailAccounts.length? <div>{gmailAccounts.map(a=>{
+                    const statusLabel = a.status==='connected'?'Verbunden':a.status==='error'?'Fehler':'Getrennt';
+                    const statusCol = a.status==='connected'?C.grn:a.status==='error'?C.red:C.mut;
+                    return (<div key={a.id} style={{display:'flex',alignItems:'center',gap:12,padding:'11px 0',borderBottom:'1px solid '+C.sep}}>
+                      <div style={{width:38,height:38,flexShrink:0,borderRadius:'50%',background:C.surf2,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.mail} sz={16} col={C.sub}/></div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:14,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.email}</div>
+                        <div style={{fontSize:12,marginTop:2,display:'flex',gap:6,alignItems:'center'}}><span style={{color:statusCol,fontWeight:600}}>{statusLabel}</span><span style={{color:C.mut}}>· zuletzt {a.last_sync_at?new Date(a.last_sync_at).toLocaleString('de-DE'):'nie'}</span></div>
+                        {a.last_error && <div style={{fontSize:11,color:C.red,marginTop:2}}>{a.last_error}</div>}
+                      </div>
+                      {a.status!=='disconnected' && <button onClick={()=>askConfirm('Verbindung zu „'+a.email+'" trennen?',()=>disconnectGmailAccount(a.id))} title="Trennen" style={{background:C.surf3,border:'1px solid '+C.bdr,color:C.mut,cursor:'pointer',flexShrink:0,width:34,height:34,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.trash} sz={15} col={C.mut}/></button>}
+                    </div>); })}</div> : <div style={{fontSize:13,color:C.mut,textAlign:'center',padding:'22px 14px'}}>Noch kein Gmail-Postfach verbunden.</div>}
                 </div>
               </>)}
 

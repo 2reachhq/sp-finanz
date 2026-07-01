@@ -1,0 +1,6 @@
+project_id = "rlorfhpgxmyplmsgmkzw"
+
+# Google leitet den Browser ohne Supabase-Login-Token hierher um – die Funktion prüft
+# die Anfrage stattdessen selbst über den signierten "state"-Parameter.
+[functions.gmail-oauth-callback]
+verify_jwt = false
