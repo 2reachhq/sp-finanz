@@ -149,7 +149,7 @@ function parseStatement(lines, defYear){
     else if(/(\bS\b|Lastschr|Abbuch|Kartenzahl|Dauerauftrag|Überweisung|SEPA|Entgelt|Gebühr)/i.test(L)) kind='aus';
     let desc=L.replace(/-?\d{1,3}(?:\.\d{3})*,\d{2}\s*[+-]?\s*[HS]?\s*€?$/,'').trim();
     desc=desc.replace(/\b\d{2}[.\/]\d{2}[.\/]?(?:\d{2,4})?\b/g,'').replace(/\s{2,}/g,' ').trim();
-    if(!desc||desc.length<2) desc='Umsatz';
+    if(!desc||desc.length<2) desc=L.replace(/-?\d{1,3}(?:\.\d{3})*,\d{2}/g,'').replace(/[HS]\s*$/,'').trim().slice(0,70)||'Umsatz';
     out.push({id:uid(), name:desc.slice(0,70), amount:Math.abs(val), kind, datum});
   });
   return out;
@@ -357,6 +357,7 @@ const P = {
   camera:'M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z M12 17a4 4 0 100-8 4 4 0 000 8z',
   layers:'M12 2l9 5-9 5-9-5z M3 12l9 5 9-5 M3 17l9 5 9-5',
   filter:'M22 3H2l8 9.46V19l4 2v-8.54z',
+  dload:'M12 3v13 M7 12l5 5 5-5 M5 21h14',
 };
 
 /* ══ Icon component ══ */
@@ -1240,7 +1241,7 @@ function App({session}) {
   const [supaStore,setSupaStore]= useState(null);    // {bytes, files, ts}
   const importDragRef = useRef(null);                // Import: Drag&Drop zwischen Ein/Aus
   const [taxOpen,setTaxOpen]= useState({});          // ausklappbare Steuer-Hinweise
-  const [advOpen,setAdvOpen]= useState(true);        // Steuerberater-Bereich ein-/ausklappen
+  const [advOpen,setAdvOpen]= useState(false);        // Steuerberater-Bereich ein-/ausklappen
   const [sp,   setSp]   = useState('p1');
   const [data, setData] = useState({});
   const [names,setNames]= useState({p1:'Immobilie 1',p2:'Immobilie 2',p3:'Immobilie 3',unternehmen:'Firma'});
@@ -1254,7 +1255,7 @@ function App({session}) {
   const [unterTab,setUnterTab]= useState('einnahmen');
   const [editClient,setEditClient]= useState(null);
   const [editIncome,setEditIncome]= useState(null);
-  const [yrFilter,setYrFilter]= useState({immo:true,unter:true,privat:true});
+  const [yrFilter,setYrFilter]= useState({unter:true,p1:true,p2:true,p3:true,privat:true});
   const [storageInfo,setStorageInfo]= useState(null);
   const [storageLoading,setStorageLoading]= useState(false);
   const isMobile = useIsMobile(900);
@@ -2121,7 +2122,7 @@ function App({session}) {
   /* ── Rechnungen ── */
   const company = data.company || {};              // Unternehmen (bestehend)
   const companyImmo = data.companyImmo || {};      // Immobilien (separates Profil)
-  const companyFor = (dom)=> dom==='immo' ? companyImmo : company;
+  const companyFor = (dom)=> dom==='immo' ? companyImmo : PROPS.includes(dom) ? (data['company_'+dom]||{}) : dom==='privat' ? (data.companyPrivat||{}) : company;
   const customers = data.customers || [];
   const invoices = data.invoices || [];
   const customersFor = (dom)=> customers.filter(c=>(c.domain||'unter')===dom);
@@ -2129,6 +2130,8 @@ function App({session}) {
   const setCompany = patch => setData(prev=>({...prev, company:{...(prev.company||{}), ...patch}}));
   const setCompanyFor = (dom,patch)=> dom==='immo'
     ? setData(prev=>({...prev, companyImmo:{...(prev.companyImmo||{}), ...patch}}))
+    : PROPS.includes(dom) ? setData(prev=>({...prev, ['company_'+dom]:{...(prev['company_'+dom]||{}), ...patch}}))
+    : dom==='privat' ? setData(prev=>({...prev, companyPrivat:{...(prev.companyPrivat||{}), ...patch}}))
     : setData(prev=>({...prev, company:{...(prev.company||{}), ...patch}}));
   const saveCustomer = (c) => setData(prev=>{ const list=[...(prev.customers||[])]; const i=list.findIndex(x=>x.id===c.id); if(i>=0)list[i]=c; else list.push(c); return {...prev, customers:list}; });
   const openNewCust = (domain, onPick) => setNewCust({domain:domain||'unter', anrede:'', firstName:'', lastName:'', company:'', address:'', email:'', onPick});
@@ -2688,8 +2691,8 @@ function App({session}) {
   const yrSum = Array.from({length:12},(_,i)=>({m:i,fut:isFuture(yr,i),...calcTotals(getMD(yr,i), yr, i)}));
   const yrTot = yrSum.reduce((a,s)=> s.fut?a:({totalInc:a.totalInc+s.totalInc,totalExp:a.totalExp+s.totalExp,net:a.net+s.net,unterInc:a.unterInc+s.unterInc,unterExp:a.unterExp+s.unterExp}),{totalInc:0,totalExp:0,net:0,unterInc:0,unterExp:0});
   /* Gefilterte Summen NUR für die Jahresübersicht-Anzeige (Steuer nutzt weiter yrTot) */
-  const fInc = s => (yrFilter.immo?s.immoInc:0)+(yrFilter.unter?s.unterInc:0);
-  const fExp = s => (yrFilter.immo?s.immoExp:0)+(yrFilter.unter?s.unterExp:0)+(yrFilter.privat?s.privatExp:0);
+  const fInc = s => (PROPS.some(p=>yrFilter[p]!==false)?s.immoInc:0)+(yrFilter.unter!==false?s.unterInc:0);
+  const fExp = s => (PROPS.some(p=>yrFilter[p]!==false)?s.immoExp:0)+(yrFilter.unter!==false?s.unterExp:0)+(yrFilter.privat!==false?s.privatExp:0);
   const yrTotF = yrSum.reduce((a,s)=> s.fut?a:{totalInc:a.totalInc+fInc(s),totalExp:a.totalExp+fExp(s),net:a.net+(fInc(s)-fExp(s))},{totalInc:0,totalExp:0,net:0});
   const taxESt   = estESt(Math.max(0,yrTot.net));
   const taxUGwn  = yrTot.unterInc-yrTot.unterExp;
@@ -2811,7 +2814,6 @@ function App({session}) {
   const SONSTIGES = [
     {id:'kunden', label:'Kunden',       icon:P.prson},
     {id:'download', label:'Download',   icon:P.down},
-    {id:'kal',    label:'Events',       icon:P.bed},
     {id:'yr',     label:'Analyse',      icon:P.cal},
     {id:'steuer', label:'Steuer',       icon:P.doc},
     {id:'kosten', label:'Betriebskosten', icon:P.spark},
@@ -2832,7 +2834,7 @@ function App({session}) {
     const kindEff = kind || (folderPath && folderPath[folderPath.length-1]==='Einnahmen' ? 'ein' : 'aus');
     const kq=konSearch.trim().toLowerCase();
     const useKonFilter = !!srcKey; // Konten-Listen (mit srcKey) bekommen Suche+Filter
-    const shown = (items||[]).filter(it=>activeInMonth(it, yr, mo)).filter(it=>{
+    const shown = (items||[]).filter(it=>kq?true:activeInMonth(it, yr, mo)).filter(it=>{
       if(!useKonFilter) return true;
       if(konTyp==='wied' && !it.recurring) return false;
       if(konTyp==='einmalig' && it.recurring) return false;
@@ -3227,12 +3229,12 @@ function App({session}) {
               <div style={{fontSize:13,color:C.sub}}>{(session&&session.user&&session.user.email)||''}</div>
             </div>
             {/* Rechnungs-Profile: Unternehmen + Immobilien getrennt */}
-            {[{dom:'unter',title:'Firmendaten'},{dom:'immo',title:'Immobilien-Daten'}].map(({dom,title})=>{ const co=companyFor(dom); return (
+            {[{dom:'unter',title:names.unternehmen||'Firma',icon:P.brief},...PROPS.map(p=>({dom:p,title:names[p]||p,icon:P.house})),{dom:'privat',title:names.privatLabel||'Privat',icon:P.prson}].map(({dom,title,icon})=>{ const co=companyFor(dom); const col=acol(dom); return (
             <div key={dom} style={{...SC,marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:700,color:C.txt,marginBottom:12}}>{title}</div>
+              <div style={{display:'flex',alignItems:'center',gap:9,fontSize:13,fontWeight:700,color:C.txt,marginBottom:12}}><div style={{width:26,height:26,borderRadius:8,background:hexA(col,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={icon} sz={13} col={col}/></div>{title}</div>
               <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:14}}>
                 <div style={{width:70,height:70,borderRadius:14,background:C.surf2,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0}}>
-                  {co.logoData ? <img src={co.logoData} style={{maxWidth:'100%',maxHeight:'100%'}}/> : <Ic p={dom==='immo'?P.house:P.brief} sz={24} col={C.mut}/>}
+                  {co.logoData ? <img src={co.logoData} style={{maxWidth:'100%',maxHeight:'100%'}}/> : <Ic p={icon} sz={24} col={C.mut}/>}
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   <label style={{display:'inline-flex',alignItems:'center',gap:7,background:C.priL,color:C.pri,borderRadius:9,padding:'8px 14px',fontSize:13,fontWeight:600,cursor:'pointer'}}>
@@ -3243,7 +3245,7 @@ function App({session}) {
                 </div>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                <div><div style={{fontSize:12,color:C.sub,marginBottom:5}}>{dom==='immo'?'Name (Vermietung)':'Firmenname'}</div><input value={co.name||''} onChange={e=>setCompanyFor(dom,{name:e.target.value})} style={{...SS,textAlign:'left'}}/></div>
+                <div><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Name / Bezeichnung</div><input value={co.name||''} onChange={e=>setCompanyFor(dom,{name:e.target.value})} style={{...SS,textAlign:'left'}}/></div>
                 <div><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Adresse</div><textarea value={co.address||''} onChange={e=>setCompanyFor(dom,{address:e.target.value})} rows={3} style={{...SS,textAlign:'left',resize:'vertical'}}/></div>
                 <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                   <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,color:C.sub,marginBottom:5}}>Steuernummer</div><input value={co.taxId||''} onChange={e=>setCompanyFor(dom,{taxId:e.target.value})} style={{...SS,textAlign:'left'}}/></div>
@@ -3282,6 +3284,11 @@ function App({session}) {
               </div>
             </div>
             ); })}
+            {/* Admin */}
+            <div style={{marginTop:20,marginBottom:8}}>
+              <div style={{fontSize:18,fontWeight:800,color:C.txt,letterSpacing:'-0.02em',marginBottom:4}}>Admin</div>
+              <div style={{fontSize:12,color:C.mut,marginBottom:14}}>Nur für dich sichtbar</div>
+            </div>
             {/* Online-Speicher */}
             <div style={{...SC,marginBottom:12}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
@@ -3320,7 +3327,7 @@ function App({session}) {
                 <div style={{fontSize:13,color:C.sub}}>Weitere Bereiche</div>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                {[{id:'rechnung',label:'Rechnungen',icon:P.receipt},{id:'kunden',label:'Kunden',icon:P.prson},{id:'download',label:'Download',icon:P.down},{id:'kal',label:'Events',icon:P.bed},{id:'yr',label:'Analyse',icon:P.cal},{id:'steuer',label:'Steuer',icon:P.doc},{id:'kosten',label:'Betriebskosten',icon:P.spark},{id:'settings',label:'Einstellungen',icon:P.gear}].map(m=>(
+                {[{id:'rechnung',label:'Rechnungen',icon:P.receipt},{id:'kunden',label:'Kunden',icon:P.prson},{id:'download',label:'Download',icon:P.down},{id:'yr',label:'Analyse',icon:P.cal},{id:'steuer',label:'Steuer',icon:P.doc},{id:'kosten',label:'Betriebskosten',icon:P.spark},{id:'settings',label:'Einstellungen',icon:P.gear}].map(m=>(
                   <button key={m.id} onClick={()=>setTab(m.id)} style={{display:'flex',alignItems:'center',gap:13,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:'15px 16px',cursor:'pointer',fontFamily:'inherit',color:C.txt,fontSize:16,fontWeight:600,textAlign:'left'}}>
                     <Ic p={m.icon} sz={19} col={C.sub}/> <span style={{flex:1}}>{m.label}</span> <span style={{color:C.mut}}>›</span>
                   </button>
@@ -3621,7 +3628,7 @@ function App({session}) {
                     {d.payMatch && <span title={'Zahlungseingang zu Rechnung '+d.payMatch.number} style={{display:'inline-flex',alignItems:'center',gap:4,background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),color:C.pri,borderRadius:6,padding:'2px 7px',fontSize:10,fontWeight:700}}><Ic p={P.spark} sz={10} col={C.pri}/> Zahlung</span>}
                   </div>
                 </div>
-                <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM,flexShrink:0,whiteSpace:'nowrap'}}>{(d.amount||'0')}€</span>
+                <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM,flexShrink:0,whiteSpace:'nowrap'}}>{d.kind==='aus'?'-':''}{(d.amount||'0')}€</span>
                 {done
                   ? <button onClick={e=>{e.stopPropagation();unconfirmDraft(d.id);}} title="Zuordnung rückgängig machen" style={{display:'flex',alignItems:'center',gap:5,background:C.surf3,border:'1px solid '+C.bdr,color:C.sub,borderRadius:8,padding:'5px 9px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>↩︎ Rückgängig</button>
                   : ign
@@ -3844,7 +3851,7 @@ function App({session}) {
                       )}
                       {(()=>{ const miss=draftMissing(d); const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}]; const dDom=d.account==='immo'||PROPS.includes(d.account)?'immo':'unter'; const star=<span style={{color:C.red}}> *</span>; const reqLbl=(t)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{d.account!=='privat'&&star}</div>); return (<>
                       <div style={{display:'flex',flexDirection:'column',gap:16}}>
-                        <div>{reqLbl('Konto')}<select value={d.account||''} onChange={e=>updateDraft(d.id,{account:e.target.value,customerId:'',custName:''})} style={{...dInp,cursor:'pointer'}}><option value="">— Konto wählen —</option>{acctOpts.map(o=><option key={o.k} value={o.k}>{o.label}</option>)}</select></div>
+                        <div>{reqLbl('Konto')}<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{acctOpts.map(o=>{const on=d.account===o.k; const col=acctColor(o.k); const ic=o.k==='unter'?P.brief:o.k==='privat'?P.prson:P.house; return (<button key={o.k} onClick={()=>updateDraft(d.id,{account:on?'':o.k,customerId:'',custName:''})} style={{display:'flex',alignItems:'center',gap:8,background:on?hexA(col,0.16):C.surf2,border:'1.5px solid '+(on?col:C.bdr),color:on?C.txt:C.sub,borderRadius:11,padding:'9px 13px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={ic} sz={15} col={col}/> {o.label}{on&&<Ic p={P.check} sz={14} col={col}/>}</button>);})}</div></div>
                         <div>{reqLbl('Name')}<input value={d.name||''} onChange={e=>updateDraft(d.id,{name:e.target.value})} placeholder="Name…" style={dInp}/></div>
                         <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Kunde <span style={{color:C.mut}}>(optional)</span></div><CustomerSelect customers={customersFor(dDom)} value={d.customerId} onCreate={()=>openNewCust(dDom, c=>updateDraft(d.id,{customerId:c.id,custName:c.name||''}))} onPick={c=>{ if(c) updateDraft(d.id,{customerId:c.id,custName:c.name||''}); else updateDraft(d.id,{customerId:'',custName:''}); }} /></div>
                         <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
@@ -4139,12 +4146,11 @@ function App({session}) {
             return (
               <>
                 <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>Rechnung erstellen</div>
-                <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
-                  <div style={{display:'inline-flex',gap:4,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:4}}>
-                    {[['unter','Firma'],['immo','Immobilien']].map(([k,label])=>{ const on=invDomain===k; return (
-                      <button key={k} onClick={()=>{setInvDomain(k);setInvSearch('');}} style={{background:on?C.pri:'transparent',color:on?C.priTxt:C.sub,border:'none',borderRadius:9,padding:'8px 17px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{label}</button>
-                    ); })}
-                  </div>
+                <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+                  <span style={{fontSize:12,color:C.mut,marginRight:2}}>Alle Konten:</span>
+                  {[{k:'unter',label:names.unternehmen||'Firma'},{k:'immo',label:'Immobilien'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}].map(o=>{const on=invDomain===o.k||(invDomain==='immo'&&PROPS.includes(o.k)); const col=acctColor(o.k==='immo'?'p1':o.k); const ic=o.k==='unter'?P.brief:o.k==='privat'?P.prson:P.house; return (
+                    <button key={o.k} onClick={()=>{setInvDomain(o.k==='immo'||PROPS.includes(o.k)?'immo':'unter');setInvSearch('');}} style={{display:'flex',alignItems:'center',gap:6,background:on?hexA(col,0.16):C.surf2,border:'1px solid '+(on?hexA(col,0.4):C.bdr),color:on?col:C.mut,borderRadius:10,padding:'7px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={ic} sz={13} col={on?col:C.surf3}/>{o.label}</button>
+                  ); })}
                 </div>
                 {invKind==='wied' ? (
                   <>
@@ -4189,15 +4195,25 @@ function App({session}) {
                 <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:18,flexWrap:'wrap'}}>
                   <div style={{flex:1,minWidth:180,position:'relative'}}>
                     <span style={{position:'absolute',left:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'inline-flex'}}><Ic p={P.search} sz={15} col={C.mut}/></span>
-                    <input value={invSearch} onChange={e=>setInvSearch(e.target.value)} placeholder="Rechnung suchen…" style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,color:C.txt,padding:'12px 12px 12px 38px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+                    <input value={invSearch} onChange={e=>setInvSearch(e.target.value)} placeholder="Name, Belegnummer, Betrag…" style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,color:C.txt,padding:'12px '+(invSearch?'36px':'12px')+' 12px 38px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+                    {invSearch && <button onClick={()=>setInvSearch('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>✕</button>}
                   </div>
                   <button onClick={()=>setInvEdit(newInvoice(invDomain))} style={{...primBtn,width:'auto',padding:'12px 18px'}}>+ Neue Rechnung</button>
                 </div>
                 {!companyFor(invDomain).name && <div style={{...SC,marginBottom:14,fontSize:13,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.25)',lineHeight:1.5}}>Tipp: Hinterlege unter <b>Einstellungen</b> deine {invDomain==='immo'?'Immobilien-Daten':'Firmendaten'} + Logo für den Rechnungskopf.</div>}
                 {(()=>{
                   const q=invSearch.trim().toLowerCase();
-                  const filtered=invoicesFor(invDomain).filter(inv=>{ if(!q)return true; const c=customers.find(x=>x.id===inv.customerId); return [inv.number,inv.custName,(c&&c.name),inv.date,inv.sentDate].filter(Boolean).some(s=>String(s).toLowerCase().includes(q)); });
-                  if(!filtered.length) return <div style={{...SC,fontSize:13,color:C.mut}}>{invoicesFor(invDomain).length?'Keine Treffer.':'Noch keine Rechnungen in diesem Bereich.'}</div>;
+                  const now=new Date(); const curMKey=now.getFullYear()+'-'+String(now.getMonth()).padStart(2,'0');
+                  const allInv=invoicesFor(invDomain);
+                  const filtered=allInv.filter(inv=>{
+                    const d=new Date(inv.sentDate||inv.date); const mKey=isNaN(d)?'0000-99':(d.getFullYear()+'-'+String(d.getMonth()).padStart(2,'0'));
+                    if(!q && mKey!=='0000-99' && mKey!==curMKey) return false;
+                    if(!q) return true;
+                    const c=customers.find(x=>x.id===inv.customerId);
+                    const total=inv.total!=null?inv.total:invTotals(inv.items).gross;
+                    return [inv.number,inv.custName,(c&&c.name),String(total)].filter(Boolean).some(s=>String(s).toLowerCase().includes(q));
+                  });
+                  if(!filtered.length) return <div style={{...SC,fontSize:13,color:C.mut}}>{allInv.length?(q?'Keine Treffer.':'Keine Rechnungen in diesem Monat.'):'Noch keine Rechnungen in diesem Bereich.'}</div>;
                   const groups={}; filtered.forEach(inv=>{ const d=new Date(inv.sentDate||inv.date); const key=isNaN(d)?'0000-99':(d.getFullYear()+'-'+String(d.getMonth()).padStart(2,'0')); (groups[key]=groups[key]||[]).push(inv); });
                   const keys=Object.keys(groups).sort().reverse();
                   const monthLabel=(key)=>{ if(key==='0000-99')return 'Ohne Datum'; const [y,m]=key.split('-'); return MONTHS[+m]+' '+y; };
@@ -4422,7 +4438,13 @@ function App({session}) {
             // Alle Belege flach, nach Modus (einmalig/wiederkehrend) + Suche gefiltert
             const allBel=belegesUnder([]);
             const q=belegSearch.trim().toLowerCase();
-            const shown=allBel.filter(b=> (belegMode==='recur'? !!b.recurring : !b.recurring) && (!q || ((b.name||'')+' '+(b.amount||'')+' '+belBerLabel(b._ber)).toLowerCase().includes(q)) );
+            const ymKey=yr+'-'+String(mo+1).padStart(2,'0');
+            const shown=(()=>{ let list=allBel.filter(b=> (belegMode==='recur'? !!b.recurring : !b.recurring));
+              if(belegMode==='recur'){ const seen=new Set(); list=list.filter(b=>{ const key=(b.name||'')+'|'+(b.amount||'')+'|'+(b._ber||''); if(seen.has(key))return false; seen.add(key); return true; }); }
+              if(q){ list=list.filter(b=>((b.name||'')+' '+(b.amount||'')+' '+(b.belegnr||'')+' '+belBerLabel(b._ber)).toLowerCase().includes(q)); }
+              else { list=list.filter(b=>{ const iso=toISO(b.date)||b.date||''; return !iso || iso.slice(0,7)===ymKey; }); }
+              return list;
+            })();
             const groups={}; shown.forEach(b=>{ const iso=toISO(b.date)||b.date||''; const key=/^\d{4}-\d{2}/.test(iso)?iso.slice(0,7):'0000-00'; (groups[key]=groups[key]||[]).push(b); });
             const gkeys=Object.keys(groups).sort().reverse();
             return (
@@ -4432,14 +4454,14 @@ function App({session}) {
                 </div>
                 <div style={{marginBottom:14}}>{PillTabs({tabs:[['once','Einmalige Belege'],['recur','Wiederkehrende Belege']], value:belegMode, onChange:setBelegMode})}</div>
                 <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
-                  <div style={{flex:1,minWidth:200,display:'flex',alignItems:'center',gap:9,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:'11px 14px'}}><Ic p={P.search} sz={15} col={C.mut}/><input value={belegSearch} onChange={e=>setBelegSearch(e.target.value)} placeholder="Beleg suchen…" style={{flex:1,background:'none',border:'none',outline:'none',color:C.txt,fontSize:14,fontFamily:'inherit'}}/></div>
-                  <button disabled={zipBusy} onClick={()=>downloadBelegeZip([], 'Belege')} style={{display:'flex',alignItems:'center',gap:7,background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:12,padding:'11px 16px',fontSize:13.5,fontWeight:700,cursor:zipBusy?'default':'pointer',fontFamily:'inherit',opacity:zipBusy?0.6:1,flexShrink:0}}><Ic p={P.upload} sz={14} col={C.sub}/> {zipBusy?'Packt…':'Als ZIP'}</button>
+                  <div style={{flex:1,minWidth:200,display:'flex',alignItems:'center',gap:9,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:'11px 14px'}}><Ic p={P.search} sz={15} col={C.mut}/><input value={belegSearch} onChange={e=>setBelegSearch(e.target.value)} placeholder="Name, Belegnummer, Betrag…" style={{flex:1,background:'none',border:'none',outline:'none',color:C.txt,fontSize:14,fontFamily:'inherit'}}/>{belegSearch&&<button onClick={()=>setBelegSearch('')} style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>×</button>}</div>
+                  <button onClick={()=>openCapture({mode:'import',kind:'aus',account:'',recurring:belegMode==='recur'})} style={{display:'inline-flex',alignItems:'center',gap:8,background:C.pri,color:C.priTxt,border:'none',borderRadius:12,padding:'11px 18px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={15} col={C.priTxt}/> Beleg erfassen</button>
                 </div>
                 {shown.length? <div style={{display:'flex',flexDirection:'column',gap:20}}>{gkeys.map(gk=>{ const mm=gk.split('-')[1]; const yy=gk.split('-')[0]; const lbl=(mm==='00'||!mm)?'Ohne Datum':(MONTHS[+mm-1]+' '+yy); return (
                   <div key={gk}>
                     <div style={{fontSize:11,fontWeight:700,color:C.mut,letterSpacing:'0.06em',marginBottom:9,textTransform:'uppercase'}}>{lbl} · {groups[gk].length}</div>
                     <div style={{display:'flex',flexDirection:'column',gap:10}}>{groups[gk].map(r=>{ const bc=acol(r._ber); const aus=r._kind==='aus'; return (
-                      <div key={r.id+r._y+r._m} onClick={()=>{ const it=fullBelegItem(r)||{}; setBelegEdit({loc:r, name:it.name||r.name||'', datum:toISO(it.datum||r.date)||'', amount:String(it.amount!=null?it.amount:(r.amount||'')), netto:String(it.netto!=null?it.netto:''), mwst:(it.mwst!=null?String(it.mwst):''), category:it.category||'', note:it.note||'', belegnr:it.belegnr||'' }); }} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderLeft:'3px solid '+bc,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
+                      <div key={r.id+r._y+r._m} onClick={()=>setBelegEdit({loc:r})} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderLeft:'3px solid '+bc,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
                         <div style={{width:44,height:44,flexShrink:0,borderRadius:12,background:hexA(bc,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={19} col={bc}/></div>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:15,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}{r.recurring?' 🔁':''}</div>
@@ -4552,13 +4574,8 @@ function App({session}) {
 
           {/* ══ JAHRESÜBERSICHT / MONATSÜBERSICHT ══ */}
           {tab==='yr' && <>
-            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,flexWrap:'wrap'}}>
-              <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>Analyse</div>
-              <div style={{display:'inline-flex',alignItems:'center',gap:6,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,padding:'4px 6px'}}>
-                <button onClick={()=>{ setYr(y=>y-1); setCalYr(y=>y-1); }} title="Vorheriges Jahr" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:8,width:30,height:30,cursor:'pointer',fontFamily:'inherit',fontSize:16,lineHeight:1}}>‹</button>
-                <div style={{fontSize:18,fontWeight:800,minWidth:54,textAlign:'center',...NUM}}>{yr}</div>
-                <button onClick={()=>{ setYr(y=>y+1); setCalYr(y=>y+1); }} title="Nächstes Jahr" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:8,width:30,height:30,cursor:'pointer',fontFamily:'inherit',fontSize:16,lineHeight:1}}>›</button>
-              </div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>Analyse {yr}</div>
             </div>
             <div style={{marginBottom:18}}><PillTabs tabs={[['monat','Monatsübersicht'],['jahr','Jahresübersicht']]} value={yrView} onChange={setYrView} /></div>
 
@@ -4606,15 +4623,12 @@ function App({session}) {
             {yrView==='jahr' && <>
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
               <span style={{fontSize:12,color:C.mut,marginRight:2}}>Anzeigen:</span>
-              {[['immo','Immobilien'],['unter','Firma'],['privat','Privat']].map(([k,label])=>{
-                const on=yrFilter[k];
-                return (
-                  <button key={k} onClick={()=>setYrFilter(f=>({...f,[k]:!f[k]}))} title={on?'Ausblenden':'Einblenden'}
-                    style={{display:'flex',alignItems:'center',gap:7,background:on?hexA(C.pri,0.16):C.surf2,border:'1px solid '+(on?hexA(C.pri,0.4):C.bdr),color:on?C.pri:C.mut,borderRadius:10,padding:'7px 13px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
-                    <span style={{width:9,height:9,borderRadius:'50%',background:on?C.pri:C.surf3,display:'inline-block',flexShrink:0}}/>{label}
-                  </button>
-                );
-              })}
+              {ACCT_ORDER.map(k=>{const on=yrFilter[k]!==false; const col=acol(k); const ic=k==='unter'?P.brief:k==='privat'?P.prson:P.house; const label=acctNameOf(k); return (
+                <button key={k} onClick={()=>setYrFilter(f=>({...f,[k]:!on}))} title={on?'Ausblenden':'Einblenden'}
+                  style={{display:'flex',alignItems:'center',gap:7,background:on?hexA(col,0.16):C.surf2,border:'1px solid '+(on?hexA(col,0.4):C.bdr),color:on?col:C.mut,borderRadius:10,padding:'7px 13px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+                  <Ic p={ic} sz={14} col={on?col:C.surf3}/>{label}
+                </button>
+              ); })}
             </div>
             <div style={{...SC,marginBottom:14,overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
@@ -4630,7 +4644,7 @@ function App({session}) {
                     const inc=fInc(s), exp=fExp(s), net=inc-exp;
                     const ok=!fut && (inc>0||exp>0);
                     const cell=(cond,txt)=> (fut||!cond)?'—':txt;
-                    const dim=(k)=> yrFilter[k]?1:0.28;
+                    const dim=(k)=> k==='immo'?PROPS.some(p=>yrFilter[p]!==false)?1:0.28:(yrFilter[k]!==false?1:0.28);
                     return (
                       <tr key={s.m} onClick={fut?undefined:()=>{setMo(s.m);setTab('dash');}}
                         style={{cursor:fut?'default':'pointer',opacity:fut?0.4:1,background:s.m===mo?hexA(C.pri,0.12):'transparent'}}
@@ -5019,32 +5033,33 @@ function App({session}) {
         </Sheet>
       )}
 
-      {belegEdit && (()=>{ const be=belegEdit; const loc=be.loc; const bc=acol(loc._ber); const aus=loc._kind==='aus'; const set=patch=>setBelegEdit(x=>({...x,...patch})); const hasFile=!!(loc.filePath||loc.fileData); const fld={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const lbl=(t)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}</div>); const save=()=>{ updateBelegItem(loc,{name:be.name,datum:be.datum,amount:num(be.amount),netto:num(be.netto),mwst:(be.mwst===''?'':num(be.mwst)),category:be.category,note:be.note,belegnr:be.belegnr}); setBelegEdit(null); setToast('Beleg gespeichert'); }; return (
-        <Sheet title="Beleg" onClose={()=>setBelegEdit(null)} maxWidth={620}>
-          <div style={{display:'inline-flex',alignItems:'center',gap:8,background:hexA(bc,0.16),border:'1px solid '+hexA(bc,0.4),borderRadius:10,padding:'7px 12px',fontSize:13,fontWeight:600,color:bc,marginBottom:16}}><Ic p={loc._ber==='unter'?P.brief:loc._ber==='privat'?P.prson:P.house} sz={14} col={bc}/> {belBerLabel(loc._ber)} · {aus?'Ausgabe':'Einnahme'}{loc.recurring?' · 🔁 wiederkehrend':''}</div>
-          {hasFile ? (
-            <div style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'12px 14px',marginBottom:16}}>
-              <div style={{width:46,height:46,flexShrink:0,borderRadius:12,background:hexA(bc,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={20} col={bc}/></div>
-              <div style={{flex:1,minWidth:0,fontSize:13.5,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{loc.fileName||'Beleg'}</div>
-              <button onClick={()=>openFile(loc.filePath||loc.fileData, loc.fileName)} style={{background:C.surf3,border:'none',color:C.txt,borderRadius:9,padding:'8px 13px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Ansehen</button>
+      {belegEdit && (()=>{ const loc=belegEdit.loc; const it=fullBelegItem(loc)||{}; const bc=acol(loc._ber); const aus=loc._kind==='aus'; const hasFile=!!(it.filePath||it.fileData||loc.filePath||loc.fileData); const filePath=it.filePath||loc.filePath; const fileData=it.fileData||loc.fileData; const fileName=it.fileName||loc.fileName||'Beleg'; const money=fmt(Math.abs(num(it.amount||loc.amount))); const isoD=isoDate(it.datum); const dParts=isoD?isoD.split('-'):null; const sLbl=it.status==='bezahlt'?'Bezahlt':it.status==='abgebucht'?'Abgebucht':'Offen'; const sCol=(it.status==='bezahlt'||it.status==='abgebucht')?C.grn:'#FFB37A'; const ro=(label,val)=>(<div style={{display:'flex',justifyContent:'space-between',gap:14,padding:'11px 0',borderBottom:'1px solid '+C.sep}}><span style={{fontSize:13,color:C.sub,flexShrink:0}}>{label}</span><span style={{fontSize:13.5,color:C.txt,fontWeight:600,textAlign:'right',overflow:'hidden',textOverflow:'ellipsis'}}>{(val===''||val==null)?'—':val}</span></div>); const doDelete=()=>{ askConfirm('Buchung „'+(it.name||loc.name||'')+ '" löschen?', ()=>{ updateBelegItem(loc,{_deleted:true}); setBelegEdit(null); setToast('Buchung gelöscht'); }); }; return (
+        <div onClick={()=>setBelegEdit(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:130,display:'flex',justifyContent:'flex-end'}}>
+          <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'clamp(360px, 40vw, 640px)',maxWidth:'100%',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,borderTopLeftRadius:22,borderBottomLeftRadius:22,boxShadow:'-30px 0 80px rgba(0,0,0,0.55)',overflowY:'auto',padding:'30px 30px 56px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+              <div style={{fontSize:19,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>Buchung</div>
+              <button onClick={()=>setBelegEdit(null)} title="Schließen" style={{background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:10,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
             </div>
-          ) : <div style={{...SC,textAlign:'center',color:C.mut,fontSize:13,padding:'16px',marginBottom:16}}>Kein Beleg angehängt.</div>}
-          <div style={{marginBottom:12}}>{lbl('Bezeichnung')}<input value={be.name} onChange={e=>set({name:e.target.value})} placeholder="Bezeichnung" style={fld}/></div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-            <div>{lbl('Datum')}<DateField value={be.datum} onChange={v=>set({datum:v})} accent={bc} style={fld}/></div>
-            <div>{lbl('Betrag (brutto) €')}<input value={be.amount} onChange={e=>set({amount:e.target.value})} inputMode="decimal" placeholder="0,00" style={fld}/></div>
+            <div style={{display:'inline-flex',alignItems:'center',gap:8,background:hexA(bc,0.16),border:'1px solid '+hexA(bc,0.4),borderRadius:10,padding:'7px 12px',fontSize:13,fontWeight:600,color:bc,marginBottom:16}}><Ic p={loc._ber==='unter'?P.brief:loc._ber==='privat'?P.prson:P.house} sz={14} col={bc}/> {belBerLabel(loc._ber)} · {aus?'Ausgabe':'Einnahme'}{it.recurring?' · wiederkehrend':''}</div>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+              <div style={{fontSize:26,fontWeight:800,color:C.txt,...NUM}}>{aus?'−':''}{money}</div>
+              <span style={{marginLeft:'auto',fontSize:11,fontWeight:700,color:sCol,background:hexA(sCol,0.16),border:'1px solid '+hexA(sCol,0.35),borderRadius:8,padding:'3px 10px'}}>{sLbl}</span>
+            </div>
+            {ro('Kategorie', it.category)}
+            {ro(aus?'Abbuchungsdatum':'Eingangsdatum', dParts?(dParts[2]+'.'+dParts[1]+'.'+dParts[0]):'')}
+            {ro('Beleg-Nr', it.belegnr)}
+            {ro('Netto', (it.netto!=null&&it.netto!=='')?fmt(num(it.netto)):'')}
+            {ro('MwSt', (it.mwst!=null&&it.mwst!=='')?(it.mwst+'%'):'')}
+            {it.note && ro('Notiz', it.note)}
+            <div style={{marginTop:14}}>
+              {hasFile
+                ? <button onClick={()=>openFile(filePath||fileData, fileName)} style={{display:'flex',alignItems:'center',gap:9,width:'100%',background:hexA(bc,0.12),border:'1px solid '+hexA(bc,0.3),color:bc,borderRadius:11,padding:'12px 14px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.clip} sz={15} col={bc}/> Beleg ansehen</button>
+                : <div style={{fontSize:12.5,color:C.mut,textAlign:'center',padding:'10px'}}>Kein Beleg angehängt.</div>}
+            </div>
+            <button onClick={()=>{ setBelegEdit(null); openCaptureEdit(loc, it); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:bc,color:'#0A0A0A',border:'none',borderRadius:12,padding:'13px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginTop:14}}><Ic p={P.note} sz={15} col={'#0A0A0A'}/> Buchung bearbeiten</button>
+            <button onClick={doDelete} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.redL,border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:C.red,cursor:'pointer',fontFamily:'inherit',marginTop:10}}><Ic p={P.trash} sz={15} col={C.red}/> Buchung löschen</button>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-            <div>{lbl('Netto €')}<input value={be.netto} onChange={e=>set({netto:e.target.value})} inputMode="decimal" placeholder="0,00" style={fld}/></div>
-            <div>{lbl('MwSt %')}<input value={be.mwst} onChange={e=>set({mwst:e.target.value})} inputMode="decimal" placeholder="19" style={fld}/></div>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-            <div>{lbl('Kategorie')}<input value={be.category} onChange={e=>set({category:e.target.value})} placeholder="Kategorie" style={fld}/></div>
-            <div>{lbl('Beleg-Nr')}<input value={be.belegnr} onChange={e=>set({belegnr:e.target.value})} placeholder="Beleg-Nr" style={fld}/></div>
-          </div>
-          <div style={{marginBottom:18}}>{lbl('Notiz')}<textarea value={be.note} onChange={e=>set({note:e.target.value})} rows={2} placeholder="Weitere Informationen…" style={{...fld,resize:'vertical'}}/></div>
-          <button onClick={save} style={{width:'100%',background:bc,color:'#0A0A0A',border:'none',borderRadius:12,padding:'13px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Speichern</button>
-        </Sheet>
+        </div>
       ); })()}
 
       {filePreview && (()=>{ const fp=filePreview; return (
@@ -5073,7 +5088,7 @@ function App({session}) {
               {row(C.mut,'Bereits im Kontoauszug (übersprungen)', s.skipped)}
               {row('#FFB37A','Schon als Buchung vorhanden', s.dupBook)}
             </div>
-            <button onClick={()=>setImportSummary(null)} style={{width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Verstanden</button>
+            <button onClick={()=>{setImportSummary(null); if(!(tab==='import'&&importTab==='bank')){setTab('import');setImportTab('bank');}}} style={{width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{(tab==='import'&&importTab==='bank')?'Verstanden':'Zum Kontoauszug'}</button>
           </div>
         </div>
       ); })()}
@@ -5143,7 +5158,7 @@ function App({session}) {
                     <input type="checkbox" checked={!!c.recurring} onChange={e=>setCapture(cc=>cc?{...cc,recurring:e.target.checked,from:cc.from||{y:yr,m:mo},until:cc.until||{y:yr,m:11}}:cc)} style={{width:18,height:18,accentColor:C.pri}}/>
                     <span style={{display:'flex',alignItems:'center',gap:7,fontSize:13.5,fontWeight:700,color:C.txt}}><Ic p={P.repeat} sz={15} col={c.recurring?C.pri:C.sub}/> Wiederkehrend</span>
                   </label>
-                  {c.recurring && (()=>{ const fr=c.from||{y:yr,m:mo}; const un=c.until||{y:yr,m:11}; const grid=(label,sel,onSet)=>(
+                  {c.recurring && (()=>{ const fr=c.from||{y:yr,m:mo}; const un=c.until||{y:yr,m:11}; const intv=c.interval||'monatlich'; const intvLabel={woechentlich:'Wöchentlich',monatlich:'Monatlich',vierteljaehrlich:'Vierteljährlich',halbjaehrlich:'Halbjährlich',jaehrlich:'Jährlich'}; const grid=(label,sel,onSet)=>(
                     <div style={{flex:1,minWidth:190,background:C.surf,border:'1px solid '+C.bdr,borderRadius:13,padding:12}}>
                       <div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:8}}>{label}</div>
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:9}}>
@@ -5157,11 +5172,12 @@ function App({session}) {
                     </div>
                   ); return (
                     <div style={{marginTop:12}}>
+                      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Intervall</div><select value={intv} onChange={e=>setCapture(cc=>cc?{...cc,interval:e.target.value}:cc)} style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',cursor:'pointer'}}><option value="woechentlich">Wöchentlich</option><option value="monatlich">Monatlich</option><option value="vierteljaehrlich">Vierteljährlich</option><option value="halbjaehrlich">Halbjährlich</option><option value="jaehrlich">Jährlich</option></select></div>
                       <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
                         {grid('Von', fr, v=>setCapture(cc=>cc?{...cc,from:v}:cc))}
                         {grid('Bis', un, v=>setCapture(cc=>cc?{...cc,until:v}:cc))}
                       </div>
-                      <div style={{fontSize:11,color:C.mut,marginTop:9,lineHeight:1.5}}>Wird für jeden Monat im Zeitraum automatisch angelegt (zu Monatsbeginn) – inkl. angehängtem Beleg.</div>
+                      <div style={{fontSize:11,color:C.mut,marginTop:9,lineHeight:1.5}}>{intvLabel[intv]||'Monatlich'} · wird automatisch angelegt – inkl. angehängtem Beleg.</div>
                     </div>
                   ); })()}
                 </div>
