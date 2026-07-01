@@ -20,7 +20,7 @@
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
     input[type=number] { -moz-appearance: textfield; }
-    input::placeholder, textarea::placeholder { color: rgba(235,235,245,0.22) !important; }
+    input::placeholder, textarea::placeholder { color: rgba(130,130,145,0.55) !important; }
     textarea { resize: vertical; }
     button { transition: opacity .14s ease, background-color .14s ease, color .14s ease, transform .08s ease; }
     button:hover:not(:disabled) { opacity: .82; }
@@ -32,7 +32,7 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #2E2E2E; border-radius: 3px; }
     .navlink { background:none; border:none; cursor:pointer; color:rgba(255,255,255,0.62); transition:color .14s ease; }
-    .navlink:hover { color:#7BC2AA; }
+    .navlink:hover { color:#6E62FF; }
     .drawerPanel{animation:slideInRight .24s cubic-bezier(.2,.7,.2,1)}
     @keyframes slideInRight{from{transform:translateX(100%);opacity:.5}to{transform:translateX(0);opacity:1}}
     .drawerPanelLeft{animation:slideInLeft .24s cubic-bezier(.2,.7,.2,1)}
@@ -40,10 +40,10 @@
     .nocal::-webkit-calendar-picker-indicator{display:none;-webkit-appearance:none}
     .nocal{-moz-appearance:textfield}
     .prog{height:5px;width:100%;background:rgba(123,194,170,0.18);border-radius:99px;overflow:hidden;position:relative}
-    .prog::after{content:'';position:absolute;top:0;height:100%;width:40%;border-radius:99px;background:#7BC2AA;animation:progslide 1.05s ease-in-out infinite}
+    .prog::after{content:'';position:absolute;top:0;height:100%;width:40%;border-radius:99px;background:#6E62FF;animation:progslide 1.05s ease-in-out infinite}
     @keyframes progslide{0%{left:-42%}100%{left:100%}}
     .typing{display:inline-flex;gap:5px;align-items:center}
-    .typing span{width:7px;height:7px;border-radius:50%;background:#7BC2AA;display:inline-block;animation:typingbounce 1.1s ease-in-out infinite}
+    .typing span{width:7px;height:7px;border-radius:50%;background:#6E62FF;display:inline-block;animation:typingbounce 1.1s ease-in-out infinite}
     .typing span:nth-child(2){animation-delay:.18s}
     .typing span:nth-child(3){animation-delay:.36s}
     @keyframes typingbounce{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-5px);opacity:1}}
@@ -51,6 +51,7 @@
   </style>
 </head>
 <body>
+<script>try{var _t=localStorage.getItem('sp_theme')||'dark';var _d=_t==='dark'||(_t==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);var _bg=_d?'#0B0B0F':'#F5F6F9';document.documentElement.style.background=_bg;document.body.style.background=_bg;document.documentElement.style.colorScheme=_d?'dark':'light';}catch(e){}</script>
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
@@ -70,17 +71,32 @@ const PRIV_DEF      = ['Lebensmittel','Restaurant & Essen','Hobbys & Freizeit','
 const PRIV_PRESETS  = ['Kleidung','Urlaub','Sport & Fitness','Streaming & Abos','Versicherungen','Sonstiges'];
 
 /* ══ Apple dark palette ══ */
-const C = {
-  bg:'#0A0A0A', surf:'#1A1A1A', surf2:'#242424', surf3:'#2E2E2E',
+// ══ Farbpaletten: modernes Indigo-Accent, Dark + Light ══
+const THEME_DARK = {
+  bg:'#0B0B0F', surf:'#17171C', surf2:'#212127', surf3:'#2C2C34',
   bdr:'rgba(255,255,255,0.08)', bdrM:'rgba(255,255,255,0.14)',
-  pri:'#7BC2AA',  priL:'rgba(123,194,170,0.16)',  priTxt:'#06231A',
-  act:'#E8A39E',  actL:'rgba(232,163,158,0.14)', actTxt:'#2A100D',
-  grn:'#3ECF8E',  grnL:'rgba(62,207,142,0.10)',
-  red:'#FF5A5F',  redL:'rgba(255,90,95,0.10)',
-  amb:'#FFB400',  ambL:'rgba(255,180,0,0.10)',
+  pri:'#6E62FF',  priL:'rgba(110,98,255,0.18)',  priTxt:'#FFFFFF',
+  act:'#6E62FF',  actL:'rgba(110,98,255,0.16)', actTxt:'#FFFFFF',
+  grn:'#3ECF8E',  grnL:'rgba(62,207,142,0.12)',
+  red:'#FF5A5F',  redL:'rgba(255,90,95,0.12)',
+  amb:'#FFB400',  ambL:'rgba(255,180,0,0.12)',
+  exp:'#FFB37A',
   txt:'#FFFFFF', sub:'rgba(255,255,255,0.62)', mut:'rgba(255,255,255,0.40)',
   sep:'rgba(255,255,255,0.07)',
 };
+const THEME_LIGHT = {
+  bg:'#F5F6F9', surf:'#FFFFFF', surf2:'#EEF0F4', surf3:'#E3E6EC',
+  bdr:'rgba(15,20,40,0.10)', bdrM:'rgba(15,20,40,0.18)',
+  pri:'#5B52F0',  priL:'rgba(91,82,240,0.12)',  priTxt:'#FFFFFF',
+  act:'#5B52F0',  actL:'rgba(91,82,240,0.12)', actTxt:'#FFFFFF',
+  grn:'#0CA678',  grnL:'rgba(12,166,120,0.12)',
+  red:'#E03131',  redL:'rgba(224,49,49,0.10)',
+  amb:'#E8850C',  ambL:'rgba(232,133,12,0.12)',
+  exp:'#E8590C',
+  txt:'#141822', sub:'rgba(20,24,34,0.62)', mut:'rgba(20,24,34,0.42)',
+  sep:'rgba(15,20,40,0.08)',
+};
+let C = {...THEME_DARK};
 // hex → rgba mit Alpha
 const hexA=(hex,a)=>{ const n=parseInt(String(hex).slice(1),16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; };
 // Konto-Farben in Anzeige-Reihenfolge: erstes Konto (Unternehmen) immer #7BC2AA
@@ -570,13 +586,13 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
           <div style={{fontSize:15.5,fontWeight:600,color:C.txt,width:'100%',letterSpacing:'-0.01em',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name||'—'}</div>
           <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap'}}>
             {isoDate(item.datum) && <span title={dateLabel} style={{fontSize:12,color:C.sub,display:'inline-flex',alignItems:'center',gap:4}}><Ic p={P.cal} sz={11} col={C.mut}/>{(()=>{const iso=isoDate(item.datum);const a=iso.split('-');return a[2]+'.'+a[1]+'.'+a[0].slice(2);})()}</span>}
-            {item.status==='offen' && <span title="Noch nicht durch Bankkontoauszug bestätigt" style={{fontSize:11,fontWeight:700,color:'#FFB37A',background:hexA('#FFB37A',0.14),border:'1px solid '+hexA('#FFB37A',0.35),borderRadius:7,padding:'2px 8px'}}>Offen</span>}
+            {item.status==='offen' && <span title="Noch nicht durch Bankkontoauszug bestätigt" style={{fontSize:11,fontWeight:700,color:C.exp,background:hexA(C.exp,0.14),border:'1px solid '+hexA(C.exp,0.35),borderRadius:7,padding:'2px 8px'}}>Offen</span>}
             {(item.status==='abgebucht'||item.status==='bezahlt') && <span title={item.status==='bezahlt'?'Bezahlt':'Abgebucht'} style={{fontSize:11,fontWeight:700,color:C.grn,background:hexA(C.grn,0.14),border:'1px solid '+hexA(C.grn,0.35),borderRadius:7,padding:'2px 8px',display:'inline-flex',alignItems:'center',gap:4}}><Ic p={P.check} sz={10} col={C.grn}/> {item.status==='bezahlt'?'Bezahlt':'Abgebucht'}</span>}
             {bookingMissing(item).length>0 && <span title={'Unvollständig: '+bookingMissing(item).join(', ')} style={{fontSize:11,fontWeight:600,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.25)',borderRadius:7,padding:'2px 8px',display:'inline-flex',alignItems:'center',gap:4}}>⚠ Unvollständig</span>}
           </div>
         </div>
         {/* Preis */}
-        <div style={{fontSize:16,fontWeight:700,color:kind==='aus'?'#FFB37A':C.txt,...NUM,whiteSpace:'nowrap'}}>{kind==='aus'?'−':''}{money}</div>
+        <div style={{fontSize:16,fontWeight:700,color:kind==='aus'?C.exp:C.txt,...NUM,whiteSpace:'nowrap'}}>{kind==='aus'?'−':''}{money}</div>
         {!selMode && (
           <button onClick={e=>{e.stopPropagation();openMenu(e);}} title="Optionen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',flexShrink:0,width:26,height:26,borderRadius:6,fontSize:18,lineHeight:1,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>⋮</button>
         )}
@@ -604,7 +620,7 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
               </div>
             )}
 
-            {item.recurring && !recurEditOpen && (()=>{ const occ=(recurInfoFn?recurInfoFn(item):[]); const M3=(o)=>MONTHS[o.m].slice(0,3)+' '+o.y; const since=(hasFrom?M3(item.from):(occ[0]?(MONTHS[occ[0].m]+' '+occ[0].y):(isoDate(item.datum)||'—'))); const sLbl=s=>s==='bezahlt'?'Bezahlt':s==='abgebucht'?'Abgebucht':'Offen'; const sCol=s=>(s==='bezahlt'||s==='abgebucht')?C.grn:'#FFB37A'; const kindW=kind==='ein'?'Einnahme':'Ausgabe'; return (
+            {item.recurring && !recurEditOpen && (()=>{ const occ=(recurInfoFn?recurInfoFn(item):[]); const M3=(o)=>MONTHS[o.m].slice(0,3)+' '+o.y; const since=(hasFrom?M3(item.from):(occ[0]?(MONTHS[occ[0].m]+' '+occ[0].y):(isoDate(item.datum)||'—'))); const sLbl=s=>s==='bezahlt'?'Bezahlt':s==='abgebucht'?'Abgebucht':'Offen'; const sCol=s=>(s==='bezahlt'||s==='abgebucht')?C.grn:C.exp; const kindW=kind==='ein'?'Einnahme':'Ausgabe'; return (
               <div style={{marginBottom:4}}>
                 <div style={{background:hexA(acc,0.10),border:'1px solid '+hexA(acc,0.30),borderRadius:14,padding:'15px 16px',marginBottom:16}}>
                   <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:C.txt,fontWeight:700,marginBottom:10}}><Ic p={P.repeat} sz={15} col={acc}/> Wiederkehrende {kindW}</div>
@@ -622,7 +638,7 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
                 <button onClick={()=>requestDelete(()=>setDrawer(false))} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.redL,border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,color:C.red,cursor:'pointer',fontFamily:'inherit',marginTop:10}}><Ic p={P.trash} sz={15} col={C.red}/> Buchung löschen</button>
               </div>
             ); })()}
-            {!item.recurring && (()=>{ const sLbl=item.status==='bezahlt'?'Bezahlt':item.status==='abgebucht'?'Abgebucht':'Offen'; const sCol=(item.status==='bezahlt'||item.status==='abgebucht')?C.grn:'#FFB37A'; const ro=(label,val)=>(<div style={{display:'flex',justifyContent:'space-between',gap:14,padding:'11px 0',borderBottom:'1px solid '+C.sep}}><span style={{fontSize:13,color:C.sub,flexShrink:0}}>{label}</span><span style={{fontSize:13.5,color:C.txt,fontWeight:600,textAlign:'right',overflow:'hidden',textOverflow:'ellipsis'}}>{(val===''||val==null)?'—':val}</span></div>); const isoD=isoDate(item.datum); const dParts=isoD?isoD.split('-'):null; return (
+            {!item.recurring && (()=>{ const sLbl=item.status==='bezahlt'?'Bezahlt':item.status==='abgebucht'?'Abgebucht':'Offen'; const sCol=(item.status==='bezahlt'||item.status==='abgebucht')?C.grn:C.exp; const ro=(label,val)=>(<div style={{display:'flex',justifyContent:'space-between',gap:14,padding:'11px 0',borderBottom:'1px solid '+C.sep}}><span style={{fontSize:13,color:C.sub,flexShrink:0}}>{label}</span><span style={{fontSize:13.5,color:C.txt,fontWeight:600,textAlign:'right',overflow:'hidden',textOverflow:'ellipsis'}}>{(val===''||val==null)?'—':val}</span></div>); const isoD=isoDate(item.datum); const dParts=isoD?isoD.split('-'):null; return (
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
                   <div style={{fontSize:26,fontWeight:800,color:C.txt,...NUM}}>{kind==='aus'?'−':''}{money}</div>
@@ -1206,6 +1222,19 @@ function App({session}) {
   const now = new Date();
   const nowY = now.getFullYear(), nowM = now.getMonth();
   const isFuture = (y,m) => y>nowY || (y===nowY && m>nowM);
+  // ══ Theme (Dark / Light / System) ══
+  const [theme,setTheme]= useState(()=>{ try{ return localStorage.getItem('sp_theme')||'dark'; }catch(_){ return 'dark'; } });
+  const [sysDark,setSysDark]= useState(()=>{ try{ return !!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches); }catch(_){ return true; } });
+  useEffect(()=>{ try{ if(!window.matchMedia) return; const mq=window.matchMedia('(prefers-color-scheme: dark)'); const h=e=>setSysDark(e.matches); mq.addEventListener?mq.addEventListener('change',h):mq.addListener(h); return ()=>{ try{ mq.removeEventListener?mq.removeEventListener('change',h):mq.removeListener(h); }catch(_){} }; }catch(_){} },[]);
+  const isDark = theme==='dark' || (theme==='system' && sysDark);
+  Object.assign(C, isDark?THEME_DARK:THEME_LIGHT);
+  Object.assign(SI,{background:C.surf3,color:C.txt});
+  Object.assign(SS,{background:C.surf2,color:C.txt});
+  Object.assign(SHd,{background:C.surf2,color:C.txt,border:'1px solid '+C.bdr});
+  Object.assign(SC,{background:C.surf,border:'1px solid '+C.bdr});
+  Object.assign(BVm,{background:C.priL,color:C.pri});
+  Object.assign(BPrs,{background:C.priL,color:C.pri});
+  useEffect(()=>{ try{ localStorage.setItem('sp_theme',theme); }catch(_){} try{ document.body.style.background=C.bg; document.body.style.color=C.txt; document.documentElement.style.background=C.bg; document.documentElement.style.colorScheme=isDark?'dark':'light'; }catch(_){} },[theme,sysDark,isDark]);
   const [yr,   setYr]   = useState(now.getFullYear());
   const [mo,   setMo]   = useState(now.getMonth());
   const [tab,  setTab]  = useState('quellen');
@@ -1819,7 +1848,7 @@ function App({session}) {
   // ── Kontoauszug-Status + Dedup ──
   const draftSig = (d)=> normName(d.name)+'|'+Math.round(num(d.amount)*100)+'|'+(toISO(d.datum)||'')+'|'+String(d.belegnr||'').toLowerCase();
   const addImportDrafts = (list)=>{ const flagged=flagDrafts(list||[]); const existing=new Set((drafts||[]).map(draftSig)); let added=0, skipped=0, dupBook=0; const fresh=[]; flagged.forEach(d=>{ const s=draftSig(d); if(existing.has(s)){ skipped++; return; } existing.add(s); if(d.dup) dupBook++; fresh.push({...d, isNew:true}); added++; }); setDrafts(ds=>{ const old=(ds||[]).map(d=>d.isNew?{...d,isNew:false}:d); return [...fresh, ...old]; }); return {total:flagged.length, added, skipped, dupBook}; };
-  const draftStatus = (d)=>{ if(d.ignored) return {key:'ignoriert',label:'Ignoriert',col:C.mut}; if(d.privat) return {key:'privat',label:'Privat',col:'#ABC4FF'}; if(d.confirmed) return {key:'zugeordnet',label:'Zugeordnet',col:C.grn}; if(d.openMatch) return {key:'beleg',label:'Beleg gefunden',col:C.pri}; if(d.isNew) return {key:'neu',label:'Neu',col:'#FFD27A'}; return {key:'offen',label:'Offen',col:'#FFB37A'}; };
+  const draftStatus = (d)=>{ if(d.ignored) return {key:'ignoriert',label:'Ignoriert',col:C.mut}; if(d.privat) return {key:'privat',label:'Privat',col:'#ABC4FF'}; if(d.confirmed) return {key:'zugeordnet',label:'Zugeordnet',col:C.grn}; if(d.openMatch) return {key:'beleg',label:'Beleg gefunden',col:C.pri}; if(d.isNew) return {key:'neu',label:'Neu',col:'#FFD27A'}; return {key:'offen',label:'Offen',col:C.exp}; };
   const markDraftPrivat = id => { updateDraft(id,{privat:true,ignored:false}); setDraftSel(s=>s.filter(x=>x!==id)); setToast('Als privat markiert'); };
   const markDraftIgnore = id => { updateDraft(id,{ignored:true,privat:false}); setDraftSel(s=>s.filter(x=>x!==id)); setToast('Ignoriert'); };
   const restoreDraft = id => { updateDraft(id,{ignored:false,privat:false}); setToast('Wiederhergestellt'); };
@@ -2927,12 +2956,12 @@ function App({session}) {
         {(srcKey || addCtx) && (
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:12,minHeight:28}}>
             {!inSel && addHeading && (
-              <div style={{fontSize:12.5,fontWeight:700,color:(addCtx&&addCtx.kind==='ein'?C.grn:'#FFB37A'),marginRight:'auto'}}>{addHeading}</div>
+              <div style={{fontSize:12.5,fontWeight:700,color:(addCtx&&addCtx.kind==='ein'?C.grn:C.exp),marginRight:'auto'}}>{addHeading}</div>
             )}
             {!inSel && sums && (
               <div style={{display:'flex',gap:16,marginRight:'auto',fontSize:13,flexWrap:'wrap'}}>
                 <span style={{display:'flex',alignItems:'center',gap:6,color:C.sub}}><span style={{width:8,height:8,borderRadius:'50%',background:C.grn,display:'inline-block'}}/>Einnahmen <b style={{color:C.txt,...NUM}}>{fmt(sums.inc)}</b></span>
-                <span style={{display:'flex',alignItems:'center',gap:6,color:C.sub}}><span style={{width:8,height:8,borderRadius:'50%',background:'#FFB37A',display:'inline-block'}}/>Ausgaben <b style={{color:C.txt,...NUM}}>{fmtN(sums.exp)}</b></span>
+                <span style={{display:'flex',alignItems:'center',gap:6,color:C.sub}}><span style={{width:8,height:8,borderRadius:'50%',background:C.exp,display:'inline-block'}}/>Ausgaben <b style={{color:C.txt,...NUM}}>{fmtN(sums.exp)}</b></span>
               </div>
             )}
             {!inSel && addCtx && !useKonFilter && (
@@ -2982,7 +3011,7 @@ function App({session}) {
   };
 
   return (
-    <div style={{display:'flex',flexDirection:'column',height:'100vh',fontFamily:FONT,color:C.txt,fontSize:14,overflow:'hidden'}}>
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',fontFamily:FONT,color:C.txt,fontSize:14,overflow:'hidden',background:C.bg}}>
 
       {/* ═══ TOP BAR ═══ */}
       <header style={{
@@ -3078,6 +3107,15 @@ function App({session}) {
               <button onClick={()=>{ setProfOpen(false); setTab('settings'); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:10,padding:'11px 12px',fontSize:14,color:C.txt,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
                 <Ic p={P.gear} sz={16} col={C.sub}/> <span>Einstellungen</span>
               </button>
+              <div style={{padding:'8px 10px 6px',borderTop:'1px solid '+C.sep,marginTop:4}}>
+                <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:7,letterSpacing:'0.03em'}}>DARSTELLUNG</div>
+                <div style={{display:'flex',gap:5,background:C.surf2,borderRadius:10,padding:4}}>
+                  {[['light','Hell'],['dark','Dunkel'],['system','System']].map(([k,l])=>{ const on=theme===k; return (
+                    <button key={k} onClick={()=>setTheme(k)} style={{flex:1,background:on?C.pri:'transparent',color:on?C.priTxt:C.sub,border:'none',borderRadius:7,padding:'7px 4px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>
+                  ); })}
+                </div>
+              </div>
+              <div style={{height:1,background:C.sep,margin:'4px 0'}}/>
               <button onClick={()=>{ setProfOpen(false); sb.auth.signOut(); }} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',borderRadius:10,padding:'11px 12px',fontSize:14,color:C.red,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
                 <Ic p={P.out} sz={16} col={C.red}/> <span>Abmelden</span>
               </button>
@@ -3173,7 +3211,7 @@ function App({session}) {
                           <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM}}>{fmt(tot.totalInc)}</span>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:10}}>
-                          <span style={{width:10,height:10,borderRadius:'50%',background:'#FFB37A',display:'inline-block'}}/>
+                          <span style={{width:10,height:10,borderRadius:'50%',background:C.exp,display:'inline-block'}}/>
                           <span style={{fontSize:14,color:C.sub,flex:1}}>Ausgaben</span>
                           <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM}}>{fmtN(tot.totalExp)}</span>
                         </div>
@@ -3232,7 +3270,7 @@ function App({session}) {
                           <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM}}>{fmt(tot.totalInc)}</span>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:10}}>
-                          <span style={{width:10,height:10,borderRadius:'50%',background:'#FFB37A',display:'inline-block'}}/>
+                          <span style={{width:10,height:10,borderRadius:'50%',background:C.exp,display:'inline-block'}}/>
                           <span style={{fontSize:14,color:C.sub,flex:1}}>Ausgaben</span>
                           <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM}}>{fmtN(tot.totalExp)}</span>
                         </div>
@@ -3250,7 +3288,7 @@ function App({session}) {
                       </div>
                       <div style={{marginTop:'auto'}}>
                         <div style={{fontSize:18,fontWeight:700,color:C.txt,marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',letterSpacing:'-0.01em'}}>{k.name}</div>
-                        <div style={{fontSize:14,fontWeight:500,color:erg>=0?C.grn:'#FFB37A',...NUM}}>{erg>=0?'+':''}{fmt(erg)}</div>
+                        <div style={{fontSize:14,fontWeight:500,color:erg>=0?C.grn:C.exp,...NUM}}>{erg>=0?'+':''}{fmt(erg)}</div>
                       </div>
                     </div>
                   ); })}
@@ -3707,7 +3745,7 @@ function App({session}) {
                             <div style={{fontSize:15,fontWeight:600,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{it.name||'—'}</div>
                             <div style={{fontSize:12,color:C.sub,marginTop:2}}>{captureAccLabel(acc)} · {MONTHS[m]} {y}{it.belegnr?(' · '+it.belegnr):''}</div>
                           </div>
-                          <span style={{display:'inline-flex',alignItems:'center',gap:5,background:hexA('#FFB37A',0.14),border:'1px solid '+hexA('#FFB37A',0.35),color:'#FFB37A',borderRadius:7,padding:'3px 9px',fontSize:11,fontWeight:700,flexShrink:0}}>Offen</span>
+                          <span style={{display:'inline-flex',alignItems:'center',gap:5,background:hexA(C.exp,0.14),border:'1px solid '+hexA(C.exp,0.35),color:C.exp,borderRadius:7,padding:'3px 9px',fontSize:11,fontWeight:700,flexShrink:0}}>Offen</span>
                           <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM,flexShrink:0,whiteSpace:'nowrap'}}>{fmt(num(it.amount))}</span>
                         </div>
                       ))}</div>) : (<div style={{fontSize:13.5,color:C.mut,textAlign:'center',padding:'26px 18px',lineHeight:1.6}}>Noch keine offenen Belege.<br/>Erfasse oben einen Beleg – er erscheint hier, bis der Bankkontoauszug ihn bestätigt.</div>)}
@@ -3742,7 +3780,7 @@ function App({session}) {
                 )}
                 {monthDrafts.length>0 && (
                   <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14}}>
-                    {[['alle','Alle'],['ein','Einnahmen'],['aus','Ausgaben']].map(([k,l])=>{ const on=draftDir===k; const cnt=k==='alle'?monthDrafts.length:monthDrafts.filter(d=>(d.kind||'aus')===k).length; const col=k==='ein'?C.grn:k==='aus'?'#FFB37A':C.pri; return (
+                    {[['alle','Alle'],['ein','Einnahmen'],['aus','Ausgaben']].map(([k,l])=>{ const on=draftDir===k; const cnt=k==='alle'?monthDrafts.length:monthDrafts.filter(d=>(d.kind||'aus')===k).length; const col=k==='ein'?C.grn:k==='aus'?C.exp:C.pri; return (
                       <button key={k} onClick={()=>setDraftDir(k)} style={{display:'inline-flex',alignItems:'center',gap:5,background:on?hexA(col,0.16):C.surf2,color:on?col:C.sub,border:'1px solid '+(on?col:C.bdr),borderRadius:8,padding:'5px 11px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}<span style={{opacity:0.7}}>{cnt}</span></button>
                     ); })}
                   </div>
@@ -3799,8 +3837,8 @@ function App({session}) {
                       <div style={{width:isMobile?'auto':'min(480px,46%)',flexShrink:0,overflowY:'auto',padding:isMobile?'18px 18px 40px':'24px 26px 48px'}}>
                         <div style={{fontSize:12.5,color:C.sub,lineHeight:1.5,marginBottom:14}}>Bankbewegung <b style={{color:C.txt}}>{d.name||'—'}</b> · {fmt(num(d.amount))}{d.datum?(' · '+(toISO(d.datum)||d.datum)):''} — wähle den passenden offenen Beleg.</div>
                         {sel && (
-                          <div style={{background:amountOk?hexA(C.grn,0.10):hexA('#FFB37A',0.10),border:'1px solid '+(amountOk?hexA(C.grn,0.4):hexA('#FFB37A',0.4)),borderRadius:11,padding:'11px 13px',marginBottom:14}}>
-                            <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13.5,fontWeight:700,color:amountOk?C.grn:'#FFB37A'}}><Ic p={amountOk?P.check:P.spark} sz={15} col={amountOk?C.grn:'#FFB37A'}/> {amountOk?'Passt – Betrag stimmt überein':'Betrag weicht ab – bitte prüfen'}</div>
+                          <div style={{background:amountOk?hexA(C.grn,0.10):hexA(C.exp,0.10),border:'1px solid '+(amountOk?hexA(C.grn,0.4):hexA(C.exp,0.4)),borderRadius:11,padding:'11px 13px',marginBottom:14}}>
+                            <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13.5,fontWeight:700,color:amountOk?C.grn:C.exp}}><Ic p={amountOk?P.check:P.spark} sz={15} col={amountOk?C.grn:C.exp}/> {amountOk?'Passt – Betrag stimmt überein':'Betrag weicht ab – bitte prüfen'}</div>
                             <div style={{fontSize:11.5,color:C.sub,marginTop:6,lineHeight:1.5}}>{[amountOk?'Betrag ✓':'Betrag ≠ ('+fmt(num(sel.amount))+')', dateOk?'Datum ✓':(dDt!=null?'Datum '+Math.round(dDt)+' T entfernt':'kein Datum'), nrOk?'Beleg-Nr ✓':(d.belegnr&&sel.belegnr?'Beleg-Nr ≠':'')].filter(Boolean).join(' · ')}</div>
                           </div>
                         )}
@@ -3823,15 +3861,15 @@ function App({session}) {
                           <div style={{background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,padding:'12px 13px',marginBottom:14}}>
                             <div style={{fontSize:11,fontWeight:700,color:C.sub,letterSpacing:'0.02em',marginBottom:8}}>NAME PRÜFEN</div>
                             <div style={{display:'flex',justifyContent:'space-between',gap:10,fontSize:13,marginBottom:4}}><span style={{color:C.mut}}>Bankauszug</span><span style={{color:C.txt,fontWeight:600,textAlign:'right'}}>{d.name||'—'}</span></div>
-                            <div style={{display:'flex',justifyContent:'space-between',gap:10,fontSize:13}}><span style={{color:C.mut}}>Beleg</span><span style={{color:nameDiff?'#FFB37A':C.txt,fontWeight:600,textAlign:'right'}}>{sel.name||'—'}</span></div>
+                            <div style={{display:'flex',justifyContent:'space-between',gap:10,fontSize:13}}><span style={{color:C.mut}}>Beleg</span><span style={{color:nameDiff?C.exp:C.txt,fontWeight:600,textAlign:'right'}}>{sel.name||'—'}</span></div>
                             <label style={{display:'flex',alignItems:'center',gap:9,marginTop:11,cursor:'pointer',fontSize:13,color:C.txt}}>
                               <span onClick={()=>setAssignName(v=>!v)} style={{width:38,height:22,flexShrink:0,borderRadius:99,background:assignName?C.pri:C.surf3,position:'relative',transition:'background .15s'}}><span style={{position:'absolute',top:2,left:assignName?18:2,width:18,height:18,borderRadius:'50%',background:'#fff',transition:'left .15s'}}/></span>
                               <span>Namen vom Bankauszug übernehmen{nameDiff?'':' (identisch)'}</span>
                             </label>
                           </div>
                           {!amountOk && (
-                            <div style={{background:hexA('#FFB37A',0.10),border:'1px solid '+hexA('#FFB37A',0.4),borderRadius:11,padding:'12px 13px',marginBottom:14}}>
-                              <div style={{fontSize:12.5,fontWeight:700,color:'#FFB37A',marginBottom:8,display:'flex',alignItems:'center',gap:7}}><Ic p={P.spark} sz={14} col={'#FFB37A'}/> Betrag weicht ab ({fmt(Math.abs(num(d.amount)-num(sel.amount)))}) – Grund wählen <span style={{color:C.red}}>*</span></div>
+                            <div style={{background:hexA(C.exp,0.10),border:'1px solid '+hexA(C.exp,0.4),borderRadius:11,padding:'12px 13px',marginBottom:14}}>
+                              <div style={{fontSize:12.5,fontWeight:700,color:C.exp,marginBottom:8,display:'flex',alignItems:'center',gap:7}}><Ic p={P.spark} sz={14} col={C.exp}/> Betrag weicht ab ({fmt(Math.abs(num(d.amount)-num(sel.amount)))}) – Grund wählen <span style={{color:C.red}}>*</span></div>
                               <select value={assignReason.reason} onChange={e=>setAssignReason(r=>({...r,reason:e.target.value}))} style={{width:'100%',background:C.surf2,border:'1px solid '+(assignReason.reason?C.bdr:C.red),borderRadius:10,color:C.txt,padding:'10px 12px',fontSize:13.5,outline:'none',fontFamily:'inherit',cursor:'pointer'}}>
                                 <option value="">— Grund auswählen —</option>
                                 {['Teilzahlung','Skonto','Rabatt','Mahngebühren','Rundungsdifferenz','Überzahlung','Unterzahlung','Sonstiger Grund'].map(r=><option key={r} value={r}>{r}</option>)}
@@ -3884,7 +3922,7 @@ function App({session}) {
                         <label style={{position:'absolute',bottom:isMobile?10:20,right:isMobile?10:20,display:'inline-flex',alignItems:'center',gap:7,background:hexA(C.bg,0.85),border:'1px solid '+C.bdr,color:C.txt,borderRadius:10,padding:'8px 13px',fontSize:13,fontWeight:600,cursor:'pointer',backdropFilter:'blur(4px)'}}><Ic p={P.upload} sz={14} col={C.txt}/> Beleg ersetzen<input type="file" accept="image/*,.pdf" onChange={e=>{const f=e.target.files[0];e.target.value='';draftFile(d.id,f);}} style={{display:'none'}}/></label>
                       </div>
                       <div style={{width:isMobile?'auto':'min(480px,46%)',flexShrink:0,overflowY:'auto',padding:'26px 28px 56px'}}>
-                      {d.dup && <button onClick={()=>setDupPopup({draft:d,match:d.dup})} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:hexA('#FFB37A',0.14),border:'1px solid '+hexA('#FFB37A',0.4),color:'#FFB37A',borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:16,textAlign:'left'}}>⚠ Dieser Beleg scheint bereits vorhanden – ansehen</button>}
+                      {d.dup && <button onClick={()=>setDupPopup({draft:d,match:d.dup})} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:hexA(C.exp,0.14),border:'1px solid '+hexA(C.exp,0.4),color:C.exp,borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:16,textAlign:'left'}}>⚠ Dieser Beleg scheint bereits vorhanden – ansehen</button>}
                       {d.payMatch && (d.invId ? (
                         <div style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:hexA(C.grn,0.14),border:'1px solid '+hexA(C.grn,0.4),color:C.grn,borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:600,marginBottom:16}}><Ic p={P.check} sz={15} col={C.grn}/> Rechnung {d.payMatch.number} verknüpft · wird auf „Bezahlt" gesetzt</div>
                       ) : (
@@ -4246,7 +4284,7 @@ function App({session}) {
                         </div>
                         {gen.length>0 && (<div style={{borderTop:'1px solid '+C.sep,padding:'10px 15px'}}>
                           <div style={{display:'flex',gap:14,flexWrap:'wrap',alignItems:'center',fontSize:12,marginBottom:recExpand[r.id]?8:0}}>
-                            <span style={{color:C.sub}}><b style={{color:C.grn}}>{paidN}</b> bezahlt · <b style={{color:'#FFB37A'}}>{openN}</b> offen</span>
+                            <span style={{color:C.sub}}><b style={{color:C.grn}}>{paidN}</b> bezahlt · <b style={{color:C.exp}}>{openN}</b> offen</span>
                             {limited && <><span style={{color:C.sub}}>Bereits bezahlt <b style={{...NUM,color:C.txt}}>{fmt(paidSum)}</b></span><span style={{color:C.sub}}>Noch offen <b style={{...NUM,color:C.txt}}>{fmt(openSum)}</b></span></>}
                             <button onClick={()=>setRecExpand(o=>({...o,[r.id]:!o[r.id]}))} title={recExpand[r.id]?'Zuklappen':'Rechnungen anzeigen'} style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:5,background:C.surf3,border:'1px solid '+C.bdr,color:C.sub,borderRadius:8,padding:'4px 9px',fontSize:11.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{gen.length} Rechnung{gen.length!==1?'en':''} <span style={{display:'inline-flex',transition:'transform .16s',transform:recExpand[r.id]?'rotate(180deg)':'none'}}><Ic p={P.down} sz={13} col={C.sub}/></span></button>
                           </div>
@@ -4254,7 +4292,7 @@ function App({session}) {
                             <div key={g.id} onClick={()=>setInvView(g)} onContextMenu={e=>{e.preventDefault();setInvCtx({x:e.clientX,y:e.clientY,inv:g});}} style={{display:'flex',alignItems:'center',gap:10,fontSize:12.5,background:C.surf3,borderRadius:9,padding:'8px 11px',cursor:'pointer'}}>
                               <span style={{color:C.txt,fontWeight:600}}>Rechnung {g.number}</span>
                               <span style={{color:C.mut}}>{toISO(g.sentDate||g.date)||'—'}</span>
-                              <span style={{marginLeft:'auto',display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:700,color:g.paid?C.grn:'#FFB37A',background:hexA(g.paid?C.grn:'#FFB37A',0.14),borderRadius:6,padding:'2px 8px'}}>{g.paid?'Bezahlt':'Offen'}</span>
+                              <span style={{marginLeft:'auto',display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:700,color:g.paid?C.grn:C.exp,background:hexA(g.paid?C.grn:C.exp,0.14),borderRadius:6,padding:'2px 8px'}}>{g.paid?'Bezahlt':'Offen'}</span>
                               {g.paid && g.paidDate && <span style={{color:C.mut,fontSize:11}}>am {toISO(g.paidDate)}</span>}
                               <span style={{...NUM,color:C.txt,fontWeight:700}}>{fmt(g.total||0)}</span>
                             </div>
@@ -4293,13 +4331,13 @@ function App({session}) {
                             <div key={inv.id} onClick={()=>setInvView(inv)} onContextMenu={e=>{e.preventDefault();setInvCtx({x:e.clientX,y:e.clientY,inv});}} title="Ansehen · Rechtsklick für Optionen" style={{display:'flex',alignItems:'center',gap:13,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'13px 15px',cursor:'pointer'}}>
                               <div style={{width:46,height:46,flexShrink:0,borderRadius:12,background:hexA(KONTO_COLORS.unter.c,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.prson} sz={20} col={KONTO_COLORS.unter.c}/></div>
                               <div style={{flex:1,minWidth:0}}>
-                                <div style={{fontSize:15.5,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:9}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</span><span style={{flexShrink:0,fontSize:11,fontWeight:700,color:inv.paid?C.grn:'#FFB37A',background:hexA(inv.paid?C.grn:'#FFB37A',0.14),borderRadius:6,padding:'2px 8px'}}>{inv.paid?'Bezahlt':'Offen'}</span>{inv.emailedAt && <span title={'Per E-Mail gesendet am '+toISO(inv.emailedAt)} style={{flexShrink:0,fontSize:12,color:C.pri}}>✉</span>}</div>
+                                <div style={{fontSize:15.5,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:9}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</span><span style={{flexShrink:0,fontSize:11,fontWeight:700,color:inv.paid?C.grn:C.exp,background:hexA(inv.paid?C.grn:C.exp,0.14),borderRadius:6,padding:'2px 8px'}}>{inv.paid?'Bezahlt':'Offen'}</span>{inv.emailedAt && <span title={'Per E-Mail gesendet am '+toISO(inv.emailedAt)} style={{flexShrink:0,fontSize:12,color:C.pri}}>✉</span>}</div>
                                 <div style={{fontSize:12.5,color:C.sub,display:'flex',alignItems:'center',gap:13,marginTop:3,flexWrap:'wrap'}}>
                                   <span style={{display:'flex',alignItems:'center',gap:4}}><Ic p={P.doc} sz={12} col={C.mut}/>{inv.number}</span>
                                   <span style={{display:'flex',alignItems:'center',gap:4}}><Ic p={P.cal} sz={12} col={C.mut}/>{sent}</span>
                                 </div>
                               </div>
-                              <div style={{fontSize:20,fontWeight:800,...NUM,color:total<0?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{fmt(total)}</div>
+                              <div style={{fontSize:20,fontWeight:800,...NUM,color:total<0?C.exp:C.grn,whiteSpace:'nowrap'}}>{fmt(total)}</div>
                               <button onClick={e=>{e.stopPropagation();setInvCtx({x:e.clientX,y:e.clientY,inv});}} title="Optionen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',flexShrink:0,width:26,height:26,borderRadius:6,fontSize:18,lineHeight:1,fontFamily:'inherit'}}>⋮</button>
                             </div>
                           );
@@ -4399,7 +4437,7 @@ function App({session}) {
                       <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:16}}>
                         {kpi('Gesamtumsatz', fmt(sum(invs)), C.txt, invs.length+' Rechnung'+(invs.length!==1?'en':''))}
                         {kpi('Bezahlt', fmt(sum(paidInv)), C.grn, paidInv.length+' Rechnung'+(paidInv.length!==1?'en':''))}
-                        {kpi('Offen', fmt(sum(openInv)), '#FFB37A', openInv.length+' Rechnung'+(openInv.length!==1?'en':''))}
+                        {kpi('Offen', fmt(sum(openInv)), C.exp, openInv.length+' Rechnung'+(openInv.length!==1?'en':''))}
                       </div>
                     ); })()}
                     {rows.length? (()=>{ const groups={}; rows.forEach(r=>{ const iso=toISO(r.date); const key=iso?iso.slice(0,7):'0000-99'; (groups[key]=groups[key]||[]).push(r); }); const keys=Object.keys(groups).sort().reverse(); const mLbl=k=>{ if(k==='0000-99')return 'Ohne Datum'; const [y,m]=k.split('-'); return MONTHS[(+m)-1]+' '+y; }; return keys.map(key=>(
@@ -4409,10 +4447,10 @@ function App({session}) {
                           <div key={r.key} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'13px 15px'}}>
                             <div style={{width:42,height:42,flexShrink:0,borderRadius:12,background:hexA(col,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={r.inv?P.doc:P.clip} sz={18} col={col}/></div>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:15,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:8}}>{r.title}{r.inv && <span style={{fontSize:11,fontWeight:700,color:r.inv.paid?C.grn:'#FFB37A',background:hexA(r.inv.paid?C.grn:'#FFB37A',0.14),borderRadius:6,padding:'2px 8px',flexShrink:0}}>{r.inv.paid?'Bezahlt':'Offen'}</span>}</div>
+                              <div style={{fontSize:15,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:8}}>{r.title}{r.inv && <span style={{fontSize:11,fontWeight:700,color:r.inv.paid?C.grn:C.exp,background:hexA(r.inv.paid?C.grn:C.exp,0.14),borderRadius:6,padding:'2px 8px',flexShrink:0}}>{r.inv.paid?'Bezahlt':'Offen'}</span>}</div>
                               <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{[r.tag, r.date&&(toISO(r.date)||r.date), (r.inv&&r.inv.paid&&r.inv.paidDate)&&('bezahlt am '+toISO(r.inv.paidDate))].filter(Boolean).join(' · ')}</div>
                             </div>
-                            <div style={{fontSize:16,fontWeight:800,...NUM,color:r.amount<0?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{r.amount<0?'-':''}{fmt(Math.abs(r.amount))}</div>
+                            <div style={{fontSize:16,fontWeight:800,...NUM,color:r.amount<0?C.exp:C.grn,whiteSpace:'nowrap'}}>{r.amount<0?'-':''}{fmt(Math.abs(r.amount))}</div>
                             {r.inv && <button onClick={()=>setInvView(r.inv)} title="Rechnung ansehen" style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontSize:18,flexShrink:0}}>›</button>}
                             {!r.inv && r.pdf && <button onClick={()=>openFile(r.pdf)} title="Beleg ansehen" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:8,padding:'6px 10px',fontSize:12,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Beleg</button>}
                           </div>
@@ -4494,7 +4532,7 @@ function App({session}) {
                         <div style={{fontSize:15,fontWeight:700,color:C.txt,display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</span>{r.recurring&&<Ic p={P.repeat} sz={13} col={berCol}/>}</div>
                         <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{(r.date&&(toISO(r.date)||r.date))||'—'}</div>
                       </div>
-                      <div style={{fontSize:15,fontWeight:700,...NUM,color:aus?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{aus?'-':''}{fmt(Math.abs(r.amount))}</div>
+                      <div style={{fontSize:15,fontWeight:700,...NUM,color:aus?C.exp:C.grn,whiteSpace:'nowrap'}}>{aus?'-':''}{fmt(Math.abs(r.amount))}</div>
                       {r.filePath ? <button onClick={()=>openFile(r.filePath,r.fileName)} title="Ansehen" style={{background:C.surf3,border:'none',color:C.txt,borderRadius:9,padding:'8px 12px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Ansehen</button>
                         : r.fileData ? <a href={r.fileData} download={r.fileName||'beleg'} style={{background:C.surf3,color:C.txt,borderRadius:9,padding:'8px 12px',fontSize:12,fontWeight:600,fontFamily:'inherit',flexShrink:0,textDecoration:'none'}}>Ansehen</a> : null}
                     </div>
@@ -4579,7 +4617,7 @@ function App({session}) {
                           <div style={{fontSize:15,fontWeight:700,color:C.txt,display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</span>{r.recurring&&<Ic p={P.repeat} sz={13} col={bc}/>}</div>
                           <div style={{fontSize:12.5,color:C.sub,marginTop:2,display:'flex',alignItems:'center',gap:6}}><span style={{color:bc,fontWeight:600}}>{belBerLabel(r._ber)}</span><span style={{color:C.mut}}>·</span>{(r.date&&(toISO(r.date)||r.date))||'—'}</div>
                         </div>
-                        <div style={{fontSize:15,fontWeight:700,...NUM,color:aus?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{aus?'-':''}{fmt(Math.abs(r.amount))}</div>
+                        <div style={{fontSize:15,fontWeight:700,...NUM,color:aus?C.exp:C.grn,whiteSpace:'nowrap'}}>{aus?'-':''}{fmt(Math.abs(r.amount))}</div>
                         <span style={{color:C.mut,fontSize:18,flexShrink:0}}>›</span>
                       </div>
                     ); })}</div>
@@ -4808,7 +4846,7 @@ function App({session}) {
             </div>
             {/* Persönlicher Steuerberater-Assistent */}
             {(()=>{ const tnote=(data.taxNotes||{})[yr]; const items=(tnote&&tnote.items)||[];
-              const TY={tipp:{c:'#7BC2AA',ic:P.spark,lbl:'Tipp'},sparen:{c:'#7BC2AA',ic:P.spark,lbl:'Sparpotenzial'},achtung:{c:'#FFB37A',ic:P.doc,lbl:'Achtung'},frage:{c:'#ABC4FF',ic:P.note,lbl:'Rückfrage'}};
+              const TY={tipp:{c:'#7BC2AA',ic:P.spark,lbl:'Tipp'},sparen:{c:'#7BC2AA',ic:P.spark,lbl:'Sparpotenzial'},achtung:{c:C.exp,ic:P.doc,lbl:'Achtung'},frage:{c:'#ABC4FF',ic:P.note,lbl:'Rückfrage'}};
               return (
               <div style={{marginBottom:20}}>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,marginBottom:12,flexWrap:'wrap'}}>
@@ -5142,7 +5180,7 @@ function App({session}) {
         </Sheet>
       )}
 
-      {belegEdit && (()=>{ const loc=belegEdit.loc; const it=fullBelegItem(loc)||{}; const bc=acol(loc._ber); const aus=loc._kind==='aus'; const hasFile=!!(it.filePath||it.fileData||loc.filePath||loc.fileData); const filePath=it.filePath||loc.filePath; const fileData=it.fileData||loc.fileData; const fileName=it.fileName||loc.fileName||'Beleg'; const money=fmt(Math.abs(num(it.amount||loc.amount))); const isoD=isoDate(it.datum); const dParts=isoD?isoD.split('-'):null; const sLbl=it.status==='bezahlt'?'Bezahlt':it.status==='abgebucht'?'Abgebucht':'Offen'; const sCol=(it.status==='bezahlt'||it.status==='abgebucht')?C.grn:'#FFB37A'; const ro=(label,val)=>(<div style={{display:'flex',justifyContent:'space-between',gap:14,padding:'11px 0',borderBottom:'1px solid '+C.sep}}><span style={{fontSize:13,color:C.sub,flexShrink:0}}>{label}</span><span style={{fontSize:13.5,color:C.txt,fontWeight:600,textAlign:'right',overflow:'hidden',textOverflow:'ellipsis'}}>{(val===''||val==null)?'—':val}</span></div>); const doDelete=()=>{ askConfirm('Buchung „'+(it.name||loc.name||'')+ '" löschen?', ()=>{ updateBelegItem(loc,{_deleted:true}); setBelegEdit(null); setToast('Buchung gelöscht'); }); }; return (
+      {belegEdit && (()=>{ const loc=belegEdit.loc; const it=fullBelegItem(loc)||{}; const bc=acol(loc._ber); const aus=loc._kind==='aus'; const hasFile=!!(it.filePath||it.fileData||loc.filePath||loc.fileData); const filePath=it.filePath||loc.filePath; const fileData=it.fileData||loc.fileData; const fileName=it.fileName||loc.fileName||'Beleg'; const money=fmt(Math.abs(num(it.amount||loc.amount))); const isoD=isoDate(it.datum); const dParts=isoD?isoD.split('-'):null; const sLbl=it.status==='bezahlt'?'Bezahlt':it.status==='abgebucht'?'Abgebucht':'Offen'; const sCol=(it.status==='bezahlt'||it.status==='abgebucht')?C.grn:C.exp; const ro=(label,val)=>(<div style={{display:'flex',justifyContent:'space-between',gap:14,padding:'11px 0',borderBottom:'1px solid '+C.sep}}><span style={{fontSize:13,color:C.sub,flexShrink:0}}>{label}</span><span style={{fontSize:13.5,color:C.txt,fontWeight:600,textAlign:'right',overflow:'hidden',textOverflow:'ellipsis'}}>{(val===''||val==null)?'—':val}</span></div>); const doDelete=()=>{ askConfirm('Buchung „'+(it.name||loc.name||'')+ '" löschen?', ()=>{ updateBelegItem(loc,{_deleted:true}); setBelegEdit(null); setToast('Buchung gelöscht'); }); }; return (
         <div onClick={()=>setBelegEdit(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:130,display:'flex',justifyContent:'flex-end'}}>
           <div className="drawerPanel" onClick={e=>e.stopPropagation()} style={{width:'clamp(360px, 40vw, 640px)',maxWidth:'100%',height:'100%',background:C.surf,borderLeft:'1px solid '+C.bdr,borderTopLeftRadius:22,borderBottomLeftRadius:22,boxShadow:'-30px 0 80px rgba(0,0,0,0.55)',overflowY:'auto',padding:'30px 30px 56px'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
@@ -5195,7 +5233,7 @@ function App({session}) {
             <div style={{marginBottom:16}}>
               {row('#FFD27A','Neu hinzugefügt', s.added)}
               {row(C.mut,'Bereits im Kontoauszug (übersprungen)', s.skipped)}
-              {row('#FFB37A','Schon als Buchung vorhanden', s.dupBook)}
+              {row(C.exp,'Schon als Buchung vorhanden', s.dupBook)}
             </div>
             <button onClick={()=>{setImportSummary(null); if(!(tab==='import'&&importTab==='bank')){setTab('import');setImportTab('bank');}}} style={{width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{(tab==='import'&&importTab==='bank')?'Verstanden':'Zum Kontoauszug'}</button>
           </div>
@@ -5215,8 +5253,8 @@ function App({session}) {
               ? <button onClick={()=>openFile(mItem.filePath||mItem.fileData, mItem.fileName)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:hexA(C.pri,0.12),border:'1px solid '+hexA(C.pri,0.3),color:C.pri,borderRadius:11,padding:'11px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}><Ic p={P.doc} sz={15} col={C.pri}/> Beleg ansehen</button>
               : <div style={{fontSize:12,color:C.mut,textAlign:'center',marginBottom:12}}>An diesem Beleg ist keine Datei angehängt.</div>}
             {deviates && (
-              <div style={{background:hexA('#FFB37A',0.10),border:'1px solid '+hexA('#FFB37A',0.4),borderRadius:11,padding:'12px 13px',marginBottom:14}}>
-                <div style={{fontSize:12.5,fontWeight:700,color:'#FFB37A',marginBottom:8,display:'flex',alignItems:'center',gap:7}}><Ic p={P.spark} sz={14} col={'#FFB37A'}/> Betrag weicht um {fmt(diff)} ab – Grund wählen <span style={{color:C.red}}>*</span></div>
+              <div style={{background:hexA(C.exp,0.10),border:'1px solid '+hexA(C.exp,0.4),borderRadius:11,padding:'12px 13px',marginBottom:14}}>
+                <div style={{fontSize:12.5,fontWeight:700,color:C.exp,marginBottom:8,display:'flex',alignItems:'center',gap:7}}><Ic p={P.spark} sz={14} col={C.exp}/> Betrag weicht um {fmt(diff)} ab – Grund wählen <span style={{color:C.red}}>*</span></div>
                 <select value={reason} onChange={e=>setConfirmMatch(c=>({...c,reason:e.target.value}))} style={{width:'100%',background:C.surf2,border:'1px solid '+(reason?C.bdr:C.red),borderRadius:10,color:C.txt,padding:'10px 12px',fontSize:13.5,outline:'none',fontFamily:'inherit',cursor:'pointer'}}>
                   <option value="">— Grund auswählen —</option>
                   {['Teilzahlung','Skonto','Rabatt','Mahngebühren','Rundungsdifferenz','Überzahlung','Unterzahlung','Sonstiger Grund'].map(r=><option key={r} value={r}>{r}</option>)}
@@ -5302,7 +5340,7 @@ function App({session}) {
                   )}
                 </div>
                 <button disabled={miss.length>0} onClick={bookCapture} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'13px',fontSize:14,fontWeight:700,cursor:miss.length?'default':'pointer',fontFamily:'inherit',marginTop:4,opacity:miss.length?0.5:1}}>{miss.length?('Noch '+miss.length+' Pflichtfeld'+(miss.length>1?'er':'')):'Zuordnen'}</button>
-                {!c.recurring && <div style={{fontSize:11.5,color:C.mut,textAlign:'center',lineHeight:1.5}}>Status nach dem Zuordnen: <b style={{color:'#FFB37A'}}>Offen</b> – wird bestätigt, sobald der Bankkontoauszug die Abbuchung zeigt.</div>}
+                {!c.recurring && <div style={{fontSize:11.5,color:C.mut,textAlign:'center',lineHeight:1.5}}>Status nach dem Zuordnen: <b style={{color:C.exp}}>Offen</b> – wird bestätigt, sobald der Bankkontoauszug die Abbuchung zeigt.</div>}
               </div>
             </div>
             <div onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';}} onDrop={e=>{ e.preventDefault(); const file=e.dataTransfer.files&&e.dataTransfer.files[0]; if(file) scanCaptureFile(file); }} style={{flex:isMobile?'none':1,height:isMobile?280:'auto',background:C.surf2,borderRight:isMobile?'none':'1px solid '+C.bdr,borderBottom:isMobile?'1px solid '+C.bdr:'none',display:'flex',flexDirection:'column',padding:isMobile?14:24,position:'relative',order:isMobile?1:1,minHeight:0}}>
@@ -5446,7 +5484,7 @@ function App({session}) {
       {dupPopup && (()=>{ const m=dupPopup.match; const inv=m&&m.invoice; const it=m&&m.it; const betrag=inv?(inv.total!=null?inv.total:0):num(it&&it.amount); const datum=inv?inv.date:(it&&it.datum); const konto=inv?(names.unternehmen):(m&&m.acct); const fp=it&&(it.filePath||it.fileData); return (
         <div onClick={()=>setDupPopup(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:150,padding:20}}>
           <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,padding:'24px',maxWidth:420,width:'100%',boxShadow:'0 16px 48px rgba(0,0,0,0.5)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}><span style={{width:32,height:32,borderRadius:9,background:hexA('#FFB37A',0.18),display:'flex',alignItems:'center',justifyContent:'center',fontSize:17}}>⚠</span><div style={{fontSize:17,fontWeight:800,color:C.txt}}>Beleg vermutlich vorhanden</div></div>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}><span style={{width:32,height:32,borderRadius:9,background:hexA(C.exp,0.18),display:'flex',alignItems:'center',justifyContent:'center',fontSize:17}}>⚠</span><div style={{fontSize:17,fontWeight:800,color:C.txt}}>Beleg vermutlich vorhanden</div></div>
             <div style={{fontSize:13,color:C.sub,lineHeight:1.5,marginBottom:14}}>Dieser Beleg scheint bereits in deinen Daten zu existieren:</div>
             <div style={{background:C.surf2,borderRadius:12,padding:'14px 16px',display:'flex',flexDirection:'column',gap:9,marginBottom:16}}>
               <div style={{fontSize:15,fontWeight:700,color:C.txt}}>{inv?('Rechnung '+inv.number):(it&&it.name)||'—'}</div>
@@ -5529,7 +5567,7 @@ function App({session}) {
           <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,width:'min(820px,100%)',maxHeight:'92vh',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 24px 60px rgba(0,0,0,0.6)'}}>
             <div style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',borderBottom:'1px solid '+C.sep,flexWrap:'wrap'}}>
               <div style={{fontSize:16,fontWeight:800,color:C.txt}}>Rechnung {invView.number}</div>
-              <span style={{fontSize:11,fontWeight:700,color:invView.paid?C.grn:'#FFB37A',background:hexA(invView.paid?C.grn:'#FFB37A',0.14),borderRadius:6,padding:'3px 9px'}}>{invView.paid?'Bezahlt':'Offen'}</span>
+              <span style={{fontSize:11,fontWeight:700,color:invView.paid?C.grn:C.exp,background:hexA(invView.paid?C.grn:C.exp,0.14),borderRadius:6,padding:'3px 9px'}}>{invView.paid?'Bezahlt':'Offen'}</span>
               <span style={{fontSize:11,color:C.mut,display:'flex',alignItems:'center',gap:5}}><Ic p={P.lock||P.doc} sz={12} col={C.mut}/> nur Ansicht</span>
               {invView.emailedAt && <span style={{fontSize:11,fontWeight:600,color:C.pri,display:'flex',alignItems:'center',gap:5}}>✉ Gesendet am {toISO(invView.emailedAt)}</span>}
               <button onClick={()=>setInvView(null)} title="Schließen" style={{marginLeft:'auto',background:C.surf2,border:'none',color:C.sub,width:34,height:34,borderRadius:9,cursor:'pointer',fontSize:20,lineHeight:1,fontFamily:'inherit'}}>×</button>
