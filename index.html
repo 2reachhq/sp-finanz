@@ -1257,6 +1257,11 @@ function App({session}) {
   const [navOpen,setNavOpen]= useState(false);
   const [selKey,setSelKey]= useState(null);      // Bereich im Auswahl-Modus
   const [selIds,setSelIds]= useState([]);        // ausgewählte Zeilen-IDs
+  const [konSearch,setKonSearch]= useState('');  // Konten: Suche über Name/Beleg-Nr/Betrag/Notiz/Kategorie
+  const [konFilterOpen,setKonFilterOpen]= useState(false); // Konten: Filter-Popover offen
+  const [konTyp,setKonTyp]= useState('alle');    // Konten-Filter: alle|einmalig|wied
+  const [konStatus,setKonStatus]= useState('alle'); // Konten-Filter: alle|offen|erledigt
+  const [konCat,setKonCat]= useState('');        // Konten-Filter: Kategorie ('' = alle)
   const [bulkMove,setBulkMove]= useState(null);   // {srcKey, ids}
   const [draftSel,setDraftSel]= useState([]);     // ausgewählte Entwürfe (Import)
   const [draftCtx,setDraftCtx]= useState(null);   // Rechts-Klick-Menü auf Import-Entwurf {x,y,id}
@@ -2820,12 +2825,56 @@ function App({session}) {
 
   const renderItems = (items, updFn, delFn, moveFn, folderPath, recurFn, editFn, rangeFn, srcKey, hideRecur, kind, sums, applyFn, addCtx, addLabel, addHeading) => {
     const kindEff = kind || (folderPath && folderPath[folderPath.length-1]==='Einnahmen' ? 'ein' : 'aus');
-    const shown = (items||[]).filter(it=>activeInMonth(it, yr, mo));
+    const kq=konSearch.trim().toLowerCase();
+    const useKonFilter = !!srcKey; // Konten-Listen (mit srcKey) bekommen Suche+Filter
+    const shown = (items||[]).filter(it=>activeInMonth(it, yr, mo)).filter(it=>{
+      if(!useKonFilter) return true;
+      if(konTyp==='wied' && !it.recurring) return false;
+      if(konTyp==='einmalig' && it.recurring) return false;
+      const done=(it.status==='bezahlt'||it.status==='abgebucht');
+      if(konStatus==='offen' && done) return false;
+      if(konStatus==='erledigt' && !done) return false;
+      if(konCat && (it.category||'')!==konCat) return false;
+      if(kq){ const hay=((it.name||'')+' '+(it.belegnr||'')+' '+(it.amount!=null?it.amount:'')+' '+(it.note||'')+' '+(it.category||'')).toLowerCase(); if(!hay.includes(kq)) return false; }
+      return true;
+    });
+    const konFilterCount = (konTyp!=='alle'?1:0)+(konStatus!=='alle'?1:0)+(konCat?1:0);
     const inSel = srcKey && selKey===srcKey;
     const shownIds = shown.map(i=>i.id);
     const allSel = shownIds.length>0 && selIds.length===shownIds.length;
     return (
       <>
+        {useKonFilter && !inSel && (
+          <div style={{position:'relative',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
+            <div style={{flex:1,minWidth:170,display:'flex',alignItems:'center',gap:9,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,padding:'10px 13px'}}>
+              <Ic p={P.search} sz={15} col={C.mut}/>
+              <input value={konSearch} onChange={e=>setKonSearch(e.target.value)} placeholder="Suchen: Name, Beleg-Nr, Betrag…" style={{flex:1,minWidth:0,background:'none',border:'none',outline:'none',color:C.txt,fontSize:14,fontFamily:'inherit'}}/>
+              {konSearch && <button onClick={()=>setKonSearch('')} title="Leeren" style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>×</button>}
+            </div>
+            {addCtx && <button onClick={()=>openCapture({...addCtx, recurring: konTyp==='wied'?true:addCtx.recurring})} style={{display:'inline-flex',alignItems:'center',gap:6,background:C.pri,color:C.priTxt,border:'none',borderRadius:11,padding:'10px 15px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={14} col={C.priTxt}/> Hinzufügen</button>}
+            <button onClick={()=>setKonFilterOpen(o=>!o)} title="Filter" style={{position:'relative',display:'inline-flex',alignItems:'center',gap:6,background:(konFilterCount||konFilterOpen)?hexA(secAccent,0.16):C.surf2,border:'1px solid '+((konFilterCount||konFilterOpen)?hexA(secAccent,0.45):C.bdr),color:(konFilterCount||konFilterOpen)?secAccent:C.sub,borderRadius:11,padding:'10px 13px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.filter} sz={15} col={(konFilterCount||konFilterOpen)?secAccent:C.sub}/>{konFilterCount>0&&<span style={{fontSize:11,fontWeight:800}}>{konFilterCount}</span>}</button>
+            {konFilterOpen && (
+              <div onClick={()=>setKonFilterOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}>
+                <div onClick={e=>e.stopPropagation()} style={{position:'absolute',right:0,top:0,marginTop:0}}/>
+              </div>
+            )}
+            {konFilterOpen && (
+              <div style={{position:'absolute',right:0,top:'100%',marginTop:8,width:260,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:14,boxShadow:'0 14px 36px rgba(0,0,0,0.55)',zIndex:85}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:7,letterSpacing:'0.03em'}}>TYP</div>
+                <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
+                  {[['alle','Alle'],['einmalig','Einmalig'],['wied','Wiederkehrend']].map(([k,l])=>{ const on=konTyp===k; return <button key={k} onClick={()=>setKonTyp(k)} style={{background:on?secAccent:C.surf2,color:on?'#0A0A0A':C.sub,border:'1px solid '+(on?secAccent:C.bdr),borderRadius:8,padding:'6px 11px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>; })}
+                </div>
+                <div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:7,letterSpacing:'0.03em'}}>STATUS</div>
+                <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
+                  {[['alle','Alle'],['offen','Offen'],['erledigt','Erledigt']].map(([k,l])=>{ const on=konStatus===k; return <button key={k} onClick={()=>setKonStatus(k)} style={{background:on?secAccent:C.surf2,color:on?'#0A0A0A':C.sub,border:'1px solid '+(on?secAccent:C.bdr),borderRadius:8,padding:'6px 11px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>; })}
+                </div>
+                <div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:7,letterSpacing:'0.03em'}}>KATEGORIE</div>
+                <select value={konCat} onChange={e=>setKonCat(e.target.value)} style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:9,color:C.txt,padding:'9px 11px',fontSize:13,outline:'none',fontFamily:'inherit',cursor:'pointer'}}><option value="">Alle Kategorien</option>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
+                {konFilterCount>0 && <button onClick={()=>{setKonTyp('alle');setKonStatus('alle');setKonCat('');}} style={{width:'100%',marginTop:12,background:'none',border:'1px solid '+C.bdr,color:C.sub,borderRadius:9,padding:'8px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Filter zurücksetzen</button>}
+              </div>
+            )}
+          </div>
+        )}
         {(srcKey || addCtx) && (
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:12,minHeight:28}}>
             {!inSel && addHeading && (
@@ -2837,7 +2886,7 @@ function App({session}) {
                 <span style={{display:'flex',alignItems:'center',gap:6,color:C.sub}}><span style={{width:8,height:8,borderRadius:'50%',background:'#FFB37A',display:'inline-block'}}/>Ausgaben <b style={{color:C.txt,...NUM}}>{fmtN(sums.exp)}</b></span>
               </div>
             )}
-            {!inSel && addCtx && (
+            {!inSel && addCtx && !useKonFilter && (
               <button onClick={()=>openCapture(addCtx)} style={{display:'inline-flex',alignItems:'center',gap:6,marginLeft:(sums||addHeading)?undefined:'auto',background:C.pri,color:C.priTxt,border:'none',borderRadius:9,padding:'7px 14px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.plus||P.up} sz={14} col={C.priTxt}/> {addLabel||'Hinzufügen'}</button>
             )}
             {!inSel && srcKey && shown.length>0 && (
@@ -3219,13 +3268,13 @@ function App({session}) {
               {tab==='quellen' && <div style={{height:10}}/>}
 
               {/* Toggle */}
-              <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben'],['wied','Wiederkehrend'],['inserate','Inserate']]} value={immoView} onChange={setImmoView} /></div>
+              <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben'],['inserate','Inserate']]} value={immoView} onChange={setImmoView} /></div>
 
               {immoView==='einnahmen' && (
                 <div style={SC}>
                   {futureMonth && <div style={{fontSize:12,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.22)',borderRadius:8,padding:'8px 11px',marginBottom:12}}>Dieser Monat hat noch nicht begonnen.</div>}
                   {renderItems(
-                    (pd.einnahmen||[]).filter(i=>!i.recurring),
+                    (pd.einnahmen||[]),
                     (id,fld,val)=>updPropSub(sp,'einnahmen',id,fld,val),
                     (id,all)=>delPropSub(sp,'einnahmen',id,all),
                     (id,dir)=>movePropSub(sp,'einnahmen',id,dir),
@@ -3238,7 +3287,7 @@ function App({session}) {
               {immoView==='ausgaben' && (
                 <div style={SC}>
                   {renderItems(
-                    (pd.expenses||[]).filter(i=>!i.recurring),
+                    (pd.expenses||[]),
                     (id,fld,val)=>updPropSub(sp,'expenses',id,fld,val),
                     (id,all)=>delPropSub(sp,'expenses',id,all),
                     (id,dir)=>movePropSub(sp,'expenses',id,dir),
@@ -3330,12 +3379,12 @@ function App({session}) {
             )}
             {tab==='quellen' && <div style={{height:10}}/>}
             {/* Toggle: Einnahmen / Ausgaben / Wiederkehrend */}
-            <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben'],['wied','Wiederkehrend']]} value={unterTab} onChange={setUnterTab} /></div>
+            <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben']]} value={unterTab} onChange={setUnterTab} /></div>
 
             {unterTab==='einnahmen' && (
               <div style={SC}>
                 {renderItems(
-                  (md.unternehmen?.clients||[]).filter(i=>!i.recurring),
+                  (md.unternehmen?.clients||[]),
                   (id,fld,val)=>updSec('unternehmen','clients',id,fld,val),
                   (id,all)=>delSec('unternehmen','clients',id,all),
                   (id,dir)=>moveSec('unternehmen','clients',id,dir),
@@ -3348,7 +3397,7 @@ function App({session}) {
             {unterTab==='ausgaben' && (
               <div style={SC}>
                 {renderItems(
-                  (md.unternehmen?.items||[]).filter(i=>!i.recurring),
+                  (md.unternehmen?.items||[]),
                   (id,fld,val)=>updSec('unternehmen','items',id,fld,val),
                   (id,all)=>delSec('unternehmen','items',id,all),
                   (id,dir)=>moveSec('unternehmen','items',id,dir),
@@ -3402,12 +3451,12 @@ function App({session}) {
               </div>
             )}
             {tab==='quellen' && <div style={{height:10}}/>}
-            <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben'],['wied','Wiederkehrend']]} value={privTab} onChange={setPrivTab} /></div>
+            <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben']]} value={privTab} onChange={setPrivTab} /></div>
 
             {privTab==='einnahmen' && (
               <div style={SC}>
                 {renderItems(
-                  (md.privat?.einnahmen||[]).filter(i=>!i.recurring),
+                  (md.privat?.einnahmen||[]),
                   (id,fld,val)=>updSec('privat','einnahmen',id,fld,val),
                   (id,all)=>delSec('privat','einnahmen',id,all),
                   (id,dir)=>moveSec('privat','einnahmen',id,dir),
@@ -3420,7 +3469,7 @@ function App({session}) {
             {privTab==='ausgaben' && (
               <div style={SC}>
                 {renderItems(
-                  (md.privat?.items||[]).filter(i=>!i.recurring),
+                  (md.privat?.items||[]),
                   (id,fld,val)=>updSec('privat','items',id,fld,val),
                   (id,all)=>delSec('privat','items',id,all),
                   (id,dir)=>moveSec('privat','items',id,dir),
