@@ -356,6 +356,7 @@ const P = {
   pin:   'M9 4h6l-1 7 4 3v2H6v-2l4-3z M12 16v4',
   camera:'M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z M12 17a4 4 0 100-8 4 4 0 000 8z',
   layers:'M12 2l9 5-9 5-9-5z M3 12l9 5 9-5 M3 17l9 5 9-5',
+  filter:'M22 3H2l8 9.46V19l4 2v-8.54z',
 };
 
 /* ══ Icon component ══ */
@@ -465,7 +466,7 @@ function TargetPicker({title, moveTargets, curY, curM, confirmLabel, onClose, on
 }
 
 /* ══ Item row (Name + Betrag + kompaktes ⋮-Dropdown) ══ */
-function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, onUpdate, onDelete, onApplyAll, onTaxTip, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, askChoice, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur, recurInfoFn, onEditCapture}) {
+function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, onUpdate, onDelete, onApplyAll, onTaxTip, folderPath, onUploadFile, onOpenFile, onDeleteFile, onToggleRecurring, onSetRange, curY, curM, askConfirm, askChoice, onEditDetails, moveTargets, onMoveItem, selMode, selected, onToggleSelect, onMoveUp, onMoveDown, isFirst, isLast, hideRecur, recurInfoFn, onEditCapture, onEnterSel}) {
   const acc = accent||C.pri;
   const dateLabel = kind==='aus' ? 'Abbuchungsdatum' : kind==='ein' ? 'Eingangsdatum' : 'Datum';
   // Löschen anfragen – bei wiederkehrenden Posten: Monat vs. alle Monate
@@ -770,6 +771,7 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
             )}
             {onMoveUp && !isFirst && mItem(P.up,'Nach oben',()=>{setMenu(null);onMoveUp();})}
             {onMoveDown && !isLast && mItem(P.down,'Nach unten',()=>{setMenu(null);onMoveDown();})}
+            {onEnterSel && mItem(P.check,'Auswählen',()=>{setMenu(null);onEnterSel(item.id);})}
             <div style={{height:1,background:C.sep,margin:'4px 8px'}}/>
             {mItem(P.trash,'Löschen',()=>{ setMenu(null); requestDelete(); },C.red)}
           </div>
@@ -881,7 +883,7 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
 }
 
 /* ══ Sortier-/Auswahl-Liste (Drag & Drop + Mehrfachauswahl) ══ */
-function ItemList({items, srcKey, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, updFn, delFn, recurFn, rangeFn, editFn, applyFn, taxTipFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, askChoice, curY, curM, hideRecur, recurInfoFn, onEditCaptureFn}) {
+function ItemList({items, srcKey, accent, kind, onExtract, custList, recurInvFn, onMakeInvoice, updFn, delFn, recurFn, rangeFn, editFn, applyFn, taxTipFn, folderPath, moveTargets, moveItemFn, moveFn, selMode, selIds, onToggleSel, onOpenFile, onUploadFile, onDeleteFile, askConfirm, askChoice, curY, curM, hideRecur, recurInfoFn, onEditCaptureFn, onEnterSel}) {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:10}}>
         {items.map((item,idx)=>(
@@ -902,6 +904,7 @@ function ItemList({items, srcKey, accent, kind, onExtract, custList, recurInvFn,
             isFirst={idx===0} isLast={idx===items.length-1}
             hideRecur={hideRecur} recurInfoFn={recurInfoFn}
             onEditCapture={onEditCaptureFn?(()=>onEditCaptureFn({_ber:srcKey,_y:curY,_m:curM,_kind:kind,id:item.id}, item)):null}
+            onEnterSel={onEnterSel}
           />
         ))}
     </div>
@@ -1205,6 +1208,7 @@ function App({session}) {
   const [tab,  setTab]  = useState('quellen');
   const [sonstOpen,setSonstOpen]= useState(false);
   const [gesamtHover,setGesamtHover]= useState(false);
+  const [gesamtOpen,setGesamtOpen]= useState(false);
   const [openAcct,setOpenAcct]= useState('unter');    // Konto-Accordion auf Startseite (Unternehmen standardmäßig offen)
   const [invEdit,setInvEdit]= useState(null);      // Rechnung im Editor (Entwurf)
   const [custEdit,setCustEdit]= useState(null);    // Kunde im Editor
@@ -2790,7 +2794,7 @@ function App({session}) {
 
   /* Sidebar nav */
   const NAV = [
-    {id:'quellen',label:'Konten',       icon:P.grid},
+    {id:'quellen',label:'Konten',       icon:P.grid, onClick:()=>{setTab('quellen');setOpenAcct(null);}},
     {id:'belege', label:'Belege',       icon:P.clip},
     {id:'rechnung',label:'Rechnungen',  icon:P.receipt},
     {id:'kontoauszug',label:'Kontoauszug', icon:P.bank, onClick:()=>{setTab('import');setImportTab('bank');}, active:(tab==='import'&&importTab==='bank')},
@@ -2889,9 +2893,6 @@ function App({session}) {
             {!inSel && addCtx && !useKonFilter && (
               <button onClick={()=>openCapture(addCtx)} style={{display:'inline-flex',alignItems:'center',gap:6,marginLeft:(sums||addHeading)?undefined:'auto',background:C.pri,color:C.priTxt,border:'none',borderRadius:9,padding:'7px 14px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.plus||P.up} sz={14} col={C.priTxt}/> {addLabel||'Hinzufügen'}</button>
             )}
-            {!inSel && srcKey && shown.length>0 && (
-              <button onClick={()=>{setSelKey(srcKey);setSelIds([]);}} style={{...toolBtn,padding:'7px 14px',fontSize:13,fontWeight:600,borderRadius:9,marginLeft:addCtx?undefined:(sums?undefined:'auto')}}>Auswählen</button>
-            )}
             {inSel && (<>
               <span style={{fontSize:12,color:C.sub,marginRight:'auto'}}>{selIds.length} ausgewählt</span>
               <button onClick={()=>setSelIds(allSel?[]:shownIds)} style={toolBtn}>{allSel?'Keine':'Alle'}</button>
@@ -2909,7 +2910,8 @@ function App({session}) {
           moveFn={moveFn}
           selMode={inSel} selIds={selIds} onToggleSel={toggleSel}
           onOpenFile={openFile} onUploadFile={uploadFile} onDeleteFile={deleteFile}
-          askConfirm={askConfirm} askChoice={askChoice} curY={yr} curM={mo} hideRecur={hideRecur} />
+          askConfirm={askConfirm} askChoice={askChoice} curY={yr} curM={mo} hideRecur={hideRecur}
+          onEnterSel={srcKey?(id=>{setSelKey(srcKey);setSelIds([id]);}):null} />
       </>
     );
   };
@@ -2944,7 +2946,7 @@ function App({session}) {
         position:'sticky',top:0,zIndex:40,
       }}>
         {/* Logo — Klick = Konten */}
-        <button onClick={()=>setTab('quellen')} style={{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:isMobile?18:23,fontWeight:800,color:C.txt,letterSpacing:'-0.03em',flexShrink:0,padding:0}}>SP Finanz</button>
+        <button onClick={()=>{setTab('quellen');setOpenAcct('unter');}} style={{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:isMobile?18:23,fontWeight:800,color:C.txt,letterSpacing:'-0.03em',flexShrink:0,padding:0}}>SP Finanz</button>
 
         {/* Nav items — rechtsbündig, nur Desktop */}
         {!isMobile && (
@@ -3095,48 +3097,59 @@ function App({session}) {
 
           {/* ══ ÜBERSICHT ══ */}
           {/* ══ QUELLEN (Konten-Karten, N26-Stil) ══ */}
-          {tab==='quellen' && (()=>{
+          {tab==='quellen' && !openAcct && (()=>{
             const ICONS={house:P.house,bed:P.bed,brief:P.brief,prson:P.prson,grid:P.grid,cal:P.cal,doc:P.doc};
             const iconFor=(key,def)=>ICONS[(names.propIcon&&names.propIcon[key])||def]||P.house;
             const konten=[
-              {key:'unter',kind:'tab',tab:'unter',name:names.unternehmen,onName:e=>setNames(n=>({...n,unternehmen:e.target.value})),icon:iconFor('unter','brief'),inc:tot.unterInc,exp:tot.unterExp,ci:3},
-              ...PROPS.map((p,i)=>{ const r=calcProp(md.props?.[p],yr,mo); return {key:p,kind:'prop',pid:p,name:names[p],onName:e=>setNames(n=>({...n,[p]:e.target.value})),icon:iconFor(p,'house'),inc:r.netto,exp:r.exp,ci:i}; }),
-              {key:'privat',kind:'tab',tab:'privat',name:(names.privatLabel||'Privat'),onName:e=>setNames(n=>({...n,privatLabel:e.target.value})),icon:iconFor('privat','prson'),inc:sumItems(md.privat?.einnahmen,yr,mo),exp:tot.privatExp,ci:4},
+              {key:'unter',kind:'tab',tab:'unter',name:names.unternehmen,icon:iconFor('unter','brief'),inc:tot.unterInc,exp:tot.unterExp},
+              ...PROPS.map((p,i)=>{ const r=calcProp(md.props?.[p],yr,mo); return {key:p,kind:'prop',pid:p,name:names[p],icon:iconFor(p,'house'),inc:r.netto,exp:r.exp}; }),
+              {key:'privat',kind:'tab',tab:'privat',name:(names.privatLabel||'Privat'),icon:iconFor('privat','prson'),inc:sumItems(md.privat?.einnahmen,yr,mo),exp:tot.privatExp},
             ];
-            const scrollBy=(dir)=>{ const el=quellenScrollRef.current; if(el) el.scrollBy({left:dir*el.clientWidth*0.92,behavior:'smooth'}); };
-            const arrowBtn={width:34,height:34,borderRadius:'50%',background:C.surf,border:'1px solid '+C.bdrM,color:C.txt,cursor:'pointer',fontFamily:'inherit',fontSize:16,lineHeight:1,boxShadow:'0 4px 14px rgba(0,0,0,0.4)'};
             return (
               <>
                 {/* Gesamt aller Quellen */}
                 <div style={{padding:'2px 0 20px'}}>
-                  <div onMouseEnter={()=>setGesamtHover(true)} onMouseLeave={()=>setGesamtHover(false)} style={{display:'inline-block'}}>
-                    <div style={{fontSize:13,fontWeight:600,color:C.sub,letterSpacing:'0.02em',marginBottom:7}}>Gesamtvermögen · alle Quellen</div>
-                    <div style={{display:'flex',alignItems:'baseline',gap:18,flexWrap:'wrap'}}>
-                      <div style={{fontSize:isMobile?40:50,fontWeight:800,color:tot.net>=0?C.grn:C.txt,...NUM,lineHeight:1}}>{tot.net>=0?'+':''}{fmt(tot.net)}</div>
-                      <div style={{display:'flex',gap:18,fontSize:13,color:C.sub}}>
-                        <span style={{display:'flex',alignItems:'center',gap:6}}><span style={{width:8,height:8,borderRadius:'50%',background:C.grn,display:'inline-block'}}/>Einnahmen <b style={{color:C.txt,...NUM}}>{fmt(tot.totalInc)}</b></span>
-                        <span style={{display:'flex',alignItems:'center',gap:6}}><span style={{width:8,height:8,borderRadius:'50%',background:'#FFB37A',display:'inline-block'}}/>Ausgaben <b style={{color:C.txt,...NUM}}>{fmtN(tot.totalExp)}</b></span>
+                  <div style={{display:'inline-block',position:'relative'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:7}}>
+                      <span style={{fontSize:13,fontWeight:600,color:C.sub,letterSpacing:'0.02em'}}>Gesamtvermögen</span>
+                      <button onClick={()=>setGesamtOpen(o=>!o)} style={{background:'none',border:'none',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4,color:C.sub,fontSize:13,fontWeight:600,fontFamily:'inherit',padding:0}}>
+                        <span>alle Quellen</span>
+                        <span style={{display:'inline-flex',transition:'transform .16s',transform:gesamtOpen?'rotate(180deg)':'none'}}><Ic p={P.down} sz={12} col={C.sub}/></span>
+                      </button>
+                    </div>
+                    <div style={{fontSize:isMobile?40:50,fontWeight:800,color:tot.net>=0?C.grn:C.txt,...NUM,lineHeight:1}}>{tot.net>=0?'+':''}{fmt(tot.net)}</div>
+                    {gesamtOpen && (<>
+                      <div onClick={()=>setGesamtOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
+                      <div style={{position:'absolute',left:0,top:'100%',marginTop:10,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:'16px 20px',boxShadow:'0 14px 36px rgba(0,0,0,0.55)',zIndex:85,minWidth:240}}>
+                        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                          <span style={{width:10,height:10,borderRadius:'50%',background:C.grn,display:'inline-block'}}/>
+                          <span style={{fontSize:14,color:C.sub,flex:1}}>Einnahmen</span>
+                          <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM}}>{fmt(tot.totalInc)}</span>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:10}}>
+                          <span style={{width:10,height:10,borderRadius:'50%',background:'#FFB37A',display:'inline-block'}}/>
+                          <span style={{fontSize:14,color:C.sub,flex:1}}>Ausgaben</span>
+                          <span style={{fontSize:15,fontWeight:700,color:C.txt,...NUM}}>{fmtN(tot.totalExp)}</span>
+                        </div>
+                      </div>
+                    </>)}
+                  </div>
+                </div>
+                {/* Konto-Grid — quadratische Karten */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'repeat(2,1fr)':'repeat(3,1fr)',gap:14}}>
+                  {konten.map(k=>{ const erg=k.inc-k.exp; const c=acol(k.key); const goDetail=()=>{ if(k.kind==='prop')setSp(k.pid); setOpenAcct(k.key); }; return (
+                    <div key={k.key} onClick={goDetail} style={{background:C.surf2,border:'1px solid '+C.bdr,borderRadius:18,padding:isMobile?'18px 16px':'22px 22px',cursor:'pointer',display:'flex',flexDirection:'column',gap:14,transition:'border-color .14s'}}>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                        <div style={{width:44,height:44,borderRadius:13,background:c,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Ic p={k.icon} sz={20} col={'#0A0A0A'}/></div>
+                        <button onClick={e=>{e.stopPropagation(); setIconPick(k.key);}} title="Konto bearbeiten" style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,padding:4}}>⋮</button>
+                      </div>
+                      <div>
+                        <div style={{fontSize:17,fontWeight:600,color:C.txt,marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.name}</div>
+                        <div style={{fontSize:15,fontWeight:500,color:C.sub,...NUM}}>{fmt(erg)}</div>
                       </div>
                     </div>
-                  </div>
+                  ); })}
                 </div>
-                {/* Konto-Slider — Karten bündig mit Gesamtvermögen, Pfeile absolut außerhalb */}
-                <div style={{position:'relative'}}>
-                  <button onClick={()=>scrollBy(-1)} title="Zurück" style={{...arrowBtn,position:'absolute',left:-46,top:'50%',transform:'translateY(-50%)',zIndex:5}}>‹</button>
-                  <button onClick={()=>scrollBy(1)} title="Weiter" style={{...arrowBtn,position:'absolute',right:-46,top:'50%',transform:'translateY(-50%)',zIndex:5}}>›</button>
-                  <div ref={quellenScrollRef} style={{display:'flex',gap:14,overflowX:'auto',scrollbarWidth:'none',scrollSnapType:'x mandatory',paddingBottom:4}}>
-                    {konten.map(k=>{ const erg=k.inc-k.exp; const c=acol(k.key), tint=hexA(c,0.13), bd=hexA(c,0.4); const open=openAcct===k.key; const toggle=()=>{ if(open){ setOpenAcct(null); } else { if(k.kind==='prop')setSp(k.pid); setOpenAcct(k.key); } }; return (
-                      <div key={k.key} onClick={toggle} style={{flexShrink:0,width:isMobile?'82%':'calc((100% - 28px)/3)',scrollSnapAlign:'start',background:open?tint:C.surf2,border:'1px solid '+(open?c:'transparent'),borderRadius:18,padding:'18px 20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:16,fontWeight:500,color:C.sub,marginBottom:7,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.name}</div>
-                          <div style={{fontSize:27,fontWeight:800,color:C.txt,...NUM,lineHeight:1}}>{fmt(erg)}</div>
-                        </div>
-                        <button onClick={e=>{e.stopPropagation(); setIconPick(k.key);}} title="Konto bearbeiten" style={{width:46,height:46,borderRadius:13,background:c,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Ic p={k.icon} sz={22} col={'#0A0A0A'}/></button>
-                      </div>
-                    ); })}
-                  </div>
-                </div>
-
               </>
             );
           })()}
@@ -3258,14 +3271,11 @@ function App({session}) {
             const picon=(pid)=>ICONS[(names.propIcon&&names.propIcon[pid])||'house']||P.house;
             return (
             <>
-              {tab!=='quellen' && (<>
-                <button onClick={()=>setTab('quellen')} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontFamily:'inherit',fontSize:13,padding:0,marginBottom:8,display:'flex',alignItems:'center',gap:4}}>‹ Konten</button>
-                <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
-                  <div style={{width:42,height:42,borderRadius:13,flexShrink:0,background:pcol(sp),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={picon(sp)} sz={20} col={'#0A0A0A'}/></div>
-                  <div style={{fontSize:28,fontWeight:800,color:C.txt,letterSpacing:'-0.03em',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{names[sp]}</div>
-                </div>
-              </>)}
-              {tab==='quellen' && <div style={{height:10}}/>}
+              <button onClick={()=>{setOpenAcct(null);if(tab!=='quellen')setTab('quellen');}} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontFamily:'inherit',fontSize:13,padding:0,marginBottom:8,display:'flex',alignItems:'center',gap:4}}>‹ Konten</button>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+                <div style={{width:42,height:42,borderRadius:13,flexShrink:0,background:pcol(sp),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={picon(sp)} sz={20} col={'#0A0A0A'}/></div>
+                <div style={{fontSize:28,fontWeight:800,color:C.txt,letterSpacing:'-0.03em',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{names[sp]}</div>
+              </div>
 
               {/* Toggle */}
               <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben'],['inserate','Inserate']]} value={immoView} onChange={setImmoView} /></div>
@@ -3370,14 +3380,11 @@ function App({session}) {
 
           {/* ══ UNTERNEHMEN ══ */}
           {(tab==='unter' || (tab==='quellen' && openAcct==='unter')) && <>
-            {tab!=='quellen' && (
-              <div style={{marginBottom:24}}>
-                <button onClick={()=>setTab('quellen')} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontFamily:'inherit',fontSize:13,padding:0,marginBottom:8}}>‹ Konten</button>
-                <div style={{fontSize:28,fontWeight:800,color:C.txt,letterSpacing:'-0.03em'}}>{names.unternehmen}</div>
-                <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
-              </div>
-            )}
-            {tab==='quellen' && <div style={{height:10}}/>}
+            <div style={{marginBottom:24}}>
+              <button onClick={()=>{setOpenAcct(null);if(tab!=='quellen')setTab('quellen');}} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontFamily:'inherit',fontSize:13,padding:0,marginBottom:8}}>‹ Konten</button>
+              <div style={{fontSize:28,fontWeight:800,color:C.txt,letterSpacing:'-0.03em'}}>{names.unternehmen}</div>
+              <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
+            </div>
             {/* Toggle: Einnahmen / Ausgaben / Wiederkehrend */}
             <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben']]} value={unterTab} onChange={setUnterTab} /></div>
 
@@ -3443,14 +3450,11 @@ function App({session}) {
 
           {/* ══ PRIVAT ══ */}
           {(tab==='privat' || (tab==='quellen' && openAcct==='privat')) && <>
-            {tab!=='quellen' && (
-              <div style={{marginBottom:18}}>
-                <button onClick={()=>setTab('quellen')} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontFamily:'inherit',fontSize:13,padding:0,marginBottom:8}}>‹ Konten</button>
-                <div style={{fontSize:28,fontWeight:800,letterSpacing:'-0.03em'}}>{names.privatLabel||'Privat'}</div>
-                <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
-              </div>
-            )}
-            {tab==='quellen' && <div style={{height:10}}/>}
+            <div style={{marginBottom:18}}>
+              <button onClick={()=>{setOpenAcct(null);if(tab!=='quellen')setTab('quellen');}} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontFamily:'inherit',fontSize:13,padding:0,marginBottom:8}}>‹ Konten</button>
+              <div style={{fontSize:28,fontWeight:800,letterSpacing:'-0.03em'}}>{names.privatLabel||'Privat'}</div>
+              <div style={{fontSize:13,color:C.sub}}>{MONTHS[mo]} {yr}</div>
+            </div>
             <div style={{marginBottom:18}}><PillTabs tabs={[['einnahmen','Einnahmen'],['ausgaben','Ausgaben']]} value={privTab} onChange={setPrivTab} /></div>
 
             {privTab==='einnahmen' && (
