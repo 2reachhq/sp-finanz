@@ -280,14 +280,16 @@ const calcProp = (prop, y, m) => {
   return {netto,exp,gewinn:netto-exp};
 };
 const calcTotals = (md, y, m) => {
-  if(!md) return {immoInc:0,immoExp:0,unterInc:0,unterExp:0,privatExp:0,totalInc:0,totalExp:0,net:0};
-  let immoInc=0, immoExp=0;
-  PROPS.forEach(p=>{const r=calcProp(md.props?.[p], y, m);immoInc+=r.netto;immoExp+=r.exp;});
+  if(!md) return {immoInc:0,immoExp:0,unterInc:0,unterExp:0,privatExp:0,totalInc:0,totalExp:0,net:0,acct:{}};
+  let immoInc=0, immoExp=0; const acct={};
+  PROPS.forEach(p=>{const r=calcProp(md.props?.[p], y, m);immoInc+=r.netto;immoExp+=r.exp; acct[p]={inc:r.netto,exp:r.exp};});
   const unterInc  = sumItems(md.unternehmen?.clients, y, m);
   const unterExp  = sumItems(md.unternehmen?.items, y, m);
   const privatExp = sumItems(md.privat?.items, y, m);
+  const privatInc = sumItems(md.privat?.einnahmen, y, m);
+  acct.unter={inc:unterInc,exp:unterExp}; acct.privat={inc:privatInc,exp:privatExp};
   const totalInc=immoInc+unterInc, totalExp=immoExp+unterExp+privatExp;
-  return {immoInc,immoExp,unterInc,unterExp,privatExp,totalInc,totalExp,net:totalInc-totalExp};
+  return {immoInc,immoExp,unterInc,unterExp,privatExp,totalInc,totalExp,net:totalInc-totalExp,acct};
 };
 const estESt = g => {
   if(g<=11784)  return 0;
@@ -1226,8 +1228,14 @@ function App({session}) {
   const [draftSearch,setDraftSearch]= useState(''); // Kontoauszug-Suche
   const [draftFilter,setDraftFilter]= useState('alle'); // Kontoauszug-Statusfilter
   const [draftDir,setDraftDir]= useState('alle'); // Kontoauszug-Richtungsfilter: 'alle'|'ein'|'aus'
-  const [invDomain,setInvDomain]= useState('unter'); // Rechnungen/Kunden: Unternehmen vs. Immobilien
+  const [invDomain,setInvDomain]= useState('alle'); // Rechnungen/Kunden: Konten-Filter ('alle' | Konto-Key)
   const [invKind,setInvKind]= useState('einzel');    // Rechnungsart: einzel | wied
+  const [invFilterOpen,setInvFilterOpen]= useState(false); // Rechnungen-Filter-Popup
+  const [invStatusF,setInvStatusF]= useState('alle');      // Rechnungen-Status-Filter: alle|offen|bezahlt
+  const [belFilterOpen,setBelFilterOpen]= useState(false); // Belege-Filter-Popup
+  const [belKindF,setBelKindF]= useState('alle');          // Belege-Art: alle|einmalig|wied
+  const [belStatusF,setBelStatusF]= useState('alle');      // Belege-Status: alle|offen|erledigt
+  const [belAcct,setBelAcct]= useState('alle');            // Belege-Konten-Filter ('alle' | Konto-Key)
   const [invRecurDlg,setInvRecurDlg]= useState(false); // „Wiederkehrend"-Dialog (Start/Ende/Intervall) im Rechnungs-Editor
   const [recInvEdit,setRecInvEdit]= useState(null);  // Editor wiederkehrende Rechnung
   const [yrView,setYrView]= useState('monat');       // Jahres- vs Monatsübersicht (Analytics, Standard=Monat)
@@ -2152,8 +2160,8 @@ function App({session}) {
   const companyFor = (dom)=> dom==='immo' ? companyImmo : PROPS.includes(dom) ? (data['company_'+dom]||{}) : dom==='privat' ? (data.companyPrivat||{}) : company;
   const customers = data.customers || [];
   const invoices = data.invoices || [];
-  const customersFor = (dom)=> customers.filter(c=>(c.domain||'unter')===dom);
-  const invoicesFor = (dom)=> invoices.filter(i=>(i.domain||'unter')===dom);
+  const customersFor = (dom)=> (!dom||dom==='alle') ? customers.slice() : customers.filter(c=>normAcct(c.domain)===normAcct(dom));
+  const invoicesFor = (dom)=> (!dom||dom==='alle') ? invoices.slice() : invoices.filter(i=>normAcct(i.domain)===normAcct(dom));
   const setCompany = patch => setData(prev=>({...prev, company:{...(prev.company||{}), ...patch}}));
   const setCompanyFor = (dom,patch)=> dom==='immo'
     ? setData(prev=>({...prev, companyImmo:{...(prev.companyImmo||{}), ...patch}}))
@@ -2166,9 +2174,9 @@ function App({session}) {
   const delCustomer = (id) => setData(prev=>({...prev, customers:(prev.customers||[]).filter(c=>c.id!==id)}));
   const invTotals = (items)=>{ let net=0,tax=0; (items||[]).forEach(it=>{ const n=num(it.qty||1)*num(it.price); net+=n; tax+=n*(num(it.mwst!=null?it.mwst:19)/100); }); return {net, tax, gross:net+tax}; };
   const nextInvNo = ()=>{ const y=new Date().getFullYear(); const n=(data.invoices||[]).filter(i=>String(i.number||'').startsWith(String(y))).length+1; return y+'-'+String(n).padStart(3,'0'); };
-  const nextCustNo = (dom)=>{ const nums=(data.customers||[]).filter(c=>(c.domain||'unter')===(dom||'unter')).map(c=>parseInt(c.custNo,10)).filter(n=>!isNaN(n)); return String(nums.length?Math.max(...nums)+1:1001); };
+  const nextCustNo = (dom)=>{ const dd=normAcct(dom); const nums=(data.customers||[]).filter(c=>normAcct(c.domain)===dd).map(c=>parseInt(c.custNo,10)).filter(n=>!isNaN(n)); return String(nums.length?Math.max(...nums)+1:1001); };
   const defMwstFor = (dom)=>{ const co=companyFor(dom||'unter'); return co&&co.defMwst!=null&&co.defMwst!=='' ? num(co.defMwst) : 19; };
-  const newInvoice = (dom)=>({ id:uid(), number:nextInvNo(), domain:dom||'unter', customerId:'', custName:'', custAddress:'', custEmail:'', saveCust:true, account:'', date:new Date().toISOString().slice(0,10), due:'', items:[{desc:'',qty:1,price:0,mwst:defMwstFor(dom)}], note:'' });
+  const newInvoice = (dom)=>{ const acc=(dom&&dom!=='alle')?normAcct(dom):'unter'; return { id:uid(), number:nextInvNo(), domain:acc, customerId:'', custName:'', custAddress:'', custEmail:'', saveCust:true, account:'', date:new Date().toISOString().slice(0,10), due:'', items:[{desc:'',qty:1,price:0,mwst:defMwstFor(acc)}], note:'' }; };
   const invCustomer = (inv)=>{ const c=customers.find(x=>x.id===inv.customerId); if(c) return c; return {name:inv.custName||'', address:inv.custAddress||'', email:inv.custEmail||'', firstName:inv.firstName||'', lastName:inv.lastName||'', company:inv.company||'', anrede:inv.anrede||''}; };
   // Steuerberater-KI: Frage zur aktuellen Rechnung beantworten
   const askInvoiceTax = async (inv, q)=>{ const qq=String(q||'').trim(); if(!qq){ setToast('Bitte eine Frage eingeben.'); return; } setInvTaxAsk({q:qq, answer:'', busy:true}); try{ const tot=invTotals(inv.items); const cust=invCustomer(inv); const sys="Du bist ein deutscher Steuerberater-Assistent (Standort NRW). Beantworte Fragen zur Rechnungsstellung/Abrechnung kurz, konkret, in Klartext (KEIN Markdown, keine Aufzählungszeichen). Schließe mit einem kurzen Satz, dass der Steuerberater final entscheidet."; const usr="Kontext einer Ausgangsrechnung: Kunde "+((cust&&cust.name)||inv.custName||'—')+", Bereich "+((inv.domain||'unter')==='immo'?'Immobilien/Vermietung':'Firma')+", Positionen: "+((inv.items||[]).map(i=>i.desc+' '+fmt(num(i.price)*num(i.qty||1))+' ('+(i.mwst!=null?i.mwst:19)+'% MwSt)').join('; ')||'—')+", Gesamt brutto "+fmt(tot.gross)+". Frage des Nutzers: „"+qq+"\""; const { data:resp, error } = await aiInvoke({ body:{ model:'claude-haiku-4-5', max_tokens:800, system:sys, messages:[{ role:'user', content:[{ type:'text', text:usr }] }] } }); if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||'KI-Fehler'); const t=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||'(keine Antwort)'; setInvTaxAsk({q:qq, answer:t, busy:false}); }catch(e){ setInvTaxAsk({q:qq, answer:'Konnte nicht beantworten: '+(e.message||e), busy:false}); } };
@@ -2264,8 +2272,8 @@ function App({session}) {
   const belYears = ()=>{ const ys=Object.keys(data).filter(k=>/^\d+$/.test(k)).map(Number); if(!ys.includes(yr)) ys.push(yr); return ys.sort((a,b)=>b-a); };
   const belegesLeaf = (ber,y2,m2,kind)=>{ const md=getMD(y2,m2)||{}; const list = ber==='unter' ? (kind==='ein'?md.unternehmen?.clients:md.unternehmen?.items) : ber==='privat' ? (kind==='ein'?md.privat?.einnahmen:md.privat?.items) : (kind==='ein'?md.props?.[ber]?.einnahmen:md.props?.[ber]?.expenses);
     const items=(list||[]).filter(it=>it.filePath||it.fileData).map(it=>({id:it.id,name:it.name||'Beleg',date:it.datum,amount:num(it.amount),recurring:it.recurring,filePath:it.filePath,fileData:it.fileData,fileName:it.fileName,_ber:ber,_y:y2,_m:m2,_kind:kind}));
-    const dom = ber==='unter'?'unter':(ber==='privat'?null:'immo');
-    if(kind==='ein' && dom){ (data.invoices||[]).forEach(iv=>{ if(iv.pdfPath && (iv.domain||'unter')===dom && iv.account===ber){ const dt=new Date(iv.sentDate||iv.date); if(!isNaN(dt)&&dt.getFullYear()===y2&&dt.getMonth()===m2) items.push({id:iv.id,name:'Rechnung '+iv.number,date:iv.sentDate||iv.date,amount:(iv.total||0),filePath:iv.pdfPath,_ber:ber,_y:y2,_m:m2,_kind:kind}); } }); }
+    const dom = ber==='privat'?null:normAcct(ber);
+    if(kind==='ein' && dom){ (data.invoices||[]).forEach(iv=>{ if(iv.pdfPath && normAcct(iv.domain)===dom){ const dt=new Date(iv.sentDate||iv.date); if(!isNaN(dt)&&dt.getFullYear()===y2&&dt.getMonth()===m2) items.push({id:iv.id,name:'Rechnung '+iv.number,date:iv.sentDate||iv.date,amount:(iv.total||0),filePath:iv.pdfPath,_ber:ber,_y:y2,_m:m2,_kind:kind}); } }); }
     return items; };
   const belegesUnder = (p)=>{ const out=[]; const bers=p[0]?[p[0]]:belBerKeys; const yl=belYears(); bers.forEach(ber=>{ const yrs=p[1]!=null?[p[1]]:yl; yrs.forEach(y2=>{ const mos=p[2]!=null?[p[2]]:[0,1,2,3,4,5,6,7,8,9,10,11]; mos.forEach(m2=>{ const kinds=p[3]?[p[3]]:['ein','aus']; kinds.forEach(kind=>{ belegesLeaf(ber,y2,m2,kind).forEach(b=>out.push(b)); }); }); }); }); return out; };
   // Vollständiges Buchungs-Item zu einem Beleg laden (für Detail-Bearbeitung)
@@ -2718,8 +2726,8 @@ function App({session}) {
   const yrSum = Array.from({length:12},(_,i)=>({m:i,fut:isFuture(yr,i),...calcTotals(getMD(yr,i), yr, i)}));
   const yrTot = yrSum.reduce((a,s)=> s.fut?a:({totalInc:a.totalInc+s.totalInc,totalExp:a.totalExp+s.totalExp,net:a.net+s.net,unterInc:a.unterInc+s.unterInc,unterExp:a.unterExp+s.unterExp}),{totalInc:0,totalExp:0,net:0,unterInc:0,unterExp:0});
   /* Gefilterte Summen NUR für die Jahresübersicht-Anzeige (Steuer nutzt weiter yrTot) */
-  const fInc = s => (PROPS.some(p=>yrFilter[p]!==false)?s.immoInc:0)+(yrFilter.unter!==false?s.unterInc:0);
-  const fExp = s => (PROPS.some(p=>yrFilter[p]!==false)?s.immoExp:0)+(yrFilter.unter!==false?s.unterExp:0)+(yrFilter.privat!==false?s.privatExp:0);
+  const fInc = s => ['unter',...PROPS,'privat'].reduce((t,k)=> t + (yrFilter[k]!==false && s.acct && s.acct[k] ? s.acct[k].inc : 0), 0);
+  const fExp = s => ['unter',...PROPS,'privat'].reduce((t,k)=> t + (yrFilter[k]!==false && s.acct && s.acct[k] ? s.acct[k].exp : 0), 0);
   const yrTotF = yrSum.reduce((a,s)=> s.fut?a:{totalInc:a.totalInc+fInc(s),totalExp:a.totalExp+fExp(s),net:a.net+(fInc(s)-fExp(s))},{totalInc:0,totalExp:0,net:0});
   const taxESt   = estESt(Math.max(0,yrTot.net));
   const taxUGwn  = yrTot.unterInc-yrTot.unterExp;
@@ -2852,6 +2860,13 @@ function App({session}) {
   const acol = (key)=> (names.acctColors&&names.acctColors[key]) || acctColor(key);
   const acctNameOf = (key)=> key==='unter' ? (names.unternehmen||'Firma') : key==='privat' ? (names.privatLabel||'Privat') : (names[key]||key);
   const setAcctName = (key,val)=> setNames(n=> key==='unter' ? ({...n,unternehmen:val}) : key==='privat' ? ({...n,privatLabel:val}) : ({...n,[key]:val}));
+  const acctIconOf = (key)=> key==='unter' ? P.brief : key==='privat' ? P.prson : (({house:P.house,bed:P.bed,brief:P.brief,prson:P.prson,grid:P.grid,cal:P.cal,doc:P.doc})[(names.propIcon&&names.propIcon[key])||'house']||P.house);
+  // „Erstellte" Konten (ohne Privat): unter immer, Objekt-Konten nur mit echtem (nicht Default-)Namen
+  const PROP_DEF={p1:'Immobilie 1',p2:'Immobilie 2',p3:'Immobilie 3'};
+  const acctCreated = (k)=> k==='unter' ? true : PROPS.includes(k) ? !!(names[k]&&String(names[k]).trim()&&names[k]!==PROP_DEF[k]) : false;
+  const bizAccts = ['unter',...PROPS].filter(acctCreated);   // echte Konten ohne Privat
+  const showAcctSel = bizAccts.length>=2;                     // Konten-Auswahl nur ab 2 echten Konten
+  const normAcct = (k)=> k==='immo' ? (bizAccts.find(a=>a!=='unter')||'p1') : (k||'unter'); // Legacy „immo" → erstes Objekt-Konto
   const ACCT_COLOR_CHOICES=['#7BC2AA','#E8A39E','#ABC4FF','#FFC7A6','#C9B6FF','#8FE3C6','#F4C77B','#7FB3F2','#E59CC4','#9CD67F'];
   // Akzentfarbe des aktuell geöffneten/aktiven Kontos (Zahlen bleiben grün)
   const activeAcct = (tab==='quellen'||tab==='home') ? openAcct : (tab==='immo' ? sp : tab==='unter' ? 'unter' : tab==='privat' ? 'privat' : null);
@@ -2932,7 +2947,7 @@ function App({session}) {
             </>)}
           </div>
         )}
-        <ItemList items={shown} srcKey={srcKey} accent={secAccent} kind={kindEff} recurInfoFn={recurInfoFn} onEditCaptureFn={openCaptureEdit} onExtract={extractToItem} custList={customers} recurInvFn={recurInvoicesFor} onMakeInvoice={(it)=>makeRecurInvoice(it,(folderPath&&folderPath[0]==='Immobilien')?'immo':'unter')}
+        <ItemList items={shown} srcKey={srcKey} accent={secAccent} kind={kindEff} recurInfoFn={recurInfoFn} onEditCaptureFn={openCaptureEdit} onExtract={extractToItem} custList={customers} recurInvFn={recurInvoicesFor} onMakeInvoice={(it)=>makeRecurInvoice(it,(folderPath&&folderPath[0]==='Immobilien')?(srcKey||'unter'):'unter')}
           updFn={updFn} delFn={delFn} recurFn={recurFn} rangeFn={rangeFn} editFn={editFn} applyFn={applyFn}
           taxTipFn={async(it)=>{ try{ updFn(it.id,'taxTip','…'); const dom=(folderPath&&folderPath[0]==='Immobilien')?'immo':'unter'; const tip=await fetchTaxTip(it,dom); updFn(it.id,'taxTip',tip||'(keine Antwort)'); }catch(e){ updFn(it.id,'taxTip',''); setToast('Steuer-Tipp fehlgeschlagen: '+(e.message||e)); } }}
           folderPath={folderPath}
@@ -3632,7 +3647,7 @@ function App({session}) {
             const allSel = allIds.length>0 && draftSel.length===allIds.length;
             const draftRow = d => { const hasFile=!!d.fileData; const sel=draftSel.includes(d.id); const matched=d.openMatch && !d.confirmed; const done=!!d.confirmed; const ign=!!d.ignored; const st=draftStatus(d); const catTxt=[d.category, d.datum&&(toISO(d.datum)||d.datum)].filter(Boolean).join(' · ')||'Details ergänzen'; return (
               <div key={d.id} draggable={!ign} onDragStart={e=>{importDragRef.current=d.id; e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{importDragRef.current=null;}} onClick={()=>{ if(done||ign) return; if(matched){ setConfirmMatch({draftId:d.id, match:d.openMatch}); return; } setAssignFor(null); setAssignSel(null); setDraftEdit(d.id); }} onContextMenu={e=>{e.preventDefault();setDraftCtx({x:e.clientX,y:e.clientY,id:d.id});}} style={{display:'flex',gap:12,alignItems:'center',background:ign?C.surf:(matched?hexA(C.pri,0.08):(done?hexA(C.grn,0.06):d.privat?hexA('#ABC4FF',0.07):d.isNew?hexA('#FFD27A',0.07):C.surf2)),border:'1px solid '+(done?hexA(C.grn,0.5):(matched?C.pri:(sel?C.pri:(d.isNew?hexA('#FFD27A',0.4):C.bdr)))),borderRadius:14,padding:'12px 14px',cursor:(done||ign)?'default':'pointer',opacity:ign?0.5:1}}>
-                {!ign && !done && sel && <button onClick={e=>{e.stopPropagation();setDraftSel(s=>s.filter(x=>x!==d.id));}} title="Abwählen" style={{width:22,height:22,flexShrink:0,borderRadius:6,border:'1.5px solid '+C.pri,background:C.pri,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}><Ic p={P.check} sz={13} col={C.priTxt}/></button>}
+                {!ign && !done && <button onClick={e=>{e.stopPropagation();setDraftSel(s=>s.includes(d.id)?s.filter(x=>x!==d.id):[...s,d.id]);}} title={sel?'Abwählen':'Auswählen'} style={{width:22,height:22,flexShrink:0,borderRadius:6,border:'1.5px solid '+(sel?C.pri:C.bdrM),background:sel?C.pri:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0}}>{sel&&<Ic p={P.check} sz={13} col={C.priTxt}/>}</button>}
                 {matched ? (
                   <button onClick={e=>{e.stopPropagation(); setConfirmMatch({draftId:d.id, match:d.openMatch});}} title="Gefundenen Beleg prüfen" style={{position:'relative',width:44,height:44,flexShrink:0,borderRadius:13,background:hexA(C.pri,0.16),border:'1px solid '+hexA(C.pri,0.4),display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
                     <Ic p={P.receipt} sz={17} col={C.pri}/>
@@ -3884,7 +3899,7 @@ function App({session}) {
                           <button onClick={()=>updateDraft(d.id,{account:d.recurMatch.account||d.account, kind:'aus', name:d.recurMatch.name||d.name})} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,width:'100%',background:hexA('#ABC4FF',0.20),color:'#ABC4FF',border:'none',borderRadius:9,padding:'10px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Zuordnen</button>
                         </div>
                       )}
-                      {(()=>{ const miss=draftMissing(d); const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}]; const dDom=d.account==='immo'||PROPS.includes(d.account)?'immo':'unter'; const star=<span style={{color:C.red}}> *</span>; const reqLbl=(t)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{d.account!=='privat'&&star}</div>); return (<>
+                      {(()=>{ const miss=draftMissing(d); const acctOpts=[...bizAccts.map(k=>({k,label:acctNameOf(k)})),{k:'privat',label:acctNameOf('privat')}]; const dDom=(d.account&&d.account!=='privat')?normAcct(d.account):'unter'; const star=<span style={{color:C.red}}> *</span>; const reqLbl=(t)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{d.account!=='privat'&&star}</div>); return (<>
                       <div style={{display:'flex',flexDirection:'column',gap:16}}>
                         <div>{reqLbl('Konto')}<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{acctOpts.map(o=>{const on=d.account===o.k; const col=acctColor(o.k); const ic=o.k==='unter'?P.brief:o.k==='privat'?P.prson:P.house; return (<button key={o.k} onClick={()=>updateDraft(d.id,{account:on?'':o.k,customerId:'',custName:''})} style={{display:'flex',alignItems:'center',gap:8,background:on?hexA(col,0.16):C.surf2,border:'1.5px solid '+(on?col:C.bdr),color:on?C.txt:C.sub,borderRadius:11,padding:'9px 13px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={ic} sz={15} col={col}/> {o.label}{on&&<Ic p={P.check} sz={14} col={col}/>}</button>);})}</div></div>
                         <div>{reqLbl('Name')}<input value={d.name||''} onChange={e=>updateDraft(d.id,{name:e.target.value})} placeholder="Name…" style={dInp}/></div>
@@ -3993,7 +4008,7 @@ function App({session}) {
                   <button onClick={()=>setRecInvEdit(null)} style={{background:'none',border:'none',color:C.sub,cursor:'pointer',fontFamily:'inherit',fontSize:13,padding:0,marginBottom:10}}>‹ Rechnungen</button>
                   <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16,flexWrap:'wrap'}}>
                     <div style={{fontSize:28,fontWeight:800,letterSpacing:'-0.03em'}}>Wiederkehrende Rechnung</div>
-                    <span style={{fontSize:12,fontWeight:600,color:A.c,background:hexA(A.c,0.16),border:'1px solid '+hexA(A.c,0.4),borderRadius:8,padding:'4px 11px'}}>{(r.domain||'unter')==='immo'?'Immobilien':'Firma'}</span>
+                    <span style={{fontSize:12,fontWeight:600,color:A.c,background:hexA(A.c,0.16),border:'1px solid '+hexA(A.c,0.4),borderRadius:8,padding:'4px 11px'}}>{acctNameOf(normAcct(r.domain))}</span>
                   </div>
                   <div style={{maxWidth:680,display:'flex',flexDirection:'column',gap:14}}>
                     <div style={{...SC,display:'flex',flexDirection:'column',gap:12}}>
@@ -4048,7 +4063,7 @@ function App({session}) {
             if(invEdit){
               const setI=patch=>setInvEdit({...invEdit,...patch});
               const setItem=(i,patch)=>setInvEdit({...invEdit, items:invEdit.items.map((it,ix)=>ix===i?{...it,...patch}:it)});
-              const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}];
+              const acctOpts=[...bizAccts.map(k=>({k,label:acctNameOf(k)})),{k:'privat',label:acctNameOf('privat')}];
               const A=KONTO_COLORS.unter;
               const invValid = (invEdit.firstName||invEdit.lastName||invEdit.company||invEdit.custName||'').trim() && (invEdit.custAddress||'').trim() && !!invEdit.account;
               return (
@@ -4057,7 +4072,7 @@ function App({session}) {
                     <button onClick={()=>setInvEdit(null)} title="Zurück" style={{display:'flex',alignItems:'center',gap:7,background:C.surf2,border:'1px solid '+C.bdr,color:C.sub,borderRadius:10,padding:'8px 14px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><span style={{fontSize:16,lineHeight:1}}>←</span> Zurück</button>
                     <div style={{display:'flex',alignItems:'center',gap:10}}>
                       <div style={{fontSize:17,fontWeight:800,color:C.txt,letterSpacing:'-0.02em'}}>Rechnung erstellen</div>
-                      <span style={{fontSize:12,fontWeight:600,color:A.c,background:hexA(A.c,0.16),border:'1px solid '+hexA(A.c,0.4),borderRadius:8,padding:'4px 11px'}}>{(invEdit.domain||'unter')==='immo'?'Immobilien':'Firma'}</span>
+                      <span style={{fontSize:12,fontWeight:600,color:A.c,background:hexA(A.c,0.16),border:'1px solid '+hexA(A.c,0.4),borderRadius:8,padding:'4px 11px'}}>{acctNameOf(normAcct(invEdit.domain))}</span>
                     </div>
                     <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:12}}>
                       <span style={{fontSize:13,color:C.mut}}>Nr. {invEdit.number}</span>
@@ -4180,23 +4195,45 @@ function App({session}) {
 
             return (
               <>
-                <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>Rechnung erstellen</div>
-                <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
-                  <span style={{fontSize:12,color:C.mut,marginRight:2}}>Alle Konten:</span>
-                  {[{k:'unter',label:names.unternehmen||'Firma'},{k:'immo',label:'Immobilien'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}].map(o=>{const on=invDomain===o.k||(invDomain==='immo'&&PROPS.includes(o.k)); const col=acctColor(o.k==='immo'?'p1':o.k); const ic=o.k==='unter'?P.brief:o.k==='privat'?P.prson:P.house; return (
-                    <button key={o.k} onClick={()=>{setInvDomain(o.k==='immo'||PROPS.includes(o.k)?'immo':'unter');setInvSearch('');}} style={{display:'flex',alignItems:'center',gap:6,background:on?hexA(col,0.16):C.surf2,border:'1px solid '+(on?hexA(col,0.4):C.bdr),color:on?col:C.mut,borderRadius:10,padding:'7px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={ic} sz={13} col={on?col:C.surf3}/>{o.label}</button>
-                  ); })}
+                <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>Rechnungen</div>
+                {showAcctSel && (
+                  <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+                    {[{k:'alle',label:'Alle'},...bizAccts.map(k=>({k,label:acctNameOf(k)}))].map(o=>{const on=invDomain===o.k; const col=o.k==='alle'?C.pri:acol(o.k); const ic=o.k==='alle'?P.grid:acctIconOf(o.k); return (
+                      <button key={o.k} onClick={()=>{setInvDomain(o.k);setInvSearch('');}} style={{display:'flex',alignItems:'center',gap:6,background:on?hexA(col,0.16):C.surf2,border:'1px solid '+(on?hexA(col,0.4):C.bdr),color:on?col:C.mut,borderRadius:10,padding:'7px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={ic} sz={13} col={on?col:C.surf3}/>{o.label}</button>
+                    ); })}
+                  </div>
+                )}
+                <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:18,flexWrap:'wrap'}}>
+                  <div style={{flex:1,minWidth:180,position:'relative'}}>
+                    <span style={{position:'absolute',left:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'inline-flex'}}><Ic p={P.search} sz={15} col={C.mut}/></span>
+                    <input value={invSearch} onChange={e=>setInvSearch(e.target.value)} placeholder={invKind==='wied'?'Wiederkehrende Rechnung suchen…':'Name, Belegnummer, Betrag…'} style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,color:C.txt,padding:'12px '+(invSearch?'36px':'12px')+' 12px 38px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+                    {invSearch && <button onClick={()=>setInvSearch('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>✕</button>}
+                  </div>
+                  <button onClick={()=> invKind==='wied' ? setRecInvEdit(newRecInvoice(invDomain==='alle'?'unter':invDomain)) : setInvEdit(newInvoice(invDomain))} style={{...primBtn,width:'auto',padding:'12px 18px'}}>+ {invKind==='wied'?'Neue wiederkehrende':'Neue Rechnung'}</button>
+                  <div style={{position:'relative'}}>
+                    {(()=>{ const active=invKind!=='einzel'||invStatusF!=='alle'; return (
+                    <button onClick={()=>setInvFilterOpen(o=>!o)} title="Filter" style={{display:'inline-flex',alignItems:'center',gap:6,background:(active||invFilterOpen)?hexA(C.pri,0.16):C.surf2,border:'1px solid '+((active||invFilterOpen)?hexA(C.pri,0.45):C.bdr),color:active?C.pri:C.sub,borderRadius:11,padding:'12px 14px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.filter} sz={15} col={active?C.pri:C.sub}/> Filter</button>
+                    ); })()}
+                    {invFilterOpen && (<>
+                      <div onClick={()=>setInvFilterOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
+                      <div style={{position:'absolute',right:0,top:'100%',marginTop:8,width:250,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:14,boxShadow:'0 14px 36px rgba(0,0,0,0.55)',zIndex:85}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:7,letterSpacing:'0.03em'}}>ART</div>
+                        <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
+                          {[['einzel','Einmalig'],['wied','Wiederkehrend']].map(([k,l])=>{const on=invKind===k;return <button key={k} onClick={()=>{setInvKind(k);setInvSearch('');}} style={{background:on?C.pri:C.surf2,color:on?C.priTxt:C.sub,border:'1px solid '+(on?C.pri:C.bdr),borderRadius:8,padding:'6px 11px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>;})}
+                        </div>
+                        {invKind==='einzel' && (<>
+                        <div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:7,letterSpacing:'0.03em'}}>STATUS</div>
+                        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                          {[['alle','Alle'],['offen','Offen'],['bezahlt','Bezahlt']].map(([k,l])=>{const on=invStatusF===k;return <button key={k} onClick={()=>setInvStatusF(k)} style={{background:on?C.pri:C.surf2,color:on?C.priTxt:C.sub,border:'1px solid '+(on?C.pri:C.bdr),borderRadius:8,padding:'6px 11px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>;})}
+                        </div>
+                        </>)}
+                      </div>
+                    </>)}
+                  </div>
                 </div>
                 {invKind==='wied' ? (
                   <>
-                    <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:18,flexWrap:'wrap'}}>
-                      <div style={{flex:1,minWidth:180,position:'relative'}}>
-                        <span style={{position:'absolute',left:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'inline-flex'}}><Ic p={P.search} sz={15} col={C.mut}/></span>
-                        <input value={invSearch} onChange={e=>setInvSearch(e.target.value)} placeholder="Wiederkehrende Rechnung suchen…" style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,color:C.txt,padding:'12px 12px 12px 38px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
-                      </div>
-                      <button onClick={()=>setRecInvEdit(newRecInvoice(invDomain))} style={{...primBtn,width:'auto',padding:'12px 18px'}}>+ Neue wiederkehrende Rechnung</button>
-                    </div>
-                    {(()=>{ const q=invSearch.trim().toLowerCase(); const list=recInvoices.filter(r=>(r.domain||'unter')===invDomain).filter(r=>{ if(!q)return true; const c=customers.find(x=>x.id===r.customerId); const nm=(c&&c.name)||r.company||[r.firstName,r.lastName].filter(Boolean).join(' ')||r.custName||''; return String(nm).toLowerCase().includes(q); }); if(!list.length) return <div style={{...SC,fontSize:13,color:C.mut,textAlign:'center',padding:'30px 24px'}}>{recInvoices.filter(r=>(r.domain||'unter')===invDomain).length?'Keine Treffer.':'Noch keine wiederkehrenden Rechnungen. Lege eine an – sie wird dann automatisch jeden Monat erzeugt.'}</div>; return <div style={{display:'flex',flexDirection:'column',gap:10}}>{list.map(r=>{ const c=customers.find(x=>x.id===r.customerId); const nm=(c&&c.name)||r.company||[r.firstName,r.lastName].filter(Boolean).join(' ')||r.custName||'—'; const gen=recurInvoicesFor(r.id); const paidN=gen.filter(g=>g.paid).length; const openN=gen.length-paidN; const paidSum=gen.filter(g=>g.paid).reduce((s,g)=>s+(g.total||0),0); const openSum=gen.filter(g=>!g.paid).reduce((s,g)=>s+(g.total||0),0); const t=invTotals(r.items); const limited=!(r.fromY===r.toY && r.fromM===0 && r.toM===11) || true; return (
+                    {(()=>{ const q=invSearch.trim().toLowerCase(); const list=recInvoices.filter(r=>invDomain==='alle'||normAcct(r.domain)===normAcct(invDomain)).filter(r=>{ if(!q)return true; const c=customers.find(x=>x.id===r.customerId); const nm=(c&&c.name)||r.company||[r.firstName,r.lastName].filter(Boolean).join(' ')||r.custName||''; return String(nm).toLowerCase().includes(q); }); if(!list.length) return <div style={{...SC,fontSize:13,color:C.mut,textAlign:'center',padding:'30px 24px'}}>{recInvoices.filter(r=>invDomain==='alle'||normAcct(r.domain)===normAcct(invDomain)).length?'Keine Treffer.':'Noch keine wiederkehrenden Rechnungen. Lege eine an – sie wird dann automatisch jeden Monat erzeugt.'}</div>; return <div style={{display:'flex',flexDirection:'column',gap:10}}>{list.map(r=>{ const c=customers.find(x=>x.id===r.customerId); const nm=(c&&c.name)||r.company||[r.firstName,r.lastName].filter(Boolean).join(' ')||r.custName||'—'; const gen=recurInvoicesFor(r.id); const paidN=gen.filter(g=>g.paid).length; const openN=gen.length-paidN; const paidSum=gen.filter(g=>g.paid).reduce((s,g)=>s+(g.total||0),0); const openSum=gen.filter(g=>!g.paid).reduce((s,g)=>s+(g.total||0),0); const t=invTotals(r.items); const limited=!(r.fromY===r.toY && r.fromM===0 && r.toM===11) || true; return (
                       <div key={r.id} style={{background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,overflow:'hidden'}}>
                         <div onClick={()=>setRecInvEdit(r)} style={{display:'flex',alignItems:'center',gap:13,padding:'13px 15px',cursor:'pointer'}}>
                           <div style={{width:46,height:46,flexShrink:0,borderRadius:12,background:hexA(KONTO_COLORS.unter.c,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.repeat} sz={20} col={KONTO_COLORS.unter.c}/></div>
@@ -4227,20 +4264,14 @@ function App({session}) {
                     ); })}</div>; })()}
                   </>
                 ) : (<>
-                <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:18,flexWrap:'wrap'}}>
-                  <div style={{flex:1,minWidth:180,position:'relative'}}>
-                    <span style={{position:'absolute',left:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'inline-flex'}}><Ic p={P.search} sz={15} col={C.mut}/></span>
-                    <input value={invSearch} onChange={e=>setInvSearch(e.target.value)} placeholder="Name, Belegnummer, Betrag…" style={{width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:11,color:C.txt,padding:'12px '+(invSearch?'36px':'12px')+' 12px 38px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
-                    {invSearch && <button onClick={()=>setInvSearch('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>✕</button>}
-                  </div>
-                  <button onClick={()=>setInvEdit(newInvoice(invDomain))} style={{...primBtn,width:'auto',padding:'12px 18px'}}>+ Neue Rechnung</button>
-                </div>
-                {!companyFor(invDomain).name && <div style={{...SC,marginBottom:14,fontSize:13,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.25)',lineHeight:1.5}}>Tipp: Hinterlege unter <b>Einstellungen</b> deine {invDomain==='immo'?'Immobilien-Daten':'Firmendaten'} + Logo für den Rechnungskopf.</div>}
+                {invDomain!=='alle' && !companyFor(invDomain).name && <div style={{...SC,marginBottom:14,fontSize:13,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.25)',lineHeight:1.5}}>Tipp: Hinterlege unter <b>Einstellungen</b> die Firmendaten für <b>{acctNameOf(invDomain)}</b> + Logo für den Rechnungskopf.</div>}
                 {(()=>{
                   const q=invSearch.trim().toLowerCase();
                   const now=new Date(); const curMKey=now.getFullYear()+'-'+String(now.getMonth()).padStart(2,'0');
                   const allInv=invoicesFor(invDomain);
                   const filtered=allInv.filter(inv=>{
+                    if(invStatusF==='offen' && inv.paid) return false;
+                    if(invStatusF==='bezahlt' && !inv.paid) return false;
                     const d=new Date(inv.sentDate||inv.date); const mKey=isNaN(d)?'0000-99':(d.getFullYear()+'-'+String(d.getMonth()).padStart(2,'0'));
                     if(!q && mKey!=='0000-99' && mKey!==curMKey) return false;
                     if(!q) return true;
@@ -4287,8 +4318,8 @@ function App({session}) {
             const fld={...SS,textAlign:'left'};
             const primBtn={display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.act,color:C.actTxt,border:'none',borderRadius:12,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'};
             const domCustomers=customersFor(invDomain);
-            const cDom=custEdit&&(custEdit.domain||'unter'); const cIsNew=custEdit&&!customers.some(c=>c.id===custEdit.id);
-            const cDomLbl=cDom==='immo'?'Immobilienkunde':'Firmenkunde'; const cDomCol=KONTO_COLORS.unter.c;
+            const cDom=custEdit&&normAcct(custEdit.domain); const cIsNew=custEdit&&!customers.some(c=>c.id===custEdit.id);
+            const cDomLbl=custEdit?acctNameOf(cDom)+'-Kunde':''; const cDomCol=custEdit?acol(cDom):KONTO_COLORS.unter.c;
             // ── Volles Kundenprofil (eigene Seite, am Startseiten-Stil orientiert) ──
             if(custEdit){
               const c=custEdit; const set=patch=>setCustEdit({...c,...patch}); const col=cDomCol;
@@ -4306,7 +4337,7 @@ function App({session}) {
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:24,fontWeight:800,color:C.txt,letterSpacing:'-0.02em',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.name||'Neuer Kunde'}</div>
                       <div style={{display:'flex',alignItems:'center',gap:10,marginTop:5,flexWrap:'wrap'}}>
-                        <span style={{fontSize:12,fontWeight:600,color:col,background:hexA(col,0.16),border:'1px solid '+hexA(col,0.4),borderRadius:8,padding:'3px 10px'}}>{cDom==='immo'?'Immobilien':'Firma'}</span>
+                        <span style={{fontSize:12,fontWeight:600,color:col,background:hexA(col,0.16),border:'1px solid '+hexA(col,0.4),borderRadius:8,padding:'3px 10px'}}>{acctNameOf(cDom)}</span>
                         {c.custNo && <span style={{fontSize:13,color:C.sub}}>Nr. {c.custNo}</span>}
                       </div>
                     </div>
@@ -4319,6 +4350,16 @@ function App({session}) {
                   </div>
 
                   {custTab==='details' && (<>
+                    {showAcctSel && (
+                      <div style={{...SC,marginBottom:14}}>
+                        <div style={{fontSize:13,fontWeight:700,color:C.txt,marginBottom:10}}>Konto</div>
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                          {bizAccts.map(k=>{const on=cDom===k; const kc=acol(k); return (
+                            <button key={k} onClick={()=>set({domain:k, custNo:(cIsNew?nextCustNo(k):c.custNo)})} style={{display:'flex',alignItems:'center',gap:7,background:on?hexA(kc,0.16):C.surf2,border:'1.5px solid '+(on?kc:C.bdr),color:on?C.txt:C.sub,borderRadius:10,padding:'8px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={acctIconOf(k)} sz={14} col={kc}/> {acctNameOf(k)}{on&&<Ic p={P.check} sz={13} col={kc}/>}</button>
+                          );})}
+                        </div>
+                      </div>
+                    )}
                     <div style={{...SC,display:'flex',flexDirection:'column',gap:12,marginBottom:14}}>
                       <div style={{fontSize:13,fontWeight:700,color:C.txt,marginBottom:2}}>Kontaktdaten</div>
                       {(()=>{ const dname=(comp,fn,ln)=>((comp&&comp.trim())|| [fn,ln].filter(Boolean).map(s=>String(s).trim()).filter(Boolean).join(' '))||''; return (<>
@@ -4385,18 +4426,24 @@ function App({session}) {
             return (
               <>
                 <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em',marginBottom:16}}>Kunden</div>
-                <div style={{marginBottom:14}}><PillTabs tabs={[['unter','Firma'],['immo','Immobilien']]} value={invDomain} onChange={setInvDomain} /></div>
+                {showAcctSel && (
+                  <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+                    {[{k:'alle',label:'Alle'},...bizAccts.map(k=>({k,label:acctNameOf(k)}))].map(o=>{const on=invDomain===o.k; const col=o.k==='alle'?C.pri:acol(o.k); const ic=o.k==='alle'?P.grid:acctIconOf(o.k); return (
+                      <button key={o.k} onClick={()=>setInvDomain(o.k)} style={{display:'flex',alignItems:'center',gap:6,background:on?hexA(col,0.16):C.surf2,border:'1px solid '+(on?hexA(col,0.4):C.bdr),color:on?col:C.mut,borderRadius:10,padding:'7px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={ic} sz={13} col={on?col:C.surf3}/>{o.label}</button>
+                    ); })}
+                  </div>
+                )}
                 <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
                   <div style={{flex:1,minWidth:200,display:'flex',alignItems:'center',gap:9,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:'11px 14px'}}><Ic p={P.search} sz={15} col={C.mut}/><input value={custSearch} onChange={e=>setCustSearch(e.target.value)} placeholder="Kunde suchen…" style={{flex:1,background:'none',border:'none',outline:'none',color:C.txt,fontSize:14,fontFamily:'inherit'}}/></div>
-                  <button onClick={()=>{setCustTab('details');setCustEdit({id:uid(),anrede:'',name:'',address:'',phone:'',email:'',website:'',custNo:nextCustNo(invDomain),domain:invDomain});}} style={{display:'inline-flex',alignItems:'center',gap:7,background:C.act,color:C.actTxt,border:'none',borderRadius:12,padding:'11px 18px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={15} col={C.actTxt}/> Kunde anlegen</button>
+                  <button onClick={()=>{ const ca=invDomain==='alle'?bizAccts[0]||'unter':invDomain; setCustTab('details');setCustEdit({id:uid(),anrede:'',name:'',address:'',phone:'',email:'',website:'',custNo:nextCustNo(ca),domain:ca});}} style={{display:'inline-flex',alignItems:'center',gap:7,background:C.act,color:C.actTxt,border:'none',borderRadius:12,padding:'11px 18px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={15} col={C.actTxt}/> Kunde anlegen</button>
                 </div>
                 {(()=>{ const q=custSearch.trim().toLowerCase(); const list=domCustomers.filter(c=>!q||((c.name||'')+' '+(c.email||'')+' '+(c.custNo||'')).toLowerCase().includes(q));
                 return list.length? <div style={{display:'flex',flexDirection:'column',gap:10}}>{list.map(c=>(
                   <div key={c.id} onClick={()=>setCustEdit(c)} style={{display:'flex',alignItems:'center',gap:13,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
-                    <div style={{width:46,height:46,flexShrink:0,borderRadius:12,background:hexA(KONTO_COLORS.unter.c,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.prson} sz={20} col={KONTO_COLORS.unter.c}/></div>
+                    {(()=>{ const cc=acol(normAcct(c.domain)); return <div style={{width:46,height:46,flexShrink:0,borderRadius:12,background:hexA(cc,0.16),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.prson} sz={20} col={cc}/></div>; })()}
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:15.5,fontWeight:700,color:C.txt}}>{c.name||'(ohne Name)'}</div>
-                      <div style={{fontSize:13,color:C.sub,marginTop:2}}>{[c.custNo?('Nr. '+c.custNo):'',c.email].filter(Boolean).join(' · ')||'—'}</div>
+                      <div style={{fontSize:13,color:C.sub,marginTop:2}}>{[c.custNo?('Nr. '+c.custNo):'',showAcctSel?acctNameOf(normAcct(c.domain)):'',c.email].filter(Boolean).join(' · ')||'—'}</div>
                     </div>
                     <button onClick={e=>{e.stopPropagation();askConfirm('Kunde „'+(c.name||'')+'" löschen?',()=>delCustomer(c.id));}} title="Löschen" style={{background:C.surf3,border:'1px solid '+C.bdr,color:C.mut,cursor:'pointer',flexShrink:0,width:34,height:34,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.trash} sz={15} col={C.mut}/></button>
                   </div>
@@ -4444,7 +4491,7 @@ function App({session}) {
                     <div key={r.id} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderLeft:'3px solid '+berCol,borderRadius:14,padding:'12px 14px'}}>
                       <div style={{width:44,height:44,flexShrink:0,borderRadius:12,background:hexA(berCol,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={19} col={berCol}/></div>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:15,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}{r.recurring?' 🔁':''}</div>
+                        <div style={{fontSize:15,fontWeight:700,color:C.txt,display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</span>{r.recurring&&<Ic p={P.repeat} sz={13} col={berCol}/>}</div>
                         <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{(r.date&&(toISO(r.date)||r.date))||'—'}</div>
                       </div>
                       <div style={{fontSize:15,fontWeight:700,...NUM,color:aus?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{aus?'-':''}{fmt(Math.abs(r.amount))}</div>
@@ -4474,8 +4521,14 @@ function App({session}) {
             const allBel=belegesUnder([]);
             const q=belegSearch.trim().toLowerCase();
             const ymKey=yr+'-'+String(mo+1).padStart(2,'0');
-            const shown=(()=>{ let list=allBel.filter(b=> (belegMode==='recur'? !!b.recurring : !b.recurring));
-              if(belegMode==='recur'){ const seen=new Set(); list=list.filter(b=>{ const key=(b.name||'')+'|'+(b.amount||'')+'|'+(b._ber||''); if(seen.has(key))return false; seen.add(key); return true; }); }
+            const shown=(()=>{ let list=allBel.slice();
+              if(belAcct!=='alle') list=list.filter(b=>normAcct(b._ber)===normAcct(belAcct));
+              if(belKindF==='einmalig') list=list.filter(b=>!b.recurring);
+              else if(belKindF==='wied') list=list.filter(b=>!!b.recurring);
+              if(belStatusF==='offen') list=list.filter(b=>b.status==='offen');
+              else if(belStatusF==='erledigt') list=list.filter(b=>b.status==='bezahlt'||b.status==='abgebucht');
+              // wiederkehrende Vorlagen nur einmal zeigen
+              { const seen=new Set(); list=list.filter(b=>{ if(!b.recurring) return true; const key=(b.name||'')+'|'+(b.amount||'')+'|'+(b._ber||''); if(seen.has(key))return false; seen.add(key); return true; }); }
               if(q){ list=list.filter(b=>((b.name||'')+' '+(b.amount||'')+' '+(b.belegnr||'')+' '+belBerLabel(b._ber)).toLowerCase().includes(q)); }
               else { list=list.filter(b=>{ const iso=toISO(b.date)||b.date||''; return !iso || iso.slice(0,7)===ymKey; }); }
               return list;
@@ -4487,10 +4540,34 @@ function App({session}) {
                 <div style={{marginBottom:16}}>
                   <div style={{fontSize:30,fontWeight:800,letterSpacing:'-0.03em'}}>Belege</div>
                 </div>
-                <div style={{marginBottom:14}}>{PillTabs({tabs:[['once','Einmalige Belege'],['recur','Wiederkehrende Belege']], value:belegMode, onChange:setBelegMode})}</div>
+                {showAcctSel && (
+                  <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+                    {[{k:'alle',label:'Alle'},...bizAccts.map(k=>({k,label:acctNameOf(k)})),{k:'privat',label:acctNameOf('privat')}].map(o=>{const on=belAcct===o.k; const col=o.k==='alle'?C.pri:acol(o.k); const ic=o.k==='alle'?P.grid:acctIconOf(o.k); return (
+                      <button key={o.k} onClick={()=>{setBelAcct(o.k);setBelegSearch('');}} style={{display:'flex',alignItems:'center',gap:6,background:on?hexA(col,0.16):C.surf2,border:'1px solid '+(on?hexA(col,0.4):C.bdr),color:on?col:C.mut,borderRadius:10,padding:'7px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={ic} sz={13} col={on?col:C.surf3}/>{o.label}</button>
+                    ); })}
+                  </div>
+                )}
                 <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
                   <div style={{flex:1,minWidth:200,display:'flex',alignItems:'center',gap:9,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:12,padding:'11px 14px'}}><Ic p={P.search} sz={15} col={C.mut}/><input value={belegSearch} onChange={e=>setBelegSearch(e.target.value)} placeholder="Name, Belegnummer, Betrag…" style={{flex:1,background:'none',border:'none',outline:'none',color:C.txt,fontSize:14,fontFamily:'inherit'}}/>{belegSearch&&<button onClick={()=>setBelegSearch('')} style={{background:'none',border:'none',color:C.mut,cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>×</button>}</div>
-                  <button onClick={()=>openCapture({mode:'import',kind:'aus',account:'',recurring:belegMode==='recur'})} style={{display:'inline-flex',alignItems:'center',gap:8,background:C.pri,color:C.priTxt,border:'none',borderRadius:12,padding:'11px 18px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={15} col={C.priTxt}/> Beleg erfassen</button>
+                  <button onClick={()=>openCapture({mode:'import',kind:'aus',account:(belAcct!=='alle'?belAcct:''),recurring:belKindF==='wied'})} style={{display:'inline-flex',alignItems:'center',gap:8,background:C.pri,color:C.priTxt,border:'none',borderRadius:12,padding:'11px 18px',fontSize:13.5,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}><Ic p={P.plus} sz={15} col={C.priTxt}/> Beleg erfassen</button>
+                  <div style={{position:'relative'}}>
+                    {(()=>{ const active=belKindF!=='alle'||belStatusF!=='alle'; return (
+                    <button onClick={()=>setBelFilterOpen(o=>!o)} title="Filter" style={{display:'inline-flex',alignItems:'center',gap:6,background:(active||belFilterOpen)?hexA(C.pri,0.16):C.surf2,border:'1px solid '+((active||belFilterOpen)?hexA(C.pri,0.45):C.bdr),color:active?C.pri:C.sub,borderRadius:12,padding:'11px 15px',fontSize:13.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.filter} sz={15} col={active?C.pri:C.sub}/> Filter</button>
+                    ); })()}
+                    {belFilterOpen && (<>
+                      <div onClick={()=>setBelFilterOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
+                      <div style={{position:'absolute',right:0,top:'100%',marginTop:8,width:250,background:C.surf,border:'1px solid '+C.bdr,borderRadius:14,padding:14,boxShadow:'0 14px 36px rgba(0,0,0,0.55)',zIndex:85}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:7,letterSpacing:'0.03em'}}>ART</div>
+                        <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
+                          {[['alle','Alle'],['einmalig','Einmalig'],['wied','Wiederkehrend']].map(([k,l])=>{const on=belKindF===k;return <button key={k} onClick={()=>setBelKindF(k)} style={{background:on?C.pri:C.surf2,color:on?C.priTxt:C.sub,border:'1px solid '+(on?C.pri:C.bdr),borderRadius:8,padding:'6px 11px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>;})}
+                        </div>
+                        <div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:7,letterSpacing:'0.03em'}}>STATUS</div>
+                        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                          {[['alle','Alle'],['offen','Offen'],['erledigt','Erledigt']].map(([k,l])=>{const on=belStatusF===k;return <button key={k} onClick={()=>setBelStatusF(k)} style={{background:on?C.pri:C.surf2,color:on?C.priTxt:C.sub,border:'1px solid '+(on?C.pri:C.bdr),borderRadius:8,padding:'6px 11px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>;})}
+                        </div>
+                      </div>
+                    </>)}
+                  </div>
                 </div>
                 {shown.length? <div style={{display:'flex',flexDirection:'column',gap:20}}>{gkeys.map(gk=>{ const mm=gk.split('-')[1]; const yy=gk.split('-')[0]; const lbl=(mm==='00'||!mm)?'Ohne Datum':(MONTHS[+mm-1]+' '+yy); return (
                   <div key={gk}>
@@ -4499,7 +4576,7 @@ function App({session}) {
                       <div key={r.id+r._y+r._m} onClick={()=>setBelegEdit({loc:r})} style={{display:'flex',alignItems:'center',gap:12,background:C.surf2,border:'1px solid '+C.bdr,borderLeft:'3px solid '+bc,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
                         <div style={{width:44,height:44,flexShrink:0,borderRadius:12,background:hexA(bc,0.18),display:'flex',alignItems:'center',justifyContent:'center'}}><Ic p={P.clip} sz={19} col={bc}/></div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:15,fontWeight:700,color:C.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}{r.recurring?' 🔁':''}</div>
+                          <div style={{fontSize:15,fontWeight:700,color:C.txt,display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</span>{r.recurring&&<Ic p={P.repeat} sz={13} col={bc}/>}</div>
                           <div style={{fontSize:12.5,color:C.sub,marginTop:2,display:'flex',alignItems:'center',gap:6}}><span style={{color:bc,fontWeight:600}}>{belBerLabel(r._ber)}</span><span style={{color:C.mut}}>·</span>{(r.date&&(toISO(r.date)||r.date))||'—'}</div>
                         </div>
                         <div style={{fontSize:15,fontWeight:700,...NUM,color:aus?'#FFB37A':C.grn,whiteSpace:'nowrap'}}>{aus?'-':''}{fmt(Math.abs(r.amount))}</div>
@@ -4507,7 +4584,7 @@ function App({session}) {
                       </div>
                     ); })}</div>
                   </div>
-                ); })}</div> : <div style={{...SC,textAlign:'center',color:C.mut,fontSize:14,padding:'34px 24px'}}>{belegMode==='recur'?'Noch keine wiederkehrenden Belege.':'Noch keine Belege. Hänge Belege an Buchungen an – sie erscheinen hier automatisch.'}</div>}
+                ); })}</div> : <div style={{...SC,textAlign:'center',color:C.mut,fontSize:14,padding:'34px 24px'}}>{belKindF==='wied'?'Noch keine wiederkehrenden Belege.':(belegSearch?'Keine Treffer.':'Noch keine Belege. Hänge Belege an Buchungen an – sie erscheinen hier automatisch.')}</div>}
               </>
             );
           })()}
@@ -4658,7 +4735,7 @@ function App({session}) {
             {yrView==='jahr' && <>
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
               <span style={{fontSize:12,color:C.mut,marginRight:2}}>Anzeigen:</span>
-              {ACCT_ORDER.map(k=>{const on=yrFilter[k]!==false; const col=acol(k); const ic=k==='unter'?P.brief:k==='privat'?P.prson:P.house; const label=acctNameOf(k); return (
+              {[...bizAccts,'privat'].map(k=>{const on=yrFilter[k]!==false; const col=acol(k); const ic=acctIconOf(k); const label=acctNameOf(k); return (
                 <button key={k} onClick={()=>setYrFilter(f=>({...f,[k]:!on}))} title={on?'Ausblenden':'Einblenden'}
                   style={{display:'flex',alignItems:'center',gap:7,background:on?hexA(col,0.16):C.surf2,border:'1px solid '+(on?hexA(col,0.4):C.bdr),color:on?col:C.mut,borderRadius:10,padding:'7px 13px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
                   <Ic p={ic} sz={14} col={on?col:C.surf3}/>{label}
@@ -4668,8 +4745,8 @@ function App({session}) {
             <div style={{...SC,marginBottom:14,overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
                 <thead><tr>
-                  {['Monat','Immo Ein.','Immo Aus.','Firma','Privat','Einnahmen','Ausgaben','Ergebnis'].map(h=>(
-                    <th key={h} style={{padding:'8px 10px',fontSize:11,fontWeight:500,color:C.sub,borderBottom:'1px solid '+C.sep,textAlign:h==='Monat'?'left':'right',letterSpacing:'0.02em'}}>{h}</th>
+                  {['Monat',...[...bizAccts,'privat'].map(k=>acctNameOf(k)),'Einnahmen','Ausgaben','Ergebnis'].map((h,hi)=>(
+                    <th key={hi} style={{padding:'8px 10px',fontSize:11,fontWeight:500,color:C.sub,borderBottom:'1px solid '+C.sep,textAlign:hi===0?'left':'right',letterSpacing:'0.02em'}}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
@@ -4679,18 +4756,15 @@ function App({session}) {
                     const inc=fInc(s), exp=fExp(s), net=inc-exp;
                     const ok=!fut && (inc>0||exp>0);
                     const cell=(cond,txt)=> (fut||!cond)?'—':txt;
-                    const dim=(k)=> k==='immo'?PROPS.some(p=>yrFilter[p]!==false)?1:0.28:(yrFilter[k]!==false?1:0.28);
+                    const dim=(k)=> yrFilter[k]!==false?1:0.28;
                     return (
                       <tr key={s.m} onClick={fut?undefined:()=>{setMo(s.m);setTab('dash');}}
                         style={{cursor:fut?'default':'pointer',opacity:fut?0.4:1,background:s.m===mo?hexA(C.pri,0.12):'transparent'}}
                         title={fut?'Monat hat noch nicht begonnen':''}>
                         <td style={{padding:'10px',fontWeight:s.m===mo?600:400,color:s.m===mo?C.txt:C.sub}}>{MONTHS[s.m]}</td>
-                        <td style={{padding:'10px',textAlign:'right',opacity:dim('immo'),color:(!fut&&s.immoInc>0)?C.txt:C.mut,...NUM}}>{cell(s.immoInc>0,fmt(s.immoInc))}</td>
-                        <td style={{padding:'10px',textAlign:'right',opacity:dim('immo'),color:(!fut&&s.immoExp>0)?C.txt:C.mut,...NUM}}>{cell(s.immoExp>0,fmtN(s.immoExp))}</td>
-                        <td style={{padding:'10px',textAlign:'right',opacity:dim('unter'),color:(!fut&&(s.unterInc>0||s.unterExp>0))?(ur>=0?C.txt:C.txt):C.mut,...NUM}}>
-                          {cell(s.unterInc>0||s.unterExp>0,(ur>=0?'+':'-')+fmt(Math.abs(ur)))}
-                        </td>
-                        <td style={{padding:'10px',textAlign:'right',opacity:dim('privat'),color:(!fut&&s.privatExp>0)?C.txt:C.mut,...NUM}}>{cell(s.privatExp>0,fmtN(s.privatExp))}</td>
+                        {[...bizAccts,'privat'].map(k=>{ const a=(s.acct&&s.acct[k])||{inc:0,exp:0}; const anet=a.inc-a.exp; const has=a.inc>0||a.exp>0; return (
+                          <td key={k} style={{padding:'10px',textAlign:'right',opacity:dim(k),color:(!fut&&has)?C.txt:C.mut,...NUM}}>{cell(has,(anet>=0?'+':'-')+fmt(Math.abs(anet)))}</td>
+                        ); })}
                         <td style={{padding:'10px',textAlign:'right',color:(!fut&&inc>0)?C.txt:C.mut,...NUM}}>{cell(inc>0,fmt(inc))}</td>
                         <td style={{padding:'10px',textAlign:'right',color:(!fut&&exp>0)?C.txt:C.mut,...NUM}}>{cell(exp>0,fmtN(exp))}</td>
                         <td style={{padding:'10px',textAlign:'right',fontWeight:600,color:ok?(net>=0?C.grn:C.red):C.mut,...NUM}}>
@@ -4703,7 +4777,7 @@ function App({session}) {
                 <tfoot>
                   <tr style={{borderTop:'1px solid '+C.bdrM}}>
                     <td style={{padding:'12px',fontWeight:600,color:C.sub}}>Jahresgesamt</td>
-                    <td colSpan={4}></td>
+                    <td colSpan={[...bizAccts,'privat'].length}></td>
                     <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.grn,...NUM}}>{fmt(yrTotF.totalInc)}</td>
                     <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:C.red,...NUM}}>{fmtN(yrTotF.totalExp)}</td>
                     <td style={{padding:'12px',textAlign:'right',fontWeight:700,color:yrTotF.net>=0?C.grn:C.red,...NUM}}>{yrTotF.net>=0?'+':'-'}{fmt(Math.abs(yrTotF.net))}</td>
@@ -5159,7 +5233,7 @@ function App({session}) {
         </div>
       ); })()}
 
-      {capture && (()=>{ const c=capture; const f=c.f; const isImport=c.mode==='import'; const hasFile=!!f.fileData; const isPdf=hasFile&&(/^data:application\/pdf/i.test(f.fileData)||/pdf$/i.test(f.fileName||'')); const uploading=capProg>0&&capProg<100; const dInp={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const acctOpts=[{k:'unter',label:names.unternehmen||'Firma'},...PROPS.map(p=>({k:p,label:names[p]||p})),{k:'privat',label:names.privatLabel||'Privat'}]; const dom=!c.account?null:(c.account==='unter'?'unter':(c.account==='privat'?null:'immo')); const acctIcon=k=>(k==='unter'?P.brief:k==='privat'?P.prson:P.house); const miss=captureMissing(c); const star=<span style={{color:C.red}}> *</span>; const lbl=(t,req)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{req&&c.account!=='privat'&&star}</div>);
+      {capture && (()=>{ const c=capture; const f=c.f; const isImport=c.mode==='import'; const hasFile=!!f.fileData; const isPdf=hasFile&&(/^data:application\/pdf/i.test(f.fileData)||/pdf$/i.test(f.fileName||'')); const uploading=capProg>0&&capProg<100; const dInp={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const acctOpts=[...bizAccts.map(k=>({k,label:acctNameOf(k)})),{k:'privat',label:acctNameOf('privat')}]; const dom=!c.account?null:(c.account==='privat'?null:normAcct(c.account)); const acctIcon=k=>(k==='unter'?P.brief:k==='privat'?P.prson:P.house); const miss=captureMissing(c); const star=<span style={{color:C.red}}> *</span>; const lbl=(t,req)=>(<div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>{t}{req&&c.account!=='privat'&&star}</div>);
         return (
         <div style={{position:'fixed',inset:0,background:C.bg,zIndex:135,display:'flex',flexDirection:'column'}}>
           <div style={{display:'flex',alignItems:'center',gap:14,padding:'16px 26px',borderBottom:'1px solid '+C.bdr,flexShrink:0}}>
@@ -5286,11 +5360,20 @@ function App({session}) {
         </div>
       )}
 
-      {newCust && (()=>{ const n=newCust; const set=patch=>setNewCust(x=>({...x,...patch})); const isImmo=(n.domain||'unter')==='immo'; const badgeCol=isImmo?KONTO_COLORS.immo.c:KONTO_COLORS.unter.c; const fld2={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const lbl2={fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}; return (
+      {newCust && (()=>{ const n=newCust; const set=patch=>setNewCust(x=>({...x,...patch})); const acc=normAcct(n.domain); const badgeCol=acol(acc); const fld2={width:'100%',background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,color:C.txt,padding:'11px 13px',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}; const lbl2={fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}; return (
         <div onClick={()=>setNewCust(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:170,padding:20}}>
           <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:20,padding:'22px',maxWidth:480,width:'100%',boxShadow:'0 16px 48px rgba(0,0,0,0.5)',maxHeight:'88vh',overflowY:'auto'}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}><Ic p={P.prson} sz={18} col={C.txt}/><div style={{fontSize:17,fontWeight:800,color:C.txt}}>Neuer Kunde</div><span style={{fontSize:11,fontWeight:700,color:badgeCol,background:hexA(badgeCol,0.14),border:'1px solid '+hexA(badgeCol,0.3),borderRadius:7,padding:'2px 8px'}}>{isImmo?'Immobilien':'Firma'}</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}><Ic p={P.prson} sz={18} col={C.txt}/><div style={{fontSize:17,fontWeight:800,color:C.txt}}>Neuer Kunde</div><span style={{fontSize:11,fontWeight:700,color:badgeCol,background:hexA(badgeCol,0.14),border:'1px solid '+hexA(badgeCol,0.3),borderRadius:7,padding:'2px 8px'}}>{acctNameOf(acc)}</span></div>
             <div style={{fontSize:12.5,color:C.sub,lineHeight:1.5,marginBottom:16}}>Schnell anlegen – der Kunde wird gespeichert und direkt in die Rechnung übernommen.</div>
+            {showAcctSel && (
+              <div style={{marginBottom:14}}><div style={lbl2}>Konto <span style={{color:C.red}}>*</span></div>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                  {bizAccts.map(k=>{const on=acc===k; const col=acol(k); return (
+                    <button key={k} onClick={()=>set({domain:k})} style={{display:'flex',alignItems:'center',gap:7,background:on?hexA(col,0.16):C.surf2,border:'1.5px solid '+(on?col:C.bdr),color:on?C.txt:C.sub,borderRadius:10,padding:'8px 12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={acctIconOf(k)} sz={14} col={col}/> {acctNameOf(k)}{on&&<Ic p={P.check} sz={13} col={col}/>}</button>
+                  );})}
+                </div>
+              </div>
+            )}
             <div style={{display:'grid',gridTemplateColumns:'90px 1fr',gap:10,marginBottom:10}}>
               <div><div style={lbl2}>Anrede</div><select value={n.anrede||''} onChange={e=>set({anrede:e.target.value})} style={{...fld2,cursor:'pointer'}}><option value="">—</option><option value="herr">Herr</option><option value="frau">Frau</option></select></div>
               <div><div style={lbl2}>Firma <span style={{color:C.mut}}>(optional)</span></div><input value={n.company||''} onChange={e=>set({company:e.target.value})} placeholder="Firma" style={fld2}/></div>
