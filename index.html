@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Buqo</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23D8F878'/%3E%3Ctext x='16' y='23' font-family='Arial, sans-serif' font-weight='800' font-size='20' fill='%230A0A0A' text-anchor='middle'%3EB%3C/text%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23007AFF'/%3E%3Ctext x='16' y='23' font-family='Arial, sans-serif' font-weight='800' font-size='20' fill='%23FFFFFF' text-anchor='middle'%3EB%3C/text%3E%3C/svg%3E">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -41,10 +41,10 @@
     .nocal::-webkit-calendar-picker-indicator{display:none;-webkit-appearance:none}
     .nocal{-moz-appearance:textfield}
     .prog{height:5px;width:100%;background:rgba(216,248,120,0.18);border-radius:99px;overflow:hidden;position:relative}
-    .prog::after{content:'';position:absolute;top:0;height:100%;width:40%;border-radius:99px;background:#C6E06A;animation:progslide 1.05s ease-in-out infinite}
+    .prog::after{content:'';position:absolute;top:0;height:100%;width:40%;border-radius:99px;background:#007AFF;animation:progslide 1.05s ease-in-out infinite}
     @keyframes progslide{0%{left:-42%}100%{left:100%}}
     .typing{display:inline-flex;gap:5px;align-items:center}
-    .typing span{width:7px;height:7px;border-radius:50%;background:#C6E06A;display:inline-block;animation:typingbounce 1.1s ease-in-out infinite}
+    .typing span{width:7px;height:7px;border-radius:50%;background:#007AFF;display:inline-block;animation:typingbounce 1.1s ease-in-out infinite}
     .typing span:nth-child(2){animation-delay:.18s}
     .typing span:nth-child(3){animation-delay:.36s}
     @keyframes typingbounce{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-5px);opacity:1}}
@@ -71,31 +71,33 @@ const UNTER_PRESETS = ['Freelancer','Bürokosten','Reisekosten','Fortbildung','B
 const PRIV_DEF      = ['Lebensmittel','Restaurant & Essen','Hobbys & Freizeit','Mobilität'];
 const PRIV_PRESETS  = ['Kleidung','Urlaub','Sport & Fitness','Streaming & Abos','Versicherungen','Sonstiges'];
 
-/* ══ Apple dark palette ══ */
-// ══ Farbpaletten: Lime-Primär (#D8F878) + Teal/Peach-Sekundär, Dark + Light ══
+/* ══ Buqo-Palette (Apple-inspiriert) ══ */
+// ══ Farbpaletten: Signalblau-Primär (#007AFF) + Limette-Akzent (#BBF451, sparsam), Dark + Light ══
 // Nur solide Basisfarben; transluzente/Text-Varianten (priL, priTxt …) werden zur Laufzeit abgeleitet.
-// pri = „Tinten"-Akzent (Text/Icons/aktive Zustände) → im Light-Mode dunkler, damit auf Weiß lesbar.
-// act = kräftige Füllfläche (Buttons/Avatar) → in beiden Modi das Lime.
+// pri/act = Primärfarbe (Text/Icons/Buttons) → Blau, in beiden Modi identisch (guter Kontrast auf Hell & Dunkel).
+// accent  = sparsam eingesetzte Limette für positive Highlights (siehe accentL/accentTxt).
 const THEME_DARK = {
-  bg:'#0A0A0A', surf:'#1A1A1A', surf2:'#242424', surf3:'#2E2E2E',
+  bg:'#0B0D12', surf:'#1A1A1A', surf2:'#242424', surf3:'#2E2E2E',
   bdr:'rgba(255,255,255,0.08)', bdrM:'rgba(255,255,255,0.14)',
-  pri:'#D8F878', priL:'rgba(216,248,120,0.20)', priTxt:'#0A0A0A',
-  act:'#D8F878', actL:'rgba(216,248,120,0.18)', actTxt:'#0A0A0A',
-  grn:'#B7E85C', grnL:'rgba(183,232,92,0.13)',
-  red:'#FF6B6B', redL:'rgba(255,107,107,0.11)',
-  amb:'#FFC24B', ambL:'rgba(255,194,75,0.12)',
+  pri:'#007AFF', priL:'rgba(0,122,255,0.20)', priTxt:'#FFFFFF',
+  act:'#007AFF', actL:'rgba(0,122,255,0.18)', actTxt:'#FFFFFF',
+  accent:'#BBF451', accentL:'rgba(187,244,81,0.16)', accentTxt:'#0A0A0A',
+  grn:'#34C759', grnL:'rgba(52,199,89,0.14)',
+  red:'#FF3B30', redL:'rgba(255,59,48,0.11)',
+  amb:'#FF9F0A', ambL:'rgba(255,159,10,0.12)',
   exp:'#FFB37A',
   txt:'#FFFFFF', sub:'rgba(255,255,255,0.62)', mut:'rgba(255,255,255,0.40)',
   sep:'rgba(255,255,255,0.07)',
 };
 const THEME_LIGHT = {
-  bg:'#F4F5F7', surf:'#FFFFFF', surf2:'#EEF0F3', surf3:'#E3E6EB',
+  bg:'#F5F7FA', surf:'#FFFFFF', surf2:'#EEF0F3', surf3:'#E3E6EB',
   bdr:'rgba(15,18,24,0.10)', bdrM:'rgba(15,18,24,0.18)',
-  pri:'#5E8C10', priL:'rgba(94,140,16,0.13)', priTxt:'#FFFFFF',
-  act:'#D8F878', actL:'rgba(216,248,120,0.20)', actTxt:'#0A0A0A',
-  grn:'#4E8F16', grnL:'rgba(78,143,22,0.12)',
-  red:'#E03131', redL:'rgba(224,49,49,0.11)',
-  amb:'#C97A00', ambL:'rgba(201,122,0,0.12)',
+  pri:'#007AFF', priL:'rgba(0,122,255,0.14)', priTxt:'#FFFFFF',
+  act:'#007AFF', actL:'rgba(0,122,255,0.14)', actTxt:'#FFFFFF',
+  accent:'#BBF451', accentL:'rgba(187,244,81,0.18)', accentTxt:'#0A0A0A',
+  grn:'#34C759', grnL:'rgba(52,199,89,0.12)',
+  red:'#FF3B30', redL:'rgba(255,59,48,0.11)',
+  amb:'#FF9F0A', ambL:'rgba(255,159,10,0.12)',
   exp:'#D9531A',
   txt:'#15171C', sub:'rgba(21,23,28,0.62)', mut:'rgba(21,23,28,0.42)',
   sep:'rgba(15,18,24,0.08)',
@@ -106,9 +108,10 @@ const hexA=(hex,a)=>{ const n=parseInt(String(hex).slice(1),16); return 'rgba('+
 // relative Helligkeit + ideale Textfarbe (dunkel auf hellen Akzenten, hell auf dunklen)
 const relLum=(hex)=>{ try{ const n=parseInt(String(hex).slice(1),16); const r=((n>>16)&255)/255,g=((n>>8)&255)/255,b=(n&255)/255; return 0.2126*r+0.7152*g+0.0722*b; }catch(e){ return 0; } };
 const idealText=(hex)=> relLum(hex)>0.58 ? '#0A0A0A' : '#FFFFFF';
-// Konto-Farben in Anzeige-Reihenfolge (Teal · Peach · Lime · Violett · Rosé) – zur neuen Palette passend
+// Konto-Farben in Anzeige-Reihenfolge (Türkis · Violett · Orange · Hellblau · Pink) – aus der 10er Buqo-Palette
+// Reserve (noch ungenutzt für weitere Konten/Kategorien): Gelb #FFD60A, Magenta #BF5AF2, Grau #8E8E93
 const ACCT_ORDER=['unter','p1','p2','p3','privat'];
-const ACCT_PAL  =['#70B8BA','#FFCCB6','#C6E06A','#B8A9E8','#F2A9C4'];
+const ACCT_PAL  =['#30D5C8','#AF52DE','#FF9500','#5AC8FA','#FF2D55'];
 const acctColor=(key)=>{ const i=ACCT_ORDER.indexOf(key); return ACCT_PAL[i>=0?i:0]; };
 
 /* ══ Helpers ══ */
@@ -245,9 +248,9 @@ const belegFileName = (name, belegnr, origName)=>{ const ext=((String(origName||
 
 /* ══ Konten-Farben (zur neuen Palette) ══ */
 const KONTO_COLORS = {
-  immo:   { c:'#C6E06A', tint:'rgba(198,224,106,0.13)', bd:'rgba(198,224,106,0.35)' },
-  unter:  { c:'#70B8BA', tint:'rgba(112,184,186,0.13)', bd:'rgba(112,184,186,0.35)' },
-  privat: { c:'#FFCCB6', tint:'rgba(255,204,182,0.13)', bd:'rgba(255,204,182,0.35)' },
+  immo:   { c:'#BBF451', tint:'rgba(187,244,81,0.13)', bd:'rgba(187,244,81,0.35)' },
+  unter:  { c:'#30D5C8', tint:'rgba(48,213,200,0.13)', bd:'rgba(48,213,200,0.35)' },
+  privat: { c:'#FF2D55', tint:'rgba(255,45,85,0.13)', bd:'rgba(255,45,85,0.35)' },
 };
 const KONTO_ICONS = { immo:'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z M9 22V12h6v10', unter:'M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2m-8-3a2 2 0 00-2 2h4a2 2 0 00-2-2z', privat:'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 11a4 4 0 100-8 4 4 0 000 8z' };
 
@@ -1305,9 +1308,10 @@ function App({session}) {
     const base = isDark?THEME_DARK:THEME_LIGHT;
     const ov = ((data.themeColors||{})[isDark?'dark':'light'])||{};
     const pal = {...base};
-    ['pri','act','grn','exp','red','amb'].forEach(k=>{ if(ov[k]&&/^#[0-9a-fA-F]{6}$/.test(ov[k])) pal[k]=ov[k]; });
+    ['pri','act','accent','grn','exp','red','amb'].forEach(k=>{ if(ov[k]&&/^#[0-9a-fA-F]{6}$/.test(ov[k])) pal[k]=ov[k]; });
     pal.priL=hexA(pal.pri,isDark?0.20:0.14); pal.priTxt=idealText(pal.pri);
     pal.actL=hexA(pal.act,isDark?0.18:0.14); pal.actTxt=idealText(pal.act);
+    pal.accentL=hexA(pal.accent,isDark?0.16:0.18); pal.accentTxt=idealText(pal.accent);
     pal.grnL=hexA(pal.grn,isDark?0.14:0.12); pal.redL=hexA(pal.red,0.11); pal.ambL=hexA(pal.amb,0.12);
     Object.assign(C, pal);
     Object.assign(SI,{background:C.surf3,color:C.txt});
@@ -2541,7 +2545,7 @@ function App({session}) {
     // USt nach Satz gruppieren
     const byRate={}; (inv.items||[]).forEach(it=>{ const r=num(it.mwst!=null?it.mwst:19); const n=num(it.qty||1)*num(it.price); byRate[r]=(byRate[r]||0)+n*r/100; });
     const ustRows=Object.keys(byRate).sort((a,b)=>b-a).map(r=>'<div class=trow><span>zzgl. '+r+' % USt</span><span>'+m2(byRate[r])+'</span></div>').join('');
-    const A='#70B8BA';
+    const A='#007AFF';
     return '<html><head><meta charset="utf-8"><title>Rechnung '+esc(inv.number)+'</title><style>'
       +'*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#1d1d1f;padding:48px 52px;max-width:860px;margin:0 auto;background:#fff;font-size:13px;line-height:1.5}'
       +'h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}.r{text-align:right}.muted{color:#86868b}'
@@ -3030,7 +3034,7 @@ function App({session}) {
   const bizAccts = ['unter',...PROPS].filter(acctCreated);   // echte Konten ohne Privat
   const showAcctSel = bizAccts.length>=2;                     // Konten-Auswahl nur ab 2 echten Konten
   const normAcct = (k)=> k==='immo' ? (bizAccts.find(a=>a!=='unter')||'p1') : (k||'unter'); // Legacy „immo" → erstes Objekt-Konto
-  const ACCT_COLOR_CHOICES=['#70B8BA','#FFCCB6','#C6E06A','#B8A9E8','#F2A9C4','#D8F878','#7FCFD1','#F4C77B','#9AD1F0','#8FD9A6'];
+  const ACCT_COLOR_CHOICES=['#007AFF','#BBF451','#AF52DE','#FF9500','#5AC8FA','#FF2D55','#30D5C8','#FFD60A','#BF5AF2','#8E8E93'];
   // Akzentfarbe des aktuell geöffneten/aktiven Kontos (Zahlen bleiben grün)
   const activeAcct = (tab==='quellen'||tab==='home') ? openAcct : (tab==='immo' ? sp : tab==='unter' ? 'unter' : tab==='privat' ? 'privat' : null);
   const secAccent = activeAcct ? acol(activeAcct) : C.pri;
@@ -3621,6 +3625,7 @@ function App({session}) {
                     {colorField('Aktion (Buttons)',C.act,v=>setThemeColor('act',v))}
                   </div>
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
+                    {colorField('Akzent (sparsam)',C.accent,v=>setThemeColor('accent',v))}
                     {colorField('Positiv / Summe',C.grn,v=>setThemeColor('grn',v))}
                     {colorField('Ausgaben',C.exp,v=>setThemeColor('exp',v))}
                   </div>
