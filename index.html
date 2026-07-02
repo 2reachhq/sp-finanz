@@ -2162,13 +2162,22 @@ function App({session}) {
     const b64 = await fileToB64(blob);
     const block = isPdf ? { type:'document', source:{ type:'base64', media_type:'application/pdf', data:b64 } } : { type:'image', source:{ type:'base64', media_type:media, data:b64 } };
     const prompt = "Dies ist EIN einzelner Beleg/Rechnung/Quittung (Deutschland). Lies die Felder aus. AUSSCHLIESSLICH minifiziertes JSON:\n"
-      + '{"b":"Kunde/Name/Titel","brutto":12.34,"netto":10.37,"mwst":19,"k":"a","d":"TT.MM.JJJJ","r":"Belegnummer","c":"Kategorie"}\n'
-      + "b=Kunde bzw. Name/Titel (keine generische Bezeichnung), brutto=Gesamtbetrag (Punkt-Dezimal), netto=Netto, mwst=MwSt-% (19/7/0), k=\"e\" bei Einnahme sonst \"a\", d/r leer wenn nicht vorhanden, c=Kategorie aus ["+CATS.join(',')+"]. Erfinde nichts.";
+      + '{"b":"Kunde/Name/Titel","brutto":12.34,"netto":10.37,"mwst":19,"k":"a","d":"TT.MM.JJJJ","r":"Belegnummer","c":"Kategorie","waehrung":"EUR"}\n'
+      + "b=Kunde bzw. Name/Titel (keine generische Bezeichnung), brutto=Gesamtbetrag (Punkt-Dezimal), netto=Netto, mwst=MwSt-% (19/7/0), k=\"e\" bei Einnahme sonst \"a\", d/r leer wenn nicht vorhanden, c=Kategorie aus ["+CATS.join(',')+"], waehrung=ISO-Code der auf dem Beleg ausgewiesenen Währung (sonst \"EUR\"). Erfinde nichts.";
     const { data:resp, error } = await aiInvoke({ body:{ model:'claude-haiku-4-5', max_tokens:900, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
     if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
     let txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; txt=txt.replace(/```json|```/g,'').trim(); const mm=txt.match(/\{[\s\S]*\}/); if(mm)txt=mm[0];
     const p=JSON.parse(txt);
-    return { name:String(p.b||'').slice(0,70), amount:Math.abs(parseFloat(String(p.brutto!=null?p.brutto:p.a).replace(',','.'))||0), netto:Math.abs(parseFloat(String(p.netto).replace(',','.'))||0), mwst:parseFloat(String(p.mwst).replace(',','.'))||0, kind:(p.k==='e'?'ein':'aus'), belegnr:String(p.r||''), datum:toISO(p.d||''), category:String(p.c||'') };
+    let amount=Math.abs(parseFloat(String(p.brutto!=null?p.brutto:p.a).replace(',','.'))||0);
+    let netto=Math.abs(parseFloat(String(p.netto).replace(',','.'))||0);
+    const datum=toISO(p.d||'');
+    const waehrung=String(p.waehrung||'EUR').toUpperCase().slice(0,3)||'EUR';
+    let fx=null;
+    if(waehrung && waehrung!=='EUR'){
+      try{ const {rate,date:fxDate}=await fetchFxRate(datum,waehrung); fx={waehrung,origBrutto:amount,origNetto:netto,rate,datum:fxDate}; amount=Math.round(amount*rate*100)/100; netto=netto?Math.round(netto*rate*100)/100:0; }
+      catch(e){ /* Kurs nicht verfügbar – Beträge bleiben in Fremdwährung, Aufrufer sollte waehrung prüfen */ }
+    }
+    return { name:String(p.b||'').slice(0,70), amount, netto, mwst:parseFloat(String(p.mwst).replace(',','.'))||0, kind:(p.k==='e'?'ein':'aus'), belegnr:String(p.r||''), datum, category:String(p.c||''), waehrung, fx };
   };
   // Beleg im Drawer hochladen → auslesen → Felder vorausfüllen + Dublettenprüfung
   const extractToItem = async (file, item, onUpdate) => {
@@ -2183,8 +2192,20 @@ function App({session}) {
       if(r.category) onUpdate(item.id,'__merge__',{category:r.category,catAuto:false,catAI:true});
       const flagged=flagDraft({name:r.name,amount:r.amount,belegnr:r.belegnr,datum:r.datum}, existingBookings());
       if(flagged.dup) setDupPopup({draft:flagged,match:flagged.dup});
-      setToast('Beleg ausgelesen ✓');
+      if(r.fx) setToast('Fremdwährung erkannt: '+r.fx.origBrutto.toFixed(2)+' '+r.fx.waehrung+' → '+r.amount.toFixed(2)+' € (Kurs vom '+r.fx.datum+')');
+      else if(r.waehrung && r.waehrung!=='EUR') setToast('⚠ Beleg scheint in '+r.waehrung+' zu sein, Kurs konnte nicht geladen werden – Betrag bitte prüfen.');
+      else setToast('Beleg ausgelesen ✓');
     }}catch(e){ setToast('Auslesen fehlgeschlagen: '+(e.message||e)); }
+  };
+  // P2.1: Wechselkurs für einen Fremdwährungsbeleg holen (EZB-Referenzkurse über frankfurter.app, kostenlos & ohne Key)
+  const fetchFxRate = async (date, from)=>{
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(date||'') ? date : new Date().toISOString().slice(0,10);
+    const r = await fetch('https://api.frankfurter.app/'+iso+'?from='+encodeURIComponent(from)+'&to=EUR');
+    if(!r.ok) throw new Error('Wechselkurs nicht abrufbar');
+    const j = await r.json();
+    const rate = j && j.rates && j.rates.EUR;
+    if(!rate) throw new Error('Kein Kurs gefunden');
+    return { rate, date: j.date||iso };
   };
   const extractBeleg = async file => {
     setBelegBusy(true); setBelegRes(null);
@@ -2205,11 +2226,21 @@ function App({session}) {
       if(resp && resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
       let txt=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||''; txt=txt.replace(/```json|```/g,'').trim(); const mm=txt.match(/\{[\s\S]*\}/); if(mm)txt=mm[0];
       const p=JSON.parse(txt);
-      const brutto=Math.abs(parseFloat(String(p.brutto!=null?p.brutto:p.a).replace(',','.'))||0);
-      const netto=Math.abs(parseFloat(String(p.netto).replace(',','.'))||0);
+      let brutto=Math.abs(parseFloat(String(p.brutto!=null?p.brutto:p.a).replace(',','.'))||0);
+      let netto=Math.abs(parseFloat(String(p.netto).replace(',','.'))||0);
       const mwst=parseFloat(String(p.mwst).replace(',','.'))||0;
       const waehrung=String(p.waehrung||'EUR').toUpperCase().slice(0,3)||'EUR';
-      setBelegRes({ name:String(p.b||'Beleg').slice(0,70), amount:brutto, netto, mwst, kind:(p.k==='e'?'ein':'aus'), belegnr:String(p.r||''), datum:String(p.d||''), category:String(p.c||''), waehrung, unsicher:!!p.unsicher, nutzung:null, nutzungAnteil:50, bewirtungMitwem:null, taxTip:'', taxTipBusy:false });
+      const datum=String(p.d||'');
+      let fx=null;
+      if(waehrung && waehrung!=='EUR'){
+        try{
+          const { rate, date:fxDate } = await fetchFxRate(toISO(datum), waehrung);
+          fx = { waehrung, origBrutto:brutto, origNetto:netto, rate, datum:fxDate };
+          brutto = Math.round(brutto*rate*100)/100;
+          netto = netto ? Math.round(netto*rate*100)/100 : 0;
+        }catch(e){ setToast('Fremdwährung ('+waehrung+') erkannt, Kurs konnte aber nicht automatisch geladen werden – bitte Betrag in EUR prüfen.'); }
+      }
+      setBelegRes({ name:String(p.b||'Beleg').slice(0,70), amount:brutto, netto, mwst, kind:(p.k==='e'?'ein':'aus'), belegnr:String(p.r||''), datum, category:String(p.c||''), waehrung, fx, unsicher:!!p.unsicher, nutzung:null, nutzungAnteil:50, bewirtungMitwem:null, taxTip:'', taxTipBusy:false });
       setBelegDest(d=> (p.k==='e' ? 'unterInc' : d));
     }catch(e){ setToast('Beleg konnte nicht gelesen werden: '+(e.message||e)); }
     setBelegBusy(false);
@@ -2230,7 +2261,7 @@ function App({session}) {
         if(!nd[belegY]) nd[belegY]={};
         if(!nd[belegY][belegM]) nd[belegY][belegM]=emptyMonth();
         const noteParts=[]; if(belegRes.belegnr)noteParts.push('Nr. '+belegRes.belegnr); if(belegRes.datum)noteParts.push(belegRes.datum); if(num(belegRes.netto))noteParts.push('Netto '+fmt(num(belegRes.netto))); if(num(belegRes.mwst))noteParts.push('MwSt '+num(belegRes.mwst)+'%');
-        const item={ ...newItem(belegRes.name), amount:num(belegRes.amount), category:(belegRes.category||guessCategory(String(belegRes.name||'')+' '+noteParts.join(' '))), note:noteParts.join(' · '), datum:belegRes.datum||'', belegnr:belegRes.belegnr||'', netto:num(belegRes.netto), mwst:num(belegRes.mwst), filePath:path, fileName:meta.name, nutzung:belegRes.nutzung||'', nutzungAnteil:belegRes.nutzung==='gemischt'?num(belegRes.nutzungAnteil):'', bewirtungMitwem:belegRes.bewirtungMitwem||'', taxTip:belegRes.taxTip||'', waehrung:(belegRes.waehrung&&belegRes.waehrung!=='EUR')?belegRes.waehrung:'' };
+        const item={ ...newItem(belegRes.name), amount:num(belegRes.amount), category:(belegRes.category||guessCategory(String(belegRes.name||'')+' '+noteParts.join(' '))), note:noteParts.join(' · '), datum:belegRes.datum||'', belegnr:belegRes.belegnr||'', netto:num(belegRes.netto), mwst:num(belegRes.mwst), filePath:path, fileName:meta.name, nutzung:belegRes.nutzung||'', nutzungAnteil:belegRes.nutzung==='gemischt'?num(belegRes.nutzungAnteil):'', bewirtungMitwem:belegRes.bewirtungMitwem||'', taxTip:belegRes.taxTip||'', waehrung:(belegRes.waehrung&&belegRes.waehrung!=='EUR')?belegRes.waehrung:'', fxOrig:belegRes.fx?belegRes.fx.origBrutto:'', fxRate:belegRes.fx?belegRes.fx.rate:'' };
         setListAt(nd[belegY][belegM], loc, [...getListAt(nd[belegY][belegM],loc), item]);
         return nd;
       });
@@ -2289,7 +2320,7 @@ function App({session}) {
   const scanCaptureFile = async (f)=>{ if(!f) return; f=await imageToPdfFile(f); const isPdf=/pdf$/i.test(f.name||'')||f.type==='application/pdf'; setCapProg(8); const tick=setInterval(()=>setCapProg(p=>p<88?p+Math.max(3,(88-p)*0.16):p),120);
     try{ let blob=f, mime='image/jpeg', ext='.jpg'; if(isPdf){ mime='application/pdf'; ext='.pdf'; } else { try{ blob=await compressImage(f,1500,0.6); }catch(_){} } const b64=await fileToB64(blob); clearInterval(tick); setCapProg(94);
       setCapture(c=>{ if(!c)return c; return {...c, scanning:true, f:{...c.f, fileData:'data:'+mime+';base64,'+b64, fileName:belegFileName(c.f.name,c.f.belegnr,f.name).replace(/\.[a-z0-9]+$/i,ext)}}; });
-      try{ const r=await aiExtractFile(f); setCapture(c=>{ if(!c)return c; const nf={...c.f}; if(r.name&&!String(nf.name).trim())nf.name=r.name; if(r.amount&&!num(nf.amount))nf.amount=String(r.amount); if(r.netto&&!num(nf.netto))nf.netto=String(r.netto); if(r.mwst&&nf.mwst==='')nf.mwst=String(r.mwst); if(r.datum&&!nf.datum)nf.datum=r.datum; if(r.belegnr&&!String(nf.belegnr).trim())nf.belegnr=r.belegnr; if(r.category&&!String(nf.category).trim()){nf.category=r.category; nf.catAuto=false; nf.catAI=true;} const nk=c.kindLocked?c.kind:(r.kind||c.kind); return {...c, kind:nk, scanning:false, f:nf}; }); setToast('Beleg ausgelesen ✓'); }
+      try{ const r=await aiExtractFile(f); setCapture(c=>{ if(!c)return c; const nf={...c.f}; if(r.name&&!String(nf.name).trim())nf.name=r.name; if(r.amount&&!num(nf.amount))nf.amount=String(r.amount); if(r.netto&&!num(nf.netto))nf.netto=String(r.netto); if(r.mwst&&nf.mwst==='')nf.mwst=String(r.mwst); if(r.datum&&!nf.datum)nf.datum=r.datum; if(r.belegnr&&!String(nf.belegnr).trim())nf.belegnr=r.belegnr; if(r.category&&!String(nf.category).trim()){nf.category=r.category; nf.catAuto=false; nf.catAI=true;} const nk=c.kindLocked?c.kind:(r.kind||c.kind); return {...c, kind:nk, scanning:false, f:nf}; }); if(r.fx){ setToast('Fremdwährung erkannt: '+r.fx.origBrutto.toFixed(2)+' '+r.fx.waehrung+' → '+r.amount.toFixed(2)+' € (Kurs vom '+r.fx.datum+')'); } else if(r.waehrung && r.waehrung!=='EUR'){ setToast('⚠ Beleg scheint in '+r.waehrung+' zu sein, Kurs konnte nicht geladen werden – Betrag bitte prüfen.'); } else { setToast('Beleg ausgelesen ✓'); } }
       catch(e){ setCapture(c=>c?{...c,scanning:false}:c); setToast('Auslesen fehlgeschlagen: '+(e.message||e)); }
       setCapProg(100); setTimeout(()=>setCapProg(0),350);
     }catch(e){ clearInterval(tick); setCapProg(0); setToast('Beleg-Fehler: '+(e.message||e)); }
@@ -5440,6 +5471,12 @@ function App({session}) {
             <>
               {belegRes.unsicher && (
                 <div style={{background:C.ambL,border:'1px solid rgba(255,180,0,0.4)',borderRadius:10,padding:'10px 12px',marginBottom:12,fontSize:12,color:C.amb,lineHeight:1.5}}>⚠ Bild war evtl. unscharf/unvollständig – bitte Beträge kurz prüfen.</div>
+              )}
+              {belegRes.fx && (
+                <div style={{background:C.priL,border:'1px solid '+hexA(C.pri,0.3),borderRadius:10,padding:'10px 12px',marginBottom:12,fontSize:12,color:C.txt,lineHeight:1.5}}>🌍 Fremdwährung erkannt: {belegRes.fx.origBrutto.toFixed(2)} {belegRes.fx.waehrung} · Kurs vom {belegRes.fx.datum} (1 {belegRes.fx.waehrung} = {belegRes.fx.rate.toFixed(4)} EUR) → umgerechnet {belegRes.amount.toFixed(2)} € (unten anpassbar).</div>
+              )}
+              {belegRes.waehrung && belegRes.waehrung!=='EUR' && !belegRes.fx && (
+                <div style={{background:C.ambL,border:'1px solid rgba(255,180,0,0.4)',borderRadius:10,padding:'10px 12px',marginBottom:12,fontSize:12,color:C.amb,lineHeight:1.5}}>⚠ Beleg scheint in {belegRes.waehrung} ausgestellt zu sein – Kurs konnte nicht geladen werden, Betrag unten ist noch in {belegRes.waehrung}, bitte manuell in EUR umrechnen.</div>
               )}
               <div style={{fontSize:12,color:C.sub,marginBottom:6}}>Name / Kunde</div>
               <input value={belegRes.name} onChange={e=>setBelegRes(r=>({...r,name:e.target.value}))} style={{...SS,marginBottom:10,textAlign:'left'}} />
