@@ -40,7 +40,7 @@
     @keyframes slideInLeft{from{transform:translateX(-100%);opacity:.5}to{transform:translateX(0);opacity:1}}
     .nocal::-webkit-calendar-picker-indicator{display:none;-webkit-appearance:none}
     .nocal{-moz-appearance:textfield}
-    .prog{height:5px;width:100%;background:rgba(216,248,120,0.18);border-radius:99px;overflow:hidden;position:relative}
+    .prog{height:5px;width:100%;background:rgba(0,122,255,0.18);border-radius:99px;overflow:hidden;position:relative}
     .prog::after{content:'';position:absolute;top:0;height:100%;width:40%;border-radius:99px;background:#007AFF;animation:progslide 1.05s ease-in-out infinite}
     @keyframes progslide{0%{left:-42%}100%{left:100%}}
     .typing{display:inline-flex;gap:5px;align-items:center}
@@ -1396,6 +1396,9 @@ function App({session}) {
   const [botFile,setBotFile]= useState(null);        // an den Assistenten angehängte Datei
   const [botBusy,setBotBusy]= useState(false);        // Assistent arbeitet (KI)
   const [botFlow,setBotFlow]= useState(null);         // laufender Dialog-Flow (z. B. Rechnung erstellen)
+  const [botUnread,setBotUnread]= useState(0);        // ungelesene Assistenten-Nachrichten (Badge am Chat-Button)
+  const botSeenRef=useRef(1);                          // wie viele Nachrichten der Nutzer schon gesehen hat
+  const [botInvPreview,setBotInvPreview]= useState(null); // Rechnungs-Entwurf-Vorschau aus dem Chat (vor dem Erstellen)
   const [botMsgs,setBotMsgs]= useState([{role:'assistant',content:'Hey! Ich bin deine KI-Buchhaltung – quasi dein persönlicher Steuerberater rund um die Uhr. Ich kenne deine Zahlen, erkläre sie dir verständlich, warne früh bei Risiken und nehme dir Arbeit ab: Rechnungen, Belege, Auswertungen. Frag einfach los – z. B. „Wie steht meine Firma da?", „Worauf muss ich steuerlich achten?", „Mach mir eine Rechnung an Max über 1500" – oder häng eine Datei an, dann lese ich sie aus.'}]);
   const [belegOpen,setBelegOpen]= useState(false); // Beleg-Erfassung
   const [belegBusy,setBelegBusy]= useState(false);
@@ -2866,7 +2869,7 @@ function App({session}) {
   };
   const botAskAI = async (q)=>{ setBotBusy(true);
     try{ const ctx=buildFinanceContext();
-      const sys="Du bist der persönliche KI-Buchhalter und Steuerberater-Assistent der Finanz-App des Nutzers. Du kennst dessen komplette Finanzdaten (siehe KONTEXT) und hast Werkzeuge für überfällige Rechnungen, Mahnungen und Navigation – nutze sie, statt zu raten. Sprich wie ein erfahrener, vertrauter CFO/Steuerberater: einfache, klare Sprache, proaktiv – erkläre Zahlen verständlich, weise früh auf Risiken hin und schlage konkrete nächste Schritte vor. Du bist eine KI, aber persönlich und zupackend (z. B. ‚klar, ich mach das für dich', ‚schau es dir kurz an, dann erledige ich den Rest'). Kein Markdown, keine Tabellen, kurz und konkret, Beträge in Euro. Wenn Daten fehlen, sag es ehrlich. Schließe steuerliche Aussagen mit einem kurzen Hinweis, dass der Steuerberater final entscheidet.";
+      const sys="Du bist der persönliche KI-Buchhalter und Steuerberater-Assistent der Finanz-App des Nutzers. Du kennst dessen komplette Finanzdaten (siehe KONTEXT) und hast Werkzeuge für überfällige Rechnungen, Mahnungen und Navigation – nutze sie, statt zu raten. Sprich wie ein erfahrener, vertrauter CFO/Steuerberater in Ich-Form, persönlich und zupackend (z. B. ‚klar, ich mach das für dich'). WICHTIG: Antworte in maximal 2–3 kurzen Sätzen, komm sofort auf den Punkt – keine Aufzählungen, keine Einleitungen, keine Wiederholung der Frage. Stelle höchstens EINE Rückfrage auf einmal. Kein Markdown, keine Tabellen, Beträge in Euro. Wenn Daten fehlen, sag es ehrlich in einem Satz. Bei steuerlichen Aussagen kurzer Zusatz, dass der Steuerberater final entscheidet.";
       const usr="KONTEXT (aktuelle Finanzdaten des Nutzers):\n"+ctx+"\n\nFrage des Nutzers: "+q;
       let messages=[{role:'user',content:[{type:'text',text:usr}]}];
       let finalText=null;
@@ -2927,8 +2930,9 @@ function App({session}) {
     return null;
   };
   const askNextInvoiceField=(inv)=>{ const need=nextInvoiceNeed(inv); setBotFlow({type:'invoice', inv, step:need});
-    if(need==='confirm'){ const cust=invCustomer(inv); const tot=invTotals(inv.items); const posL=(inv.items||[]).map(i=>i.desc+' · '+fmt(num(i.price)*num(i.qty||1))).join(', '); setBotMsgs(m=>[...m,{role:'assistant',content:'Bitte prüfen:\n• Kunde: '+((cust.name||inv.custName)||'—')+'\n• Adresse: '+(inv.custAddress||'—')+'\n• Position: '+posL+'\n• Konto: '+accLabel(inv.account)+'\n• Gesamt: '+fmt(tot.gross)+'\n\nSoll ich die Rechnung erstellen und buchen?', action:{type:'confirmInvoice'}}]); return; }
-    const Q={ kunde:'An welchen Kunden soll die Rechnung gehen? (Name)', adresse:'Wie lautet die Anschrift des Kunden? (Straße, PLZ Ort)', position:'Was soll berechnet werden? Beschreibung + Betrag, z. B. „Webdesign 1500".', konto:'Auf welches Konto soll die Rechnung gebucht werden?' };
+    if(need==='confirm'){ const cust=invCustomer(inv); const tot=invTotals(inv.items); const posL=(inv.items||[]).map(i=>i.desc+' · '+fmt(num(i.price)*num(i.qty||1))).join(', '); setBotMsgs(m=>[...m,{role:'assistant',content:'Bitte prüfen:\n• Kunde: '+((cust.name||inv.custName)||'—')+'\n• Adresse: '+(inv.custAddress||'—')+'\n• Position: '+posL+'\n• Konto: '+accLabel(inv.account)+'\n• Gesamt: '+fmt(tot.gross)+'\n\nErstellt wird erst, wenn du bestätigst.', action:{type:'confirmInvoice', inv}}]); return; }
+    if(need==='kunde'){ setBotMsgs(m=>[...m,{role:'assistant',content:'An welchen Kunden soll die Rechnung gehen? Wähl unten aus – oder tipp den Namen ein, wenn es ein neuer Kunde ist.', action:{type:'customerPick', domain:(inv.domain||'unter')}}]); return; }
+    const Q={ adresse:'Wie lautet die Anschrift des Kunden? (Straße, PLZ Ort)', position:'Was soll berechnet werden? Beschreibung + Betrag, z. B. „Webdesign 1500".', konto:'Sag mir nur noch, zu welchem Konto '+(inv.custName?('„'+inv.custName+'"'):'der Kunde')+' gehört – dann übernehme ich den Rest.' };
     const opts=invFieldOptions(need,inv);
     setBotMsgs(m=>[...m,{role:'assistant',content:Q[need]||'Bitte ergänzen.', action: opts?{type:'options',options:opts}:null}]);
   };
@@ -2943,7 +2947,7 @@ function App({session}) {
   };
   const advanceFlow = async (q)=>{ const flow=botFlow; if(!flow){ return; } if(/^(abbrechen|stop|abbruch|nein,? danke|cancel)\s*$/i.test(String(q||''))){ setBotFlow(null); setBotMsgs(m=>[...m,{role:'assistant',content:'Okay, abgebrochen.'}]); return; }
     const inv={...flow.inv}; const step=flow.step;
-    if(step==='kunde'){ const name=q.trim(); const c=customersFor(inv.domain||'unter').find(x=>(x.name||'').toLowerCase().includes(name.toLowerCase().split(' ')[0])); if(c){ inv.customerId=c.id; inv.custName=c.name||''; inv.custAddress=c.address||''; inv.custEmail=c.email||''; inv.saveCust=false; } else { inv.custName=name; inv.customerId=''; } }
+    if(step==='kunde'){ const name=q.trim(); const c=customersFor(inv.domain||'unter').find(x=>(x.name||'').toLowerCase().includes(name.toLowerCase().split(' ')[0])); if(c){ inv.customerId=c.id; inv.custName=c.name||''; inv.custAddress=c.address||''; inv.custEmail=c.email||''; inv.saveCust=false; } else { inv.custName=name; inv.customerId=''; setBotMsgs(m=>[...m,{role:'assistant',content:'„'+name+'" ist neu – ich lege ihn beim Erstellen automatisch als Kunde an.'}]); } }
     else if(step==='adresse'){ inv.custAddress=q.trim(); }
     else if(step==='position'){ const am=q.match(/(\d+(?:[.,]\d{1,2})?)/); const price=am?Math.abs(parseFloat(am[1].replace(',','.'))||0):0; const desc=q.replace(/(\d+(?:[.,]\d{1,2})?)\s*(euro|eur|€)?/i,'').replace(/[,;]+\s*$/,'').trim()||'Leistung'; inv.items=[{desc,qty:1,price,mwst:defMwstFor(inv.domain)}]; }
     else if(step==='konto'){ const acc=matchAccount(q); if(acc) inv.account=acc; else { setBotMsgs(m=>[...m,{role:'assistant',content:'Das Konto habe ich nicht erkannt. Sag z. B. „Firma", „'+(names[PROPS[0]]||'Immobilie')+'" oder „Privat".'}]); setBotFlow({...flow,inv}); return; } }
@@ -2998,6 +3002,42 @@ function App({session}) {
     const frage = overdue.length===1 ? ' Soll ich eine Zahlungserinnerung oder Mahnung vorbereiten?' : '';
     setBotMsgs(m=>[...m, {role:'assistant', content:'Bevor es losgeht, kurz noch: '+parts.join('; ')+'.'+frage, action}]);
   }, [botOpen]);
+  // Ungelesen-Zähler: Assistenten-Nachrichten, die ankommen, während der Chat zu ist → Badge am Chat-Button
+  useEffect(()=>{
+    if(botOpen){ botSeenRef.current=botMsgs.length; setBotUnread(0); }
+    else setBotUnread(botMsgs.filter((m,i)=>i>=botSeenRef.current && m.role==='assistant').length);
+  }, [botMsgs.length, botOpen]);
+  // Täglicher Morgen-Digest: ab 9 Uhr einmal pro Tag eine To-do-Nachricht in den Chat legen
+  const digestCheckRef = useRef(null);
+  digestCheckRef.current = ()=>{
+    try{
+      const now=new Date(); if(now.getHours()<9) return;
+      const today=now.toISOString().slice(0,10);
+      if(localStorage.getItem('buqo_digest_date')===today) return;
+      localStorage.setItem('buqo_digest_date',today);
+      const openCount=openBelegeList().length;
+      const dupCount=drafts.filter(d=>d.dup && !d.confirmed && !d.ignored && !d.privat).length;
+      const overdue=overdueInvoices();
+      const pending=drafts.filter(d=>!d.confirmed && !d.ignored && !d.privat).length;
+      const todos=[];
+      if(overdue.length) todos.push('• '+overdue.length+(overdue.length===1?' Rechnung ist':' Rechnungen sind')+' überfällig');
+      if(openCount) todos.push('• '+openCount+(openCount===1?' Beleg wartet':' Belege warten')+' auf Bestätigung');
+      if(dupCount) todos.push('• '+dupCount+' mögliche Dublette'+(dupCount===1?'':'n'));
+      if(pending) todos.push('• '+pending+' Kontoauszug-Buchung'+(pending===1?'':'en')+' unbearbeitet');
+      const opts=[];
+      if(overdue.length) opts.push({label:'Rechnungen',tab:'rechnung'});
+      if(openCount) opts.push({label:'Belege',tab:'belege'});
+      if(dupCount||pending) opts.push({label:'Import',tab:'import'});
+      const content = todos.length ? 'Guten Morgen! ☀️ Deine To-dos für heute:\n'+todos.join('\n') : 'Guten Morgen! ☀️ Alles im grünen Bereich – keine offenen To-dos.';
+      setBotMsgs(m=>[...m, {role:'assistant', content, action: opts.length?{type:'navTab',options:opts}:null}]);
+    }catch(_){}
+  };
+  useEffect(()=>{
+    if(!ready) return;
+    digestCheckRef.current && digestCheckRef.current();
+    const t=setInterval(()=>{ digestCheckRef.current && digestCheckRef.current(); }, 60000);
+    return ()=>clearInterval(t);
+  }, [ready]);
   const botSend = async (text)=>{ const q=(text!=null?text:botInput).trim(); const file=botFile; if(botBusy) return; if(!q && !file) return; if(botRecOn){ try{ botRecRef.current&&botRecRef.current.stop(); }catch(_){ } setBotRecOn(false); }
     setBotMsgs(m=>[...m,{role:'user',content:(q||'')+(file?((q?' ':'')+'📎 '+file.name):'')}]); setBotInput(''); { const ta=document.querySelector('#botInputArea'); if(ta){ta.style.height='auto';} }
     if(botFlow){ await advanceFlow(q); return; }
@@ -5500,7 +5540,7 @@ function App({session}) {
                 <Ic p={P.camera} sz={24} col={C.actTxt}/>
               </button>
             </div>
-            <button onClick={()=>setBotOpen(o=>!o)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',color:botOpen?C.pri:C.sub,paddingTop:8}}><Ic p={P.spark} sz={20} col={botOpen?C.pri:C.sub}/><span style={{fontSize:10,fontWeight:600}}>Assistent</span></button>
+            <button onClick={()=>setBotOpen(o=>!o)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',color:botOpen?C.pri:C.sub,paddingTop:8,position:'relative'}}><Ic p={P.spark} sz={20} col={botOpen?C.pri:C.sub}/><span style={{fontSize:10,fontWeight:600}}>Assistent</span>{botUnread>0 && <span style={{position:'absolute',top:3,right:'calc(50% - 21px)',minWidth:17,height:17,borderRadius:99,background:C.red,color:'#fff',fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px',boxSizing:'border-box'}}>{botUnread}</span>}</button>
             {cell('mehr','Sonstiges',P.menu,['mehr','kal','yr','steuer'])}
           </div>
         );
@@ -6039,6 +6079,24 @@ function App({session}) {
         </div>
       )}
       {/* ── Gestellte Rechnung ansehen (read-only PDF) ── */}
+      {botInvPreview && (
+        <div onClick={()=>setBotInvPreview(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:180,display:'flex',alignItems:'center',justifyContent:'center',padding:isMobile?12:32}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,width:'min(680px,100%)',maxHeight:'92vh',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 24px 60px rgba(0,0,0,0.6)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',borderBottom:'1px solid '+C.sep,flexShrink:0}}>
+              <div style={{fontSize:16,fontWeight:800,color:C.txt}}>Vorschau · Rechnung {botInvPreview.number}</div>
+              <span style={{fontSize:11,fontWeight:700,color:C.amb,background:C.ambL,borderRadius:6,padding:'3px 9px'}}>Noch nicht erstellt</span>
+              <button onClick={()=>setBotInvPreview(null)} style={{marginLeft:'auto',background:C.surf2,border:'none',color:C.sub,width:32,height:32,borderRadius:9,cursor:'pointer',fontSize:19,lineHeight:1,fontFamily:'inherit'}}>×</button>
+            </div>
+            <div style={{flex:1,minHeight:0,overflow:'hidden',background:'#fff'}}>
+              <iframe title="Rechnungs-Vorschau" srcDoc={invoiceHTML(botInvPreview,false)} style={{width:'100%',height:isMobile?'52vh':'58vh',border:'none',display:'block'}}/>
+            </div>
+            <div style={{display:'flex',gap:9,padding:'13px 18px',borderTop:'1px solid '+C.sep,flexShrink:0}}>
+              <button onClick={()=>{ setBotInvPreview(null); finalizeBotInvoice(); }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:2,background:C.act,color:C.actTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.check} sz={16} col={C.actTxt}/> Bestätigen & erstellen</button>
+              <button onClick={()=>setBotInvPreview(null)} style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:11,padding:'12px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Zurück</button>
+            </div>
+          </div>
+        </div>
+      )}
       {invView && (
         <div onClick={()=>setInvView(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:150,display:'flex',alignItems:'center',justifyContent:'center',padding:isMobile?10:32}}>
           <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,width:'min(820px,100%)',maxHeight:'92vh',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 24px 60px rgba(0,0,0,0.6)'}}>
@@ -6079,7 +6137,19 @@ function App({session}) {
               <div key={i} style={{display:'flex',flexDirection:'column',alignItems:m.role==='user'?'flex-end':'flex-start',gap:7}}>
                 <div style={{maxWidth:'88%',background:m.role==='user'?C.act:C.surf2,color:m.role==='user'?C.actTxt:C.txt,borderRadius:m.role==='user'?'13px 13px 4px 13px':'13px 13px 13px 4px',padding:'9px 12px',fontSize:13.5,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{m.content}</div>
                 {a && isLast && a.type==='import' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={()=>applyBotImport(a.drafts)} style={primBot}>In Import übernehmen</button><button onClick={()=>setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x))} style={ghostBot}>Abbrechen</button></div>}
-                {a && isLast && a.type==='confirmInvoice' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={finalizeBotInvoice} style={primBot}>Ja, erstellen</button><button onClick={()=>{ setBotFlow(null); setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x).concat([{role:'assistant',content:'Okay, abgebrochen.'}])); }} style={ghostBot}>Abbrechen</button></div>}
+                {a && isLast && a.type==='confirmInvoice' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={()=>setBotInvPreview(a.inv||(botFlow&&botFlow.inv)||null)} style={ghostBot}>👁 Anschauen</button><button onClick={finalizeBotInvoice} style={primBot}>Ja, erstellen</button><button onClick={()=>{ setBotFlow(null); setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x).concat([{role:'assistant',content:'Okay, abgebrochen.'}])); }} style={ghostBot}>Abbrechen</button></div>}
+                {a && isLast && a.type==='customerPick' && (()=>{ const cs=customersFor(a.domain||'unter').filter(c=>(c.name||'').trim()); const send=(v)=>{ if(!v) return; setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botSend(v); }; return (
+                  <div style={{display:'flex',flexDirection:'column',gap:7,width:'88%'}}>
+                    {cs.length>0 && <select defaultValue="" onChange={e=>send(e.target.value)} style={{background:C.surf2,border:'1px solid '+C.bdr,borderRadius:9,color:C.txt,padding:'10px 12px',fontSize:13,fontFamily:'inherit',outline:'none',cursor:'pointer'}}>
+                      <option value="">Bestehenden Kunden wählen…</option>
+                      {cs.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                    </select>}
+                    <div style={{display:'flex',gap:7}}>
+                      <input id={'botCustNew'+i} placeholder={cs.length?'…oder neuen Kunden eintippen':'Kundenname eintippen'} onKeyDown={e=>{ if(e.key==='Enter') send(e.target.value.trim()); }} style={{flex:1,minWidth:0,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:9,color:C.txt,padding:'9px 12px',fontSize:13,fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}/>
+                      <button onClick={()=>{ const el=document.getElementById('botCustNew'+i); send(el?el.value.trim():''); }} style={primBot}>OK</button>
+                    </div>
+                  </div>
+                ); })()}
                 {a && a.type==='showInvoice' && (()=>{ const iv=(data.invoices||[]).find(x=>x.id===a.invId); if(!iv) return null; return <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={()=>setInvView(iv)} style={primBot}>Ansehen</button><button onClick={()=>openMailCompose(iv)} style={ghostBot}>Senden</button><button onClick={()=>downloadInvoicePDF(iv)} style={ghostBot}>PDF</button></div>; })()}
                 {a && isLast && a.type==='options' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{(a.options||[]).map((o,oi)=><button key={oi} onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botSend(o.value); }} style={ghostBot}>{o.label}</button>)}</div>}
                 {a && isLast && a.type==='navTab' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{(a.options||[]).map((o,oi)=><button key={oi} onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); setBotOpen(false); setTab(o.tab); }} style={ghostBot}>{o.label}</button>)}</div>}
@@ -6093,7 +6163,7 @@ function App({session}) {
                 {a && a.type==='invoiceDone' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{a.hasMail && <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botStartSend(a.invId); }} style={primBot}>✉️ Per E-Mail senden</button>}<button onClick={()=>botPreviewInvoice(a.invId)} style={ghostBot}>📄 Ansehen</button>{!a.hasMail && <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botStartSend(a.invId); }} style={ghostBot}>✉️ Senden</button>}<button onClick={()=>setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x).concat([{role:'assistant',content:'Alles erledigt. 👍'}]))} style={ghostBot}>Fertig</button></div>}
               </div>
             ); })}
-            {botBusy && <div style={{display:'flex',justifyContent:'flex-start'}}><div style={{background:C.surf2,borderRadius:'13px 13px 13px 4px',padding:'13px 16px'}}><span className="typing"><span/><span/><span/></span></div></div>}
+            {botBusy && <div style={{display:'flex',justifyContent:'flex-start'}}><div style={{background:C.surf2,borderRadius:'13px 13px 13px 4px',padding:'11px 16px 13px',minWidth:190}}><div style={{fontSize:12.5,color:C.sub,marginBottom:8,display:'flex',alignItems:'center',gap:6}}><Ic p={P.spark} sz={13} col={C.pri}/> Ich denk grad nach…</div><div className="prog"/></div></div>}
             {botMsgs.length<=1 && (
               <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:2}}>
                 {['Wie steht meine Firma da?','Worauf steuerlich achten?','Rechnung erstellen','Bester Monat','Datei auslesen…'].map(s=>(s==='Datei auslesen…'?
@@ -6118,6 +6188,7 @@ function App({session}) {
       {!isMobile && !botOpen && (
         <button onClick={()=>setBotOpen(o=>!o)} title="Assistent" style={{position:'fixed',right:24,bottom:24,width:56,height:56,borderRadius:'50%',background:AI_GRADIENT,border:'none',cursor:'pointer',zIndex:115,boxShadow:'0 10px 30px rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center'}}>
           <Ic p={P.spark} sz={24} col={'#FFFFFF'}/>
+          {botUnread>0 && <span style={{position:'absolute',top:-4,right:-4,minWidth:21,height:21,borderRadius:99,background:C.red,color:'#fff',fontSize:11.5,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 5px',border:'2px solid '+C.bg,boxSizing:'border-box'}}>{botUnread}</span>}
         </button>
       )}
 
