@@ -2530,6 +2530,18 @@ function App({session}) {
     return items; };
   const belegesUnder = (p)=>{ const out=[]; const bers=p[0]?[p[0]]:belBerKeys; const yl=belYears(); bers.forEach(ber=>{ const yrs=p[1]!=null?[p[1]]:yl; yrs.forEach(y2=>{ const mos=p[2]!=null?[p[2]]:[0,1,2,3,4,5,6,7,8,9,10,11]; mos.forEach(m2=>{ const kinds=p[3]?[p[3]]:['ein','aus']; kinds.forEach(kind=>{ belegesLeaf(ber,y2,m2,kind).forEach(b=>out.push(b)); }); }); }); }); return out; };
   // Vollständiges Buchungs-Item zu einem Beleg laden (für Detail-Bearbeitung)
+  // P2.3: Buchung anhand ihrer id finden (für Steuerberater-Rückfragen, die sich auf eine konkrete Buchung beziehen)
+  const findItemLocation = (id, year)=>{
+    if(!id) return null;
+    const Y = data[year]; if(!Y) return null;
+    for(const mk of Object.keys(Y)){ if(isNaN(+mk)) continue; const M=Y[mk]; if(!M) continue;
+      const check=(arr,ber,kind)=>{ const hit=(arr||[]).find(x=>x.id===id); return hit?{_ber:ber,_y:+year,_m:+mk,_kind:kind,id}:null; };
+      if(M.props) for(const pid of Object.keys(M.props)){ const p=M.props[pid]||{}; const h=check(p.einnahmen,pid,'ein')||check(p.expenses,pid,'aus'); if(h) return h; }
+      if(M.unternehmen){ const h=check(M.unternehmen.clients,'unter','ein')||check(M.unternehmen.items,'unter','aus'); if(h) return h; }
+      if(M.privat){ const h=check(M.privat.einnahmen,'privat','ein')||check(M.privat.items,'privat','aus'); if(h) return h; }
+    }
+    return null;
+  };
   const fullBelegItem = (loc)=>{ const M=data[loc._y]&&data[loc._y][loc._m]; if(!M) return null; let list; if(loc._ber==='unter'){ const s=M.unternehmen||{}; list=loc._kind==='ein'?s.clients:s.items; } else if(loc._ber==='privat'){ const s=M.privat||{}; list=loc._kind==='ein'?s.einnahmen:s.items; } else { const s=(M.props&&M.props[loc._ber])||{}; list=loc._kind==='ein'?s.einnahmen:s.expenses; } return (list||[]).find(x=>x.id===loc.id)||null; };
   // Beleg (zugrundeliegende Buchung) bearbeiten – Position via _ber/_y/_m/_kind/id
   const updateBelegItem = (loc, patch)=>{ const {_ber,_y,_m,_kind,id}=loc; setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); const M=nd[_y]&&nd[_y][_m]; if(!M) return prev; let list; if(_ber==='unter'){ const s=M.unternehmen||{}; list=_kind==='ein'?s.clients:s.items; } else if(_ber==='privat'){ const s=M.privat||{}; list=_kind==='ein'?s.einnahmen:s.items; } else { const s=(M.props&&M.props[_ber])||{}; list=_kind==='ein'?s.einnahmen:s.expenses; } if(!list) return prev; const i=list.findIndex(x=>x.id===id); if(i<0) return prev; list[i]={...list[i],...patch}; return nd; }); };
@@ -3007,13 +3019,14 @@ function App({session}) {
       const system = "Du bist der persönliche Steuerberater-Assistent für einen Nutzer in Deutschland (Immobilien-Vermietung, ein Unternehmen, Privatausgaben). "
         + "Gib KURZE, konkrete Stichpunkt-Hinweise – KEINE langen Fließtexte. Jeder Hinweis: knapper Titel + 1-2 Sätze Detail. "
         + "Stelle auch gezielte Rückfragen, wenn dir Infos fehlen (z. B. „Wofür wurde dieser Laptop genutzt?“, „Privat oder geschäftlich?“, „Unternehmen oder Immobilien?“). Berücksichtige bereits beantwortete Rückfragen. "
-        + "Antworte AUSSCHLIESSLICH mit minifiziertem JSON: {\"hinweise\":[{\"typ\":\"tipp|achtung|sparen|frage\",\"titel\":\"...\",\"detail\":\"...\"}]} . "
-        + "typ=frage nur für echte Rückfragen. 5-10 Hinweise. Erfinde keine Zahlen. Kein Text außerhalb des JSON.\n\nDATEN:\n"+JSON.stringify(snapshot);
+        + "Wenn sich ein Hinweis oder eine Rückfrage auf EINE konkrete Buchung aus den Daten bezieht, gib zusätzlich deren \"id\"-Feld (aus den Buchungsobjekten in DATEN) als \"belegId\" zurück, sonst \"belegId\":\"\". "
+        + "Antworte AUSSCHLIESSLICH mit minifiziertem JSON: {\"hinweise\":[{\"typ\":\"tipp|achtung|sparen|frage\",\"titel\":\"...\",\"detail\":\"...\",\"belegId\":\"...\"}]} . "
+        + "typ=frage nur für echte Rückfragen. 5-10 Hinweise. Erfinde keine Zahlen oder IDs. Kein Text außerhalb des JSON.\n\nDATEN:\n"+JSON.stringify(snapshot);
       const { data:resp, error } = await aiInvoke({ body:{ model:'claude-sonnet-4-6', max_tokens:2000, system, messages:[{role:'user',content:'Analysiere meine Daten für '+yr+' als persönlicher Steuerberater. Kurze Stichpunkte + Rückfragen.'}] } });
       if(error) throw error;
       if(resp && resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
       let txt=(resp && resp.content && resp.content[0] && resp.content[0].text) || ''; txt=txt.replace(/```json|```/g,'').trim(); const mm=txt.match(/\{[\s\S]*\}/); if(mm)txt=mm[0];
-      const parsed=JSON.parse(txt); const items=(parsed.hinweise||[]).map(h=>({typ:String(h.typ||'tipp'),titel:String(h.titel||''),detail:String(h.detail||'')})).filter(h=>h.titel);
+      const parsed=JSON.parse(txt); const items=(parsed.hinweise||[]).map(h=>({typ:String(h.typ||'tipp'),titel:String(h.titel||''),detail:String(h.detail||''),belegId:String(h.belegId||'')})).filter(h=>h.titel);
       setData(prev=>({...prev, taxNotes:{...(prev.taxNotes||{}), [yr]:{ items, answers:prevAnswers, ts:new Date().toISOString() }}}));
       setTaxOpen({});
       setToast(items.length+' Hinweise erstellt');
@@ -5272,7 +5285,7 @@ function App({session}) {
                 </div>
                 {advOpen && (items.length ? (
                   <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                    {items.map((h,i)=>{ const ty=TY[h.typ]||TY.tipp; const open=!!taxOpen[i]; const isQ=h.typ==='frage'; const ans=(tnote.answers||{})[h.titel]||''; return (
+                    {items.map((h,i)=>{ const ty=TY[h.typ]||TY.tipp; const open=!!taxOpen[i]; const isQ=h.typ==='frage'; const ans=(tnote.answers||{})[h.titel]||''; const loc=h.belegId?findItemLocation(h.belegId,yr):null; return (
                       <div key={i} style={{background:C.surf2,border:'1px solid '+(open?hexA(ty.c,0.4):C.bdr),borderRadius:12,overflow:'hidden'}}>
                         <button onClick={()=>setTaxOpen(o=>({...o,[i]:!o[i]}))} style={{display:'flex',alignItems:'center',gap:10,width:'100%',background:'none',border:'none',padding:'12px 14px',cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
                           <span style={{width:26,height:26,borderRadius:8,background:hexA(ty.c,0.16),display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Ic p={ty.ic} sz={14} col={ty.c}/></span>
@@ -5286,6 +5299,9 @@ function App({session}) {
                               <div style={{marginTop:10,display:'flex',gap:8,flexWrap:'wrap'}}>
                                 <input defaultValue={ans} onBlur={e=>setTaxAnswer(h.titel,e.target.value)} placeholder="Deine Antwort… (wird beim nächsten Analysieren berücksichtigt)" style={{flex:1,minWidth:180,background:C.surf3,border:'1px solid '+C.bdr,borderRadius:9,color:C.txt,padding:'9px 11px',fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
                               </div>
+                            )}
+                            {loc && (
+                              <button onClick={()=>openCaptureEdit(loc)} style={{marginTop:10,display:'inline-flex',alignItems:'center',gap:6,background:hexA(ty.c,0.14),border:'1px solid '+hexA(ty.c,0.35),color:ty.c,borderRadius:9,padding:'7px 12px',fontSize:12.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.clip} sz={13} col={ty.c}/> Zur Buchung ({MONTHS[loc._m]} {loc._y})</button>
                             )}
                           </div>
                         )}
