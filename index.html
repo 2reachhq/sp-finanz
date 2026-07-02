@@ -699,14 +699,14 @@ function ItemRow({item, accent, kind, onExtract, custList, recurInvFn, onMakeInv
             {fLbl('Betrag (Brutto)',!isPrivatItem)}
             <CalcField value={item.amount} onCommit={v=>onBrutto(v)} style={{...dInput('100%'),fontSize:18,fontWeight:700,padding:'10px 12px',...NUM,marginBottom:16}} />
 
-            <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6,letterSpacing:'0.02em',display:'flex',alignItems:'center',gap:7}}>Kategorie{!isPrivatItem&&<span style={{color:C.red}}> *</span>}{item.catAuto&&item.category&&<span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,color:C.pri,background:hexA(C.pri,0.14),borderRadius:6,padding:'2px 7px'}}><Ic p={P.spark} sz={10} col={C.pri}/> KI-Vorschlag</span>}</div>
-            <select value={item.category||''} onChange={e=>onUpdate(item.id,'__merge__',{category:e.target.value,catAuto:false})} style={{...dInput('100%'),padding:'10px 12px',marginBottom:16,cursor:'pointer'}}>
+            <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6,letterSpacing:'0.02em',display:'flex',alignItems:'center',gap:7}}>Kategorie{!isPrivatItem&&<span style={{color:C.red}}> *</span>}{item.catAI&&item.category&&<span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,color:C.pri,background:hexA(C.pri,0.14),borderRadius:6,padding:'2px 7px'}}><Ic p={P.spark} sz={10} col={C.pri}/> KI-Vorschlag</span>}{!item.catAI&&item.catAuto&&item.category&&<span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,color:C.sub,background:C.surf3,borderRadius:6,padding:'2px 7px'}}>Vorschlag</span>}</div>
+            <select value={item.category||''} onChange={e=>onUpdate(item.id,'__merge__',{category:e.target.value,catAuto:false,catAI:false})} style={{...dInput('100%'),padding:'10px 12px',marginBottom:16,cursor:'pointer'}}>
               <option value="">— wählen —</option>
               {CATS.map(cat=><option key={cat} value={cat}>{cat}</option>)}
             </select>
 
             {!isPrivatItem && (()=>{ const sug=suggestSKR(item.category||'', kind); const cur=item.skr||sug; const isSug=!item.skr; const opts=SKR03_ACCTS.filter(a=>a.kind===(kind==='ein'?'ein':'aus')); return (<div style={{marginBottom:16}}>
-              <div style={{display:'flex',alignItems:'center',gap:7,fontSize:11,fontWeight:600,color:C.sub,marginBottom:6,letterSpacing:'0.02em'}}>Buchungskonto {isSug && <span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,color:C.pri,background:hexA(C.pri,0.14),borderRadius:6,padding:'2px 7px'}}><Ic p={P.spark} sz={10} col={C.pri}/> KI-Vorschlag</span>}</div>
+              <div style={{display:'flex',alignItems:'center',gap:7,fontSize:11,fontWeight:600,color:C.sub,marginBottom:6,letterSpacing:'0.02em'}}>Buchungskonto {isSug && <span title="Automatisch aus der Kategorie abgeleitet (SKR03) – bitte kurz prüfen" style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,color:C.sub,background:C.surf3,borderRadius:6,padding:'2px 7px'}}>Automatisch zugeordnet</span>}</div>
               <select value={cur} onChange={e=>onUpdate(item.id,'skr',e.target.value)} style={{...dInput('100%'),padding:'10px 12px',cursor:'pointer'}}>{opts.map(a=><option key={a.nr} value={a.nr}>{a.nr} · {a.name}</option>)}</select>
               <div style={{fontSize:10.5,color:C.mut,marginTop:6,lineHeight:1.5}}>Vorschlag nach SKR03 anhand der Kategorie – bitte vom Steuerberater prüfen lassen.</div>
             </div>); })()}
@@ -1291,6 +1291,7 @@ function App({session}) {
   const [invView,setInvView]= useState(null);        // gestellte Rechnung als PDF ansehen (read-only)
   const [invCtx,setInvCtx]= useState(null);          // Rechts-Klick-Menü auf Rechnung {x,y,inv}
   const [mailCompose,setMailCompose]= useState(null); // E-Mail-Versand Rechnung {inv,to,subject,body,sending}
+  const [mahnungBusy,setMahnungBusy]= useState(false); // Mahnung wird gerade von der KI vorbereitet
   const [recExpand,setRecExpand]= useState({});      // welche wiederkehrenden Rechnungen aufgeklappt sind
   const [costYm,setCostYm]= useState(()=>{ try{ return new Date().toISOString().slice(0,7); }catch(e){ return yr+'-01'; } }); // Kosten-Dashboard Monat
   const [supaBusy,setSupaBusy]= useState(false);     // Supabase-Speicher wird gelesen
@@ -2179,7 +2180,7 @@ function App({session}) {
       if(r.mwst) onUpdate(item.id,'mwst',String(r.mwst));
       if(r.datum) onUpdate(item.id,'datum',r.datum);
       if(r.belegnr) onUpdate(item.id,'belegnr',r.belegnr);
-      if(r.category) onUpdate(item.id,'category',r.category);
+      if(r.category) onUpdate(item.id,'__merge__',{category:r.category,catAuto:false,catAI:true});
       const flagged=flagDraft({name:r.name,amount:r.amount,belegnr:r.belegnr,datum:r.datum}, existingBookings());
       if(flagged.dup) setDupPopup({draft:flagged,match:flagged.dup});
       setToast('Beleg ausgelesen ✓');
@@ -2288,7 +2289,7 @@ function App({session}) {
   const scanCaptureFile = async (f)=>{ if(!f) return; f=await imageToPdfFile(f); const isPdf=/pdf$/i.test(f.name||'')||f.type==='application/pdf'; setCapProg(8); const tick=setInterval(()=>setCapProg(p=>p<88?p+Math.max(3,(88-p)*0.16):p),120);
     try{ let blob=f, mime='image/jpeg', ext='.jpg'; if(isPdf){ mime='application/pdf'; ext='.pdf'; } else { try{ blob=await compressImage(f,1500,0.6); }catch(_){} } const b64=await fileToB64(blob); clearInterval(tick); setCapProg(94);
       setCapture(c=>{ if(!c)return c; return {...c, scanning:true, f:{...c.f, fileData:'data:'+mime+';base64,'+b64, fileName:belegFileName(c.f.name,c.f.belegnr,f.name).replace(/\.[a-z0-9]+$/i,ext)}}; });
-      try{ const r=await aiExtractFile(f); setCapture(c=>{ if(!c)return c; const nf={...c.f}; if(r.name&&!String(nf.name).trim())nf.name=r.name; if(r.amount&&!num(nf.amount))nf.amount=String(r.amount); if(r.netto&&!num(nf.netto))nf.netto=String(r.netto); if(r.mwst&&nf.mwst==='')nf.mwst=String(r.mwst); if(r.datum&&!nf.datum)nf.datum=r.datum; if(r.belegnr&&!String(nf.belegnr).trim())nf.belegnr=r.belegnr; if(r.category&&!String(nf.category).trim())nf.category=r.category; const nk=c.kindLocked?c.kind:(r.kind||c.kind); return {...c, kind:nk, scanning:false, f:nf}; }); setToast('Beleg ausgelesen ✓'); }
+      try{ const r=await aiExtractFile(f); setCapture(c=>{ if(!c)return c; const nf={...c.f}; if(r.name&&!String(nf.name).trim())nf.name=r.name; if(r.amount&&!num(nf.amount))nf.amount=String(r.amount); if(r.netto&&!num(nf.netto))nf.netto=String(r.netto); if(r.mwst&&nf.mwst==='')nf.mwst=String(r.mwst); if(r.datum&&!nf.datum)nf.datum=r.datum; if(r.belegnr&&!String(nf.belegnr).trim())nf.belegnr=r.belegnr; if(r.category&&!String(nf.category).trim()){nf.category=r.category; nf.catAuto=false; nf.catAI=true;} const nk=c.kindLocked?c.kind:(r.kind||c.kind); return {...c, kind:nk, scanning:false, f:nf}; }); setToast('Beleg ausgelesen ✓'); }
       catch(e){ setCapture(c=>c?{...c,scanning:false}:c); setToast('Auslesen fehlgeschlagen: '+(e.message||e)); }
       setCapProg(100); setTimeout(()=>setCapProg(0),350);
     }catch(e){ clearInterval(tick); setCapProg(0); setToast('Beleg-Fehler: '+(e.message||e)); }
@@ -2431,10 +2432,33 @@ function App({session}) {
       const html='<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;line-height:1.6;white-space:pre-wrap">'+escH(mc.body)+'</div>';
       const {data:resp,error}=await sb.functions.invoke('send-invoice',{body:{ to, from, replyTo:(co.email||undefined), subject:mc.subject, text:mc.body, html, pdfBase64, pdfName:'Rechnung_'+safeName(inv.number)+'.pdf' }});
       if(error) throw error; if(resp&&resp.error) throw new Error(resp.error);
-      setData(prev=>({...prev, invoices:(prev.invoices||[]).map(iv=>iv.id===inv.id?{...iv, emailedAt:new Date().toISOString().slice(0,10), emailTo:to}:iv)}));
-      setMailCompose(null); setInvView(v=>v&&v.id===inv.id?{...v,emailedAt:new Date().toISOString().slice(0,10),emailTo:to}:v);
-      setToast('Rechnung '+inv.number+' an '+to+' gesendet.');
+      const today=new Date().toISOString().slice(0,10);
+      const extraPatch = mc.isMahnung ? {mahnungenGesendet:(num(inv.mahnungenGesendet)||0)+1, lastMahnungAt:today} : {};
+      setData(prev=>({...prev, invoices:(prev.invoices||[]).map(iv=>iv.id===inv.id?{...iv, emailedAt:today, emailTo:to, ...extraPatch}:iv)}));
+      setMailCompose(null); setInvView(v=>v&&v.id===inv.id?{...v,emailedAt:today,emailTo:to,...extraPatch}:v);
+      setToast(mc.isMahnung ? ('Mahnung zu Rechnung '+inv.number+' an '+to+' gesendet.') : ('Rechnung '+inv.number+' an '+to+' gesendet.'));
     }catch(e){ setMailCompose(m=>m?{...m,sending:false}:m); setToast('Versand fehlgeschlagen: '+(e.message||e)); }
+  };
+  // P1.1: Zahlungserinnerung/Mahnung für eine überfällige Rechnung von der KI formulieren lassen
+  const startMahnung = async (inv)=>{
+    setMahnungBusy(true);
+    try{
+      const cust=invCustomer(inv); const co=companyFor(inv.domain||'unter')||{};
+      const due=inv.due||addDays(inv.date,14);
+      const overdueDays=Math.max(1, Math.round((Date.now()-new Date(due).getTime())/86400000));
+      const stufe = (num(inv.mahnungenGesendet)>0 || overdueDays>=14) ? 2 : 1; // 1=freundliche Erinnerung, 2=bestimmte Mahnung (schon einmal erinnert oder >=14 Tage überfällig)
+      const gross=fmt(invTotals(inv.items).gross);
+      const sys = "Du bist der Buchhaltungsassistent einer deutschen Firma und formulierst in Ich-Form für die Firma eine kurze, professionelle E-Mail auf Deutsch (Sie-Anrede an den Kunden). "
+        + (stufe===1 ? "Ton: freundlich, geht davon aus, dass die Zahlung schlicht vergessen wurde." : "Ton: sachlich-bestimmt, weist auf die bereits überschrittene Zahlungsfrist hin, bittet um zeitnahe Zahlung.")
+        + " Gib NUR den Fließtext der E-Mail zurück (Anrede bis Grußformel), KEINEN Betreff, KEIN Markdown, max. 6 Sätze.";
+      const usr = "Rechnung "+inv.number+" vom "+(inv.date||'')+" über "+gross+" an "+(cust.name||'den Kunden')+" ist seit "+overdueDays+" Tag(en) überfällig (Fälligkeit war "+due+"). Firma: "+(co.name||'')+".";
+      const {data:resp,error}=await aiInvoke({body:{model:'claude-haiku-4-5',max_tokens:400,system:sys,messages:[{role:'user',content:usr}]}});
+      if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
+      const body=(resp&&resp.content&&resp.content[0]&&resp.content[0].text)||'';
+      setMailCompose({inv, to:(cust.email||''), subject:(stufe===2?'Mahnung':'Zahlungserinnerung')+' zu Rechnung '+inv.number, body, sending:false, isMahnung:true});
+      setToast('Ich habe eine '+(stufe===2?'Mahnung':'Zahlungserinnerung')+' vorbereitet – bitte kurz prüfen.');
+    }catch(e){ setToast('Mahnung konnte nicht vorbereitet werden: '+(e.message||e)); }
+    setMahnungBusy(false);
   };
   // Gestellte Rechnung löschen (inkl. zugehöriger Buchung in allen Monaten)
   const delInvoice = (inv)=>{ setData(prev=>{ const nd=JSON.parse(JSON.stringify(prev)); nd.invoices=(nd.invoices||[]).filter(iv=>iv.id!==inv.id); Object.keys(nd).forEach(y=>{ if(!/^\d+$/.test(y))return; Object.keys(nd[y]||{}).forEach(m=>{ const M=nd[y][m]; if(!M)return; const strip=arr=>(arr||[]).filter(it=>it.invId!==inv.id); if(M.unternehmen){M.unternehmen.clients=strip(M.unternehmen.clients);M.unternehmen.items=strip(M.unternehmen.items);} if(M.privat){M.privat.einnahmen=strip(M.privat.einnahmen);M.privat.items=strip(M.privat.items);} if(M.props)Object.keys(M.props).forEach(p=>{M.props[p].einnahmen=strip(M.props[p].einnahmen);M.props[p].expenses=strip(M.props[p].expenses);}); }); }); return nd; }); setToast('Rechnung '+inv.number+' gelöscht'); };
@@ -2880,13 +2904,18 @@ function App({session}) {
     const parts=[];
     if(openCount) parts.push(openCount+(openCount===1?' Beleg wartet':' Belege warten')+' noch auf Bestätigung durch den Kontoauszug');
     if(dupCount) parts.push(dupCount+(dupCount===1?' Buchung könnte':' Buchungen könnten')+' doppelt erfasst sein');
-    if(overdue.length) parts.push(overdue.length+(overdue.length===1?' Rechnung ist':' Rechnungen sind')+' überfällig');
+    if(overdue.length===1){ const c=invCustomer(overdue[0]); parts.push((c.name||'Ein Kunde')+' hat Rechnung '+overdue[0].number+' noch nicht bezahlt und ist überfällig'); }
+    else if(overdue.length) parts.push(overdue.length+' Rechnungen sind überfällig');
     if(!parts.length) return;
     const opts=[];
     if(openCount) opts.push({label:'Offene Belege ansehen', tab:'belege'});
     if(dupCount) opts.push({label:'Dubletten prüfen', tab:'import'});
-    if(overdue.length) opts.push({label:'Überfällige Rechnungen ansehen', tab:'rechnung'});
-    setBotMsgs(m=>[...m, {role:'assistant', content:'Bevor es losgeht, kurz noch: '+parts.join('; ')+'.', action:{type:'navTab', options:opts}}]);
+    if(overdue.length>1) opts.push({label:'Überfällige Rechnungen ansehen', tab:'rechnung'});
+    const action = overdue.length===1
+      ? {type:'mahnungOffer', invId:overdue[0].id, options:opts}
+      : {type:'navTab', options:opts};
+    const frage = overdue.length===1 ? ' Soll ich eine Zahlungserinnerung oder Mahnung vorbereiten?' : '';
+    setBotMsgs(m=>[...m, {role:'assistant', content:'Bevor es losgeht, kurz noch: '+parts.join('; ')+'.'+frage, action}]);
   }, [botOpen]);
   const botSend = async (text)=>{ const q=(text!=null?text:botInput).trim(); const file=botFile; if(botBusy) return; if(!q && !file) return; if(botRecOn){ try{ botRecRef.current&&botRecRef.current.stop(); }catch(_){ } setBotRecOn(false); }
     setBotMsgs(m=>[...m,{role:'user',content:(q||'')+(file?((q?' ':'')+'📎 '+file.name):'')}]); setBotInput(''); { const ta=document.querySelector('#botInputArea'); if(ta){ta.style.height='auto';} }
@@ -5652,7 +5681,7 @@ function App({session}) {
                   <div style={{flex:1,minWidth:120}}><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>MwSt</div><select value={(f.mwst!=null&&f.mwst!=='')?String(f.mwst):''} onChange={e=>{ const v=e.target.value; const rate=num(v); const g=num(f.amount); setCapF(v!==''?{mwst:v,netto:String(Math.round(g/(1+rate/100)*100)/100)}:{mwst:v}); }} style={{...dInp,cursor:'pointer'}}><option value="">—</option><option value="19">19%</option><option value="7">7%</option><option value="0">0%</option></select></div>
                 </div>
                 <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6}}>Verwendungszweck / Notizen <span style={{color:C.mut}}>(optional)</span></div><textarea value={f.note||''} onChange={e=>{ const v=e.target.value; const g=guessCategory((f.name||'')+' '+v); setCapF((!String(f.category||'').trim()||f.catAuto)&&g?{note:v,category:g,catAuto:true}:{note:v}); }} rows={2} placeholder="Verwendungszweck…" style={{...dInp,resize:'vertical'}}/></div>
-                <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6,display:'flex',alignItems:'center',gap:7}}>Kategorie{c.account!=='privat'&&star}{f.catAuto&&f.category&&<span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,color:C.pri,background:hexA(C.pri,0.14),borderRadius:6,padding:'2px 7px'}}><Ic p={P.spark} sz={10} col={C.pri}/> KI</span>}</div><select value={f.category||''} onChange={e=>setCapF({category:e.target.value,catAuto:false})} style={{...dInp,cursor:'pointer'}}><option value="">— wählen —</option>{CATS.map(x=><option key={x} value={x}>{x}</option>)}</select></div>
+                <div><div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:6,display:'flex',alignItems:'center',gap:7}}>Kategorie{c.account!=='privat'&&star}{f.catAI&&f.category&&<span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,color:C.pri,background:hexA(C.pri,0.14),borderRadius:6,padding:'2px 7px'}}><Ic p={P.spark} sz={10} col={C.pri}/> KI</span>}{!f.catAI&&f.catAuto&&f.category&&<span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,color:C.sub,background:C.surf3,borderRadius:6,padding:'2px 7px'}}>Vorschlag</span>}</div><select value={f.category||''} onChange={e=>setCapF({category:e.target.value,catAuto:false,catAI:false})} style={{...dInp,cursor:'pointer'}}><option value="">— wählen —</option>{CATS.map(x=><option key={x} value={x}>{x}</option>)}</select></div>
                 <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
                   <div style={{flex:1,minWidth:140}}>{lbl('Datum',!c.recurring)}<DateField value={f.datum||''} onChange={v=>setCapF({datum:v})} style={dInp}/></div>
                   <div style={{flex:1,minWidth:140}}>{lbl('Belegnummer',!c.recurring)}<input value={f.belegnr||''} onChange={e=>setCapF({belegnr:e.target.value})} placeholder="Nr." style={dInp}/></div>
@@ -5934,6 +5963,9 @@ function App({session}) {
             </div>
             <div style={{display:'flex',gap:9,padding:'13px 18px',borderTop:'1px solid '+C.sep,flexWrap:'wrap'}}>
               <button onClick={()=>openMailCompose(invView)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 100%',background:C.act,color:C.actTxt,border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.receipt} sz={16} col={C.actTxt}/> {invView.emailedAt?'Erneut per E-Mail senden':'Per E-Mail an Kunden senden'}</button>
+              {!invView.paid && overdueInvoices().some(iv=>iv.id===invView.id) && (
+                <button onClick={()=>startMahnung(invView)} disabled={mahnungBusy} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 100%',background:AI_GRADIENT,color:'#FFFFFF',border:'none',borderRadius:11,padding:'12px',fontSize:14,fontWeight:700,cursor:mahnungBusy?'default':'pointer',opacity:mahnungBusy?0.6:1,fontFamily:'inherit'}}><Ic p={P.spark} sz={16} col={'#FFFFFF'}/> {mahnungBusy?'Ich formuliere das kurz…':'Überfällig – Mahnung vorbereiten'}</button>
+              )}
               <button onClick={()=>setInvPaid(invView.id,!invView.paid)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 150px',background:invView.paid?C.surf2:hexA(C.grn,0.16),border:'1px solid '+(invView.paid?C.bdr:hexA(C.grn,0.4)),color:invView.paid?C.txt:C.grn,borderRadius:11,padding:'11px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{invView.paid?'Als offen markieren':'Als bezahlt markieren'}</button>
               <button onClick={()=>downloadInvoicePDF(invView)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 130px',background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:11,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.upload} sz={15} col={C.txt}/> PDF</button>
               <button onClick={()=>useInvoiceAsTemplate(invView)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,flex:'1 1 130px',background:C.surf2,border:'1px solid '+C.bdr,color:C.txt,borderRadius:11,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}><Ic p={P.copy||P.doc} sz={15} col={C.txt}/> Vorlage</button>
@@ -5960,6 +5992,13 @@ function App({session}) {
                 {a && a.type==='showInvoice' && (()=>{ const iv=(data.invoices||[]).find(x=>x.id===a.invId); if(!iv) return null; return <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={()=>setInvView(iv)} style={primBot}>Ansehen</button><button onClick={()=>openMailCompose(iv)} style={ghostBot}>Senden</button><button onClick={()=>downloadInvoicePDF(iv)} style={ghostBot}>PDF</button></div>; })()}
                 {a && isLast && a.type==='options' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{(a.options||[]).map((o,oi)=><button key={oi} onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botSend(o.value); }} style={ghostBot}>{o.label}</button>)}</div>}
                 {a && isLast && a.type==='navTab' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{(a.options||[]).map((o,oi)=><button key={oi} onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); setBotOpen(false); setTab(o.tab); }} style={ghostBot}>{o.label}</button>)}</div>}
+                {a && isLast && a.type==='mahnungOffer' && (()=>{ const inv=(data.invoices||[]).find(x=>x.id===a.invId); if(!inv) return null; return (
+                  <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
+                    <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); setBotOpen(false); startMahnung(inv); }} style={{...primBot,background:AI_GRADIENT}}>Mahnung vorbereiten</button>
+                    <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); setBotOpen(false); setInvView(inv); }} style={ghostBot}>Rechnung ansehen</button>
+                    {(a.options||[]).map((o,oi)=><button key={oi} onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); setBotOpen(false); setTab(o.tab); }} style={ghostBot}>{o.label}</button>)}
+                  </div>
+                ); })()}
                 {a && a.type==='invoiceDone' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{a.hasMail && <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botStartSend(a.invId); }} style={primBot}>✉️ Per E-Mail senden</button>}<button onClick={()=>botPreviewInvoice(a.invId)} style={ghostBot}>📄 Ansehen</button>{!a.hasMail && <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botStartSend(a.invId); }} style={ghostBot}>✉️ Senden</button>}<button onClick={()=>setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x).concat([{role:'assistant',content:'Alles erledigt. 👍'}]))} style={ghostBot}>Fertig</button></div>}
               </div>
             ); })}
@@ -5996,7 +6035,7 @@ function App({session}) {
         <div onClick={()=>{ if(!mc.sending) setMailCompose(null); }} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:170,display:'flex',alignItems:'center',justifyContent:'center',padding:isMobile?12:24}}>
           <div onClick={e=>e.stopPropagation()} style={{background:C.surf,border:'1px solid '+C.bdr,borderRadius:18,width:'min(560px,100%)',maxHeight:'92vh',overflowY:'auto',padding:'20px 22px',boxShadow:'0 24px 60px rgba(0,0,0,0.6)'}}>
             <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
-              <div style={{fontSize:17,fontWeight:800,color:C.txt}}>Rechnung {mc.inv.number} senden</div>
+              <div style={{fontSize:17,fontWeight:800,color:C.txt}}>{mc.isMahnung?'Mahnung zu Rechnung':'Rechnung'} {mc.inv.number} senden</div>
               <button onClick={()=>!mc.sending&&setMailCompose(null)} style={{marginLeft:'auto',background:C.surf2,border:'none',color:C.sub,width:32,height:32,borderRadius:9,cursor:'pointer',fontSize:19,lineHeight:1,fontFamily:'inherit'}}>×</button>
             </div>
             {noSender && <div style={{fontSize:12.5,color:C.amb,background:C.ambL,border:'1px solid rgba(255,180,0,0.25)',borderRadius:10,padding:'10px 12px',marginBottom:14,lineHeight:1.5}}>Noch keine Absender-Adresse hinterlegt. Trag sie unter <b>Einstellungen → Rechnungsversand per E-Mail</b> ein (verifizierte Resend-Domain).</div>}
