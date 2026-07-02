@@ -1395,6 +1395,7 @@ function App({session}) {
   const [belegDest,setBelegDest]= useState('privat');
   const [belegY,setBelegY]= useState(now.getFullYear());
   const [belegM,setBelegM]= useState(now.getMonth());
+  const [belegGemischtEdit,setBelegGemischtEdit]= useState(false); // Beleg: Prozent-Eingabe für "Gemischt" offen
   const belegBlobRef= useRef(null);
   const belegMetaRef= useRef({name:'beleg.jpg', isPdf:false, media:'image/jpeg'});
   const quellenScrollRef= useRef(null);            // Konten-Karten horizontal scrollen
@@ -1988,6 +1989,9 @@ function App({session}) {
     }); }); return out; };
   const normName = s => String(s||'').toLowerCase().replace(/[^a-z0-9äöü]/g,'');
   const toISO = s => { if(!s) return ''; s=String(s); if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10); const m=s.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})/); if(m){ let y=m[3]; if(y.length===2)y='20'+y; return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); } return ''; };
+  const addDays = (iso,n)=>{ try{ const d=new Date(iso); if(isNaN(d.getTime())) return ''; d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }catch(e){ return ''; } };
+  // Unbezahlte Rechnungen, die ihr Fälligkeitsdatum (oder ohne Angabe: 14 Tage nach Rechnungsdatum) überschritten haben
+  const overdueInvoices = ()=>{ const today=new Date().toISOString().slice(0,10); return (data.invoices||[]).filter(iv=>{ if(iv.paid) return false; const due = iv.due || addDays(iv.date,14); return due && due<today; }); };
   // Dublette + Wiederkehrend für einen Entwurf bestimmen
   const flagDraft = (d, all) => { const dn=normName(d.name), da=num(d.amount); const dNote=String(d.note||'').toLowerCase(); let dup=null;
     for(const b of all){ const bn=b.it.belegnr, ba=num(b.it.amount);
@@ -2014,10 +2018,13 @@ function App({session}) {
   const logAiUsage = (model, usage)=>{ try{ if(!usage) return; const inT=usage.input_tokens||usage.inputTokens||0, outT=usage.output_tokens||usage.outputTokens||0; if(!inT&&!outT) return; const ym=new Date().toISOString().slice(0,7); const md2=String(model||'unbekannt'); setData(prev=>{ const au={...(prev.aiUsage||{})}; const m={...(au[ym]||{})}; const cur=m[md2]||{in:0,out:0,calls:0}; m[md2]={in:cur.in+inT, out:cur.out+outT, calls:cur.calls+1}; au[ym]=m; return {...prev, aiUsage:au}; }); }catch(e){} };
   const aiInvoke = async (opts)=>{ const r = await sb.functions.invoke('ai', opts); try{ const u = r && r.data && (r.data.usage || (r.data.message&&r.data.message.usage)); if(u) logAiUsage(opts&&opts.body&&opts.body.model, u); }catch(e){} return r; };
   // Kurzer Steuer-Hinweis zu einer Ausgabe (wie ein Steuerberater, NRW/DE)
-  const fetchTaxTip = async (item, dom)=>{
+  const fetchTaxTip = async (item, dom, extra)=>{
     const bereich = dom==='immo' ? 'private Immobilien-Vermietung (Vermietung & Verpachtung)' : 'Unternehmen/Gewerbe';
-    const sys = "Du bist ein deutscher Steuerberater-Assistent (Standort NRW). Gib in 1–3 KURZEN, konkreten Sätzen, wie diese Ausgabe steuerlich behandelt/abgesetzt wird – nenne die passende Methode (z. B. sofort als Betriebsausgabe/Werbungskosten abziehbar, GWG bis 800 € netto sofort, Abschreibung/AfA über die Nutzungsdauer, anteilig bei privater Mitnutzung, Vorsteuerabzug bei Vorsteuerabzugsberechtigung). Klartext, KEIN Markdown, keine Aufzählungszeichen. Schließe mit einem kurzen Satz, dass der Steuerberater final entscheidet.";
-    const usr = "Ausgabe: „"+(item.name||'—')+"\", Bruttobetrag "+fmt(num(item.amount))+(num(item.netto)?(", netto "+fmt(num(item.netto))):'')+", Kategorie "+(item.category||'unklar')+", Bereich: "+bereich+". Wie kann ich das steuerlich absetzen?";
+    const sys = "Du bist ein deutscher Steuerberater-Assistent (Standort NRW). Gib in 1–3 KURZEN, konkreten Sätzen, wie diese Ausgabe steuerlich behandelt/abgesetzt wird – nenne die passende Methode (z. B. sofort als Betriebsausgabe/Werbungskosten abziehbar, GWG bis 800 € netto sofort, Abschreibung/AfA über die Nutzungsdauer, anteilig bei privater Mitnutzung, Vorsteuerabzug bei Vorsteuerabzugsberechtigung, 70%-Abzugsbeschränkung bei Bewirtung mit Geschäftspartnern). Klartext, KEIN Markdown, keine Aufzählungszeichen. Schließe mit einem kurzen Satz, dass der Steuerberater final entscheidet.";
+    const extraParts=[];
+    if(extra&&extra.nutzung) extraParts.push('Nutzung: '+(extra.nutzung==='privat'?'rein privat':extra.nutzung==='gemischt'?('gemischt genutzt, ca. '+(extra.nutzungAnteil||50)+'% geschäftlich'):'rein geschäftlich'));
+    if(extra&&extra.bewirtungMitwem) extraParts.push('Bewirtung war mit: '+({kunde:'einem Kunden',partner:'einem Geschäftspartner',mitarbeiter:'eigenen Mitarbeitern (interne Feier)'}[extra.bewirtungMitwem]||extra.bewirtungMitwem));
+    const usr = "Ausgabe: „"+(item.name||'—')+"\", Bruttobetrag "+fmt(num(item.amount))+(num(item.netto)?(", netto "+fmt(num(item.netto))):'')+", Kategorie "+(item.category||'unklar')+", Bereich: "+bereich+(extraParts.length?'. '+extraParts.join('. '):'')+". Wie kann ich das steuerlich absetzen?";
     const {data:resp,error}=await aiInvoke({body:{model:'claude-haiku-4-5',max_tokens:350,system:sys,messages:[{role:'user',content:usr}]}});
     if(error) throw error; if(resp&&resp.error) throw new Error(resp.error.message||JSON.stringify(resp.error));
     return (resp&&resp.content&&resp.content[0]&&resp.content[0].text)||'';
@@ -2189,8 +2196,8 @@ function App({session}) {
       const b64 = await fileToB64(blob);
       const block = isPdf ? { type:'document', source:{ type:'base64', media_type:'application/pdf', data:b64 } } : { type:'image', source:{ type:'base64', media_type:media, data:b64 } };
       const prompt = "Dies ist EIN einzelner Beleg/Rechnung/Quittung (Deutschland). Lies die Felder aus. Gib AUSSCHLIESSLICH minifiziertes JSON, kein Text drumherum, im Format:\n"
-        + '{"b":"Händler/Beschreibung","brutto":12.34,"netto":10.37,"mwst":19,"k":"a","d":"TT.MM.JJJJ","r":"Rechnungsnummer","unsicher":false}\n'
-        + "brutto=Gesamtbetrag (Punkt als Dezimaltrennzeichen), netto=Nettobetrag, mwst=MwSt-Satz in % (meist 19 oder 7), k=\"e\" bei Einnahme/Gutschrift sonst \"a\", d/r leer lassen wenn nicht vorhanden. "
+        + '{"b":"Händler/Beschreibung","brutto":12.34,"netto":10.37,"mwst":19,"k":"a","d":"TT.MM.JJJJ","r":"Rechnungsnummer","c":"Kategorie","waehrung":"EUR","unsicher":false}\n'
+        + "brutto=Gesamtbetrag (Punkt als Dezimaltrennzeichen), netto=Nettobetrag, mwst=MwSt-Satz in % (meist 19 oder 7), k=\"e\" bei Einnahme/Gutschrift sonst \"a\", d/r leer lassen wenn nicht vorhanden, c=Kategorie aus [" + CATS.join(",") + "], waehrung=ISO-Code der auf dem Beleg ausgewiesenen Währung (z. B. EUR, USD, GBP, CHF) – falls keine Fremdwährung erkennbar, \"EUR\". "
         + "Setze \"unsicher\":true, wenn das Bild unscharf/unvollständig ist oder du dir bei Beträgen nicht sicher bist. Erfinde nichts – fehlende Zahl = 0.";
       const { data:resp, error } = await aiInvoke({ body:{ model:'claude-haiku-4-5', max_tokens:1000, messages:[{ role:'user', content:[block, { type:'text', text:prompt }] }] } });
       if(error) throw error;
@@ -2200,7 +2207,8 @@ function App({session}) {
       const brutto=Math.abs(parseFloat(String(p.brutto!=null?p.brutto:p.a).replace(',','.'))||0);
       const netto=Math.abs(parseFloat(String(p.netto).replace(',','.'))||0);
       const mwst=parseFloat(String(p.mwst).replace(',','.'))||0;
-      setBelegRes({ name:String(p.b||'Beleg').slice(0,70), amount:brutto, netto, mwst, kind:(p.k==='e'?'ein':'aus'), belegnr:String(p.r||''), datum:String(p.d||''), unsicher:!!p.unsicher });
+      const waehrung=String(p.waehrung||'EUR').toUpperCase().slice(0,3)||'EUR';
+      setBelegRes({ name:String(p.b||'Beleg').slice(0,70), amount:brutto, netto, mwst, kind:(p.k==='e'?'ein':'aus'), belegnr:String(p.r||''), datum:String(p.d||''), category:String(p.c||''), waehrung, unsicher:!!p.unsicher, nutzung:null, nutzungAnteil:50, bewirtungMitwem:null, taxTip:'', taxTipBusy:false });
       setBelegDest(d=> (p.k==='e' ? 'unterInc' : d));
     }catch(e){ setToast('Beleg konnte nicht gelesen werden: '+(e.message||e)); }
     setBelegBusy(false);
@@ -2221,7 +2229,7 @@ function App({session}) {
         if(!nd[belegY]) nd[belegY]={};
         if(!nd[belegY][belegM]) nd[belegY][belegM]=emptyMonth();
         const noteParts=[]; if(belegRes.belegnr)noteParts.push('Nr. '+belegRes.belegnr); if(belegRes.datum)noteParts.push(belegRes.datum); if(num(belegRes.netto))noteParts.push('Netto '+fmt(num(belegRes.netto))); if(num(belegRes.mwst))noteParts.push('MwSt '+num(belegRes.mwst)+'%');
-        const item={ ...newItem(belegRes.name), amount:num(belegRes.amount), category:(belegRes.category||guessCategory(String(belegRes.name||'')+' '+noteParts.join(' '))), note:noteParts.join(' · '), datum:belegRes.datum||'', belegnr:belegRes.belegnr||'', netto:num(belegRes.netto), mwst:num(belegRes.mwst), filePath:path, fileName:meta.name };
+        const item={ ...newItem(belegRes.name), amount:num(belegRes.amount), category:(belegRes.category||guessCategory(String(belegRes.name||'')+' '+noteParts.join(' '))), note:noteParts.join(' · '), datum:belegRes.datum||'', belegnr:belegRes.belegnr||'', netto:num(belegRes.netto), mwst:num(belegRes.mwst), filePath:path, fileName:meta.name, nutzung:belegRes.nutzung||'', nutzungAnteil:belegRes.nutzung==='gemischt'?num(belegRes.nutzungAnteil):'', bewirtungMitwem:belegRes.bewirtungMitwem||'', taxTip:belegRes.taxTip||'', waehrung:(belegRes.waehrung&&belegRes.waehrung!=='EUR')?belegRes.waehrung:'' };
         setListAt(nd[belegY][belegM], loc, [...getListAt(nd[belegY][belegM],loc), item]);
         return nd;
       });
@@ -2230,6 +2238,21 @@ function App({session}) {
     }catch(e){ setToast('Speichern fehlgeschlagen: '+(e.message||e)); }
     setBelegBusy(false);
   };
+  // ── P0: Nutzungsart (privat/geschäftlich/gemischt) + Bewirtungs-Rückfrage + automatischer Steuer-Tipp ──
+  const belegDom = (dest)=> (dest==='p1'||dest==='p2'||dest==='p3') ? 'immo' : (dest==='unterInc'||dest==='unterExp') ? 'unter' : null;
+  const belegNeedsNutzung = (res,dest)=> !!res && !!belegDom(dest) && !res.nutzung;
+  const belegNeedsBewirtung = (res)=> !!res && res.category==='Bewirtung' && !res.bewirtungMitwem;
+  useEffect(()=>{
+    if(!belegRes) return;
+    const dom=belegDom(belegDest);
+    if(!dom) return; // Privat-Konto: keine Rückfragen/kein Steuer-Tipp nötig
+    if(belegNeedsNutzung(belegRes,belegDest) || belegNeedsBewirtung(belegRes)) return;
+    if(belegRes.taxTip || belegRes.taxTipBusy) return;
+    setBelegRes(r=>r?{...r,taxTipBusy:true}:r);
+    fetchTaxTip(belegRes, dom, {nutzung:belegRes.nutzung, nutzungAnteil:belegRes.nutzungAnteil, bewirtungMitwem:belegRes.bewirtungMitwem})
+      .then(tip=>setBelegRes(r=>r?{...r,taxTip:tip||'',taxTipBusy:false}:r))
+      .catch(()=>setBelegRes(r=>r?{...r,taxTipBusy:false}:r));
+  }, [belegRes && belegRes.nutzung, belegRes && belegRes.bewirtungMitwem, belegDest]);
   const assignDrafts = (ids, destKey, ty, tm) => {
     const dlist = drafts.filter(d=>ids.includes(d.id));
     const dstLoc=locOf(destKey); if(!dstLoc||!dlist.length) return;
@@ -2848,6 +2871,23 @@ function App({session}) {
     r.onerror=()=>{ setBotRecOn(false); }; r.onend=()=>{ setBotRecOn(false); };
     botRecRef.current=r; try{ r.start(); setBotRecOn(true); }catch(_){ setToast('Aufnahme konnte nicht gestartet werden.'); }
   };
+  // P0.3: Proaktiver Hinweis beim ersten Öffnen des Assistenten – offene Belege, Dubletten, überfällige Rechnungen
+  useEffect(()=>{
+    if(!botOpen || botMsgs.length!==1) return;
+    const openCount = openBelegeList().length;
+    const dupCount = drafts.filter(d=>d.dup && !d.confirmed && !d.ignored && !d.privat).length;
+    const overdue = overdueInvoices();
+    const parts=[];
+    if(openCount) parts.push(openCount+(openCount===1?' Beleg wartet':' Belege warten')+' noch auf Bestätigung durch den Kontoauszug');
+    if(dupCount) parts.push(dupCount+(dupCount===1?' Buchung könnte':' Buchungen könnten')+' doppelt erfasst sein');
+    if(overdue.length) parts.push(overdue.length+(overdue.length===1?' Rechnung ist':' Rechnungen sind')+' überfällig');
+    if(!parts.length) return;
+    const opts=[];
+    if(openCount) opts.push({label:'Offene Belege ansehen', tab:'belege'});
+    if(dupCount) opts.push({label:'Dubletten prüfen', tab:'import'});
+    if(overdue.length) opts.push({label:'Überfällige Rechnungen ansehen', tab:'rechnung'});
+    setBotMsgs(m=>[...m, {role:'assistant', content:'Bevor es losgeht, kurz noch: '+parts.join('; ')+'.', action:{type:'navTab', options:opts}}]);
+  }, [botOpen]);
   const botSend = async (text)=>{ const q=(text!=null?text:botInput).trim(); const file=botFile; if(botBusy) return; if(!q && !file) return; if(botRecOn){ try{ botRecRef.current&&botRecRef.current.stop(); }catch(_){ } setBotRecOn(false); }
     setBotMsgs(m=>[...m,{role:'user',content:(q||'')+(file?((q?' ':'')+'📎 '+file.name):'')}]); setBotInput(''); { const ta=document.querySelector('#botInputArea'); if(ta){ta.style.height='auto';} }
     if(botFlow){ await advanceFlow(q); return; }
@@ -5411,6 +5451,47 @@ function App({session}) {
                 <select value={belegM} onChange={e=>setBelegM(+e.target.value)} style={{...SS,flex:1}}>{MONTHS.map((mn,i)=><option key={i} value={i}>{mn}</option>)}</select>
                 <select value={belegY} onChange={e=>setBelegY(+e.target.value)} style={{...SS,width:100}}>{[yr-1,yr,yr+1].map(y=><option key={y} value={y}>{y}</option>)}</select>
               </div>
+              {belegDom(belegDest) && (<>
+                {belegNeedsNutzung(belegRes,belegDest) ? (
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:12,color:C.sub,marginBottom:8}}>Ich frag noch kurz: Wie wird das genutzt?</div>
+                    <div style={{display:'flex',gap:8}}>
+                      {[['geschaeftlich','Geschäftlich'],['privat','Privat'],['gemischt','Gemischt']].map(([k,l])=>(
+                        <button key={k} onClick={()=>{ if(k==='gemischt'){ setBelegGemischtEdit(true); } else { setBelegRes(r=>({...r,nutzung:k})); } }} style={{flex:1,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,padding:'10px 8px',fontSize:13,fontWeight:600,color:C.txt,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>
+                      ))}
+                    </div>
+                    {belegGemischtEdit && (
+                      <div style={{display:'flex',gap:8,alignItems:'center',marginTop:10}}>
+                        <input type="number" min={1} max={99} value={belegRes.nutzungAnteil} onChange={e=>setBelegRes(r=>({...r,nutzungAnteil:e.target.value}))} style={{...SS,width:80,textAlign:'left'}}/>
+                        <span style={{fontSize:13,color:C.sub}}>% geschäftlich</span>
+                        <button onClick={()=>{ setBelegRes(r=>({...r,nutzung:'gemischt'})); setBelegGemischtEdit(false); }} style={{marginLeft:'auto',background:C.pri,color:C.priTxt,border:'none',borderRadius:9,padding:'8px 14px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Übernehmen</button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14,fontSize:12.5,color:C.sub}}>
+                    <Ic p={P.check} sz={13} col={C.grn}/>
+                    <span>Nutzung: {belegRes.nutzung==='privat'?'Privat':belegRes.nutzung==='gemischt'?('Gemischt · '+belegRes.nutzungAnteil+'% geschäftlich'):'Geschäftlich'}</span>
+                    <button onClick={()=>setBelegRes(r=>({...r,nutzung:null,taxTip:''}))} style={{background:'none',border:'none',color:C.mut,fontSize:12,cursor:'pointer',fontFamily:'inherit',marginLeft:'auto'}}>ändern</button>
+                  </div>
+                )}
+                {!belegNeedsNutzung(belegRes,belegDest) && belegNeedsBewirtung(belegRes) && (
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:12,color:C.sub,marginBottom:8}}>War das Essen mit einem Kunden, Geschäftspartner oder Mitarbeiter?</div>
+                    <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                      {[['kunde','Kunde'],['partner','Geschäftspartner'],['mitarbeiter','Mitarbeiter']].map(([k,l])=>(
+                        <button key={k} onClick={()=>setBelegRes(r=>({...r,bewirtungMitwem:k}))} style={{flex:1,minWidth:100,background:C.surf2,border:'1px solid '+C.bdr,borderRadius:10,padding:'10px 8px',fontSize:13,fontWeight:600,color:C.txt,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(belegRes.taxTipBusy || belegRes.taxTip) && (
+                  <div style={{background:C.priL,border:'1px solid '+hexA(C.pri,0.3),borderRadius:10,padding:'10px 12px',marginBottom:14,fontSize:12.5,color:C.txt,lineHeight:1.5,display:'flex',gap:8}}>
+                    <Ic p={P.spark} sz={14} col={C.pri}/>
+                    <span>{belegRes.taxTipBusy?'Ich prüfe kurz die steuerliche Seite…':belegRes.taxTip}</span>
+                  </div>
+                )}
+              </>)}
               <button onClick={saveBeleg} disabled={belegBusy} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',background:C.act,color:C.actTxt,border:'none',borderRadius:12,padding:'13px',fontSize:15,fontWeight:700,cursor:belegBusy?'default':'pointer',opacity:belegBusy?0.6:1,fontFamily:'inherit'}}>{belegBusy?'Speichert…':'Speichern + Beleg ablegen'}</button>
               <button onClick={()=>{setBelegRes(null); belegBlobRef.current=null;}} disabled={belegBusy} style={{width:'100%',background:'none',border:'none',color:C.mut,fontSize:13,cursor:'pointer',fontFamily:'inherit',marginTop:10}}>Anderen Beleg auslesen</button>
             </>
@@ -5878,6 +5959,7 @@ function App({session}) {
                 {a && isLast && a.type==='confirmInvoice' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={finalizeBotInvoice} style={primBot}>Ja, erstellen</button><button onClick={()=>{ setBotFlow(null); setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x).concat([{role:'assistant',content:'Okay, abgebrochen.'}])); }} style={ghostBot}>Abbrechen</button></div>}
                 {a && a.type==='showInvoice' && (()=>{ const iv=(data.invoices||[]).find(x=>x.id===a.invId); if(!iv) return null; return <div style={{display:'flex',gap:7,flexWrap:'wrap'}}><button onClick={()=>setInvView(iv)} style={primBot}>Ansehen</button><button onClick={()=>openMailCompose(iv)} style={ghostBot}>Senden</button><button onClick={()=>downloadInvoicePDF(iv)} style={ghostBot}>PDF</button></div>; })()}
                 {a && isLast && a.type==='options' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{(a.options||[]).map((o,oi)=><button key={oi} onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botSend(o.value); }} style={ghostBot}>{o.label}</button>)}</div>}
+                {a && isLast && a.type==='navTab' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{(a.options||[]).map((o,oi)=><button key={oi} onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); setBotOpen(false); setTab(o.tab); }} style={ghostBot}>{o.label}</button>)}</div>}
                 {a && a.type==='invoiceDone' && <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{a.hasMail && <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botStartSend(a.invId); }} style={primBot}>✉️ Per E-Mail senden</button>}<button onClick={()=>botPreviewInvoice(a.invId)} style={ghostBot}>📄 Ansehen</button>{!a.hasMail && <button onClick={()=>{ setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x)); botStartSend(a.invId); }} style={ghostBot}>✉️ Senden</button>}<button onClick={()=>setBotMsgs(mm=>mm.map((x,xi)=>xi===i?{...x,action:null}:x).concat([{role:'assistant',content:'Alles erledigt. 👍'}]))} style={ghostBot}>Fertig</button></div>}
               </div>
             ); })}
